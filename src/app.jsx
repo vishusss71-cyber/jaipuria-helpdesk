@@ -1,3 +1,7 @@
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import emailjs from '@emailjs/browser';
 const sendTicketEmail = async (ticket, user) => {
   try {
@@ -159,58 +163,55 @@ Jaipuria Institute of Management IT Support Team
 }
 
 // ── CSV / EXPORT HELPERS ──────────────────────────────────────────────────
-function downloadCSV(content, filename) {
-  const blob = new Blob([content], {
-    type: "text/csv;charset=utf-8;"
+function downloadExcel(data, filename) {
+
+  const cleanData = data.map(row => {
+    const cleaned = {};
+
+    Object.keys(row).forEach(key => {
+      cleaned[key] =
+        typeof row[key] === "object"
+          ? JSON.stringify(row[key])
+          : row[key];
+    });
+
+    return cleaned;
   });
 
-  const url = window.URL.createObjectURL(blob);
+  const worksheet = XLSX.utils.json_to_sheet(cleanData);
 
-  window.open(url);
+  const workbook = XLSX.utils.book_new();
 
-  const link = document.createElement("a");
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Tickets");
 
-  link.href = url;
-
-  link.download = filename;
-
-  document.body.appendChild(link);
-
-  link.click();
-
-  setTimeout(() => {
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
-  }, 100);
+  XLSX.writeFile(workbook, filename);
 }
 
-function downloadJSON(data, filename) {
-  const blob = new Blob(
-    [JSON.stringify(data, null, 2)],
-    { type: "application/json;charset=utf-8;" }
+function downloadPDF(data, filename) {
+
+  const doc = new jsPDF();
+
+  if (!data.length) {
+    doc.text("No Data", 10, 10);
+    doc.save(filename);
+    return;
+  }
+
+  const headers = [Object.keys(data[0])];
+
+  const rows = data.map(obj =>
+    Object.values(obj).map(v =>
+      typeof v === "object" ? JSON.stringify(v) : String(v)
+    )
   );
 
-  const url = window.URL.createObjectURL(blob);
+  autoTable(doc, {
+    head: headers,
+    body: rows,
+  });
 
-  window.open(url);
-
-  const link = document.createElement("a");
-
-  link.href = url;
-
-  link.download = filename;
-
-  document.body.appendChild(link);
-
-  link.click();
-
-  setTimeout(() => {
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
-  }, 100);
+  doc.save(filename);
 }
-
-
 // ── GLOBAL CSS ─────────────────────────────────────────────────────────────
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -704,7 +705,7 @@ function ExportPanel({tickets,toast}) {
   const [loading,setLoading]=useState("");
   const [dateFrom,setDateFrom]=useState("");
   const [dateTo,setDateTo]=useState("");
-  const [format,setFormat]=useState(".xlsx");
+  const [format,setFormat]=useState("excel");
 
   const filtered=tickets.filter(t=>{
     if(dateFrom&&t.createdAt<new Date(dateFrom).getTime()) return false;
@@ -722,16 +723,22 @@ function ExportPanel({tickets,toast}) {
     let data=filtered;
     if(type==="open") data=filtered.filter(t=>t.status==="Open"||t.status==="Assigned"||t.status==="In Progress");
     if(type==="closed") data=filtered.filter(t=>t.status==="Closed"||t.status==="Resolved");
-    const rows=data.map(t=>({...t,
-      category:CATEGORIES.find(c=>c.id===t.category)?.label||t.category,
-      "Assigned To (ID
-      )":STAFF_BASE.find(s=>s.id===t.assigneeId)?.name||"",
-      createdAt:fmtDate(t.createdAt),closedAt:fmtDate(t.closedAt)||"",
-    }));
-    console.log("Export rows:", rows);
-    if(format==="csv"||format==="json") {
-      format==="csv"?downloadCSV(toCSV(rows,ticketCols),`tickets_${type}_${now}.csv`):downloadJSON(rows,`tickets_${type}_${now}.json`);
-    }
+    const rows = data.map(t => ({
+  ...t,
+  category: CATEGORIES.find(c => c.id === t.category)?.label || t.category,
+  "Assigned To": STAFF_BASE.find(s => s.id === t.assigneeId)?.name || "",
+  createdAt: fmtDate(t.createdAt),
+  closedAt: fmtDate(t.closedAt) || "",
+}));
+    console.log("FORMAT VALUE =", format);
+
+if(format==="excel"||format==="pdf") {
+
+  format==="excel"
+    ? downloadExcel(rows, `tickets_${type}_${now}.xlsx`)
+    : downloadPDF(rows, `tickets_${type}_${now}.pdf`);
+
+}
     toast(`${type} report exported (${data.length} tickets) ✅`,"success");
     setLoading("");
   };
@@ -765,7 +772,7 @@ function ExportPanel({tickets,toast}) {
           <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>From Date</label><input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></div>
           <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>To Date</label><input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/></div>
           <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Format</label>
-            <select value={format} onChange={e=>setFormat(e.target.value)}><option value="csv">CSV (.csv)</option><option value="json">JSON (.json)</option></select>
+            <select value={format} onChange={e=>setFormat(e.target.value)}><option value="excel">Excel (.xlsx)</option><option value="pdf">PDF (.pdf)</option></select>
           </div>
         </div>
         <div style={{marginTop:10,fontSize:12,color:"rgba(226,232,240,0.4)"}}>Showing {filtered.length} of {tickets.length} tickets</div>
@@ -779,9 +786,27 @@ function ExportPanel({tickets,toast}) {
             <div style={{fontSize:14,fontWeight:600,color:"#e2e8f0",marginBottom:4}}>{ex.label}</div>
             <div style={{fontSize:12,color:"rgba(226,232,240,0.4)",marginBottom:14}}>{ex.desc}</div>
             <button onClick={()=>{
-              if(ex.id==="sla") {downloadCSV(toCSV(slaData,[{key:"id",label:"Ticket ID"},{key:"priority",label:"Priority"},{key:"slaHours",label:"SLA Hours"},{key:"elapsed",label:"Resolution Time"},{key:"met",label:"SLA Status"}]),`sla_report_${new Date().toISOString().slice(0,10)}.csv`);toast("SLA report exported ✅","success");return;}
-              if(ex.id==="staff") {downloadCSV(toCSV(staffData,[{key:"name",label:"Name"},{key:"role",label:"Role"},{key:"email",label:"Email"},{key:"assigned",label:"Assigned"},{key:"resolved",label:"Resolved"}]),`staff_performance_${new Date().toISOString().slice(0,10)}.csv`);toast("Staff performance exported ✅","success");return;}
-              doExport(ex.id);
+              if(ex.id==="sla") {
+  downloadExcel(
+    slaData,
+    `sla_report_${new Date().toISOString().slice(0,10)}.xlsx`
+  );
+
+  toast("SLA report exported ✅","success");
+  return;
+}
+
+if(ex.id==="staff") {
+  downloadExcel(
+    staffData,
+    `staff_performance_${new Date().toISOString().slice(0,10)}.xlsx`
+  );
+
+  toast("Staff performance exported ✅","success");
+  return;
+}
+
+doExport(ex.id);
             }} disabled={loading===ex.id} style={{
               background:`${ex.color}20`,border:`1px solid ${ex.color}40`,color:ex.color,
               padding:"9px 18px",borderRadius:8,fontSize:13,fontWeight:600,width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,
@@ -1329,11 +1354,7 @@ const handleLogout = () => {
   setPage("home");
   setViewTicketId(null);
   };
-const handleLogout = () => {
-  setSession(null);
-  setPage("home");
-  setViewTicketId(null);
-};
+
 
 const handleNewTicket = (ticket) => {
   setTickets(ts => [ticket, ...ts]);
