@@ -1349,12 +1349,11 @@ export default function App() {
     setSession({type:"staff",staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,permissions:staff.permissions});
     setPage("staff-dash");
   };
-const handleLogout = () => {
+const logoutUser = () => {
   setSession(null);
   setPage("home");
   setViewTicketId(null);
-  };
-
+};
 
 const handleNewTicket = (ticket) => {
   setTickets(ts => [ticket, ...ts]);
@@ -1486,7 +1485,7 @@ const handleDeleteTicket = (id) => {
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
             <div className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#10b981"}}/>
             <span style={{fontSize:12,color:"rgba(226,232,240,0.4)"}}>Live</span>
-            <button onClick={handleLogout} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",padding:"6px 14px",borderRadius:8,fontSize:13}}>Logout</button>
+            <button onClick={logoutUser} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",padding:"6px 14px",borderRadius:8,fontSize:13}}>Logout</button>
           </div>
         </div>
         <div style={{padding:"24px 28px",flex:1,overflowY:"auto"}}>{renderPage()}</div>
