@@ -1,3 +1,22 @@
+import emailjs from '@emailjs/browser';
+const sendTicketEmail = (ticket, user) => {
+  emailjs.send(
+    'service_ctyqqbc',
+    'template_vuv4jtd',
+    {
+      user_name: user?.name || 'User',
+      ticket_id: ticket.id,
+      issue: ticket.issue,
+    },
+    'N9OlDxPyO0uf_IlxJ'
+  )
+  .then(() => {
+    console.log('Email sent');
+  })
+  .catch((error) => {
+    console.log(error);
+  });
+};
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // ── CRYPTO HELPERS (client-side hashing simulation) ───────────────────────
@@ -395,7 +414,8 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
   const assignee=STAFF_BASE.find(s=>s.id===ticket.assigneeId);
   const cat=CATEGORIES.find(c=>c.id===ticket.category);
 
-  const updateTicket=(changes,auditAction,remark="")=>{
+  const 
+  updateTicket=(changes,auditAction,remark="")=>{
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
       const tl=[...(t.timeline||[]),{action:auditAction,remark,at:Date.now(),by:isAdmin?"Admin":staffName||"User"}];
@@ -645,7 +665,7 @@ function ExportPanel({tickets,toast}) {
   const [loading,setLoading]=useState("");
   const [dateFrom,setDateFrom]=useState("");
   const [dateTo,setDateTo]=useState("");
-  const [format,setFormat]=useState("csv");
+  const [format,setFormat]=useState(".xlsx");
 
   const filtered=tickets.filter(t=>{
     if(dateFrom&&t.createdAt<new Date(dateFrom).getTime()) return false;
@@ -1264,9 +1284,17 @@ export default function App() {
     setPage("staff-dash");
   };
 
-  const handleLogout=()=>{setSession(null);setPage("home");setViewTicketId(null);};
-  const handleNewTicket=(ticket)=>{setTickets(ts=>[ticket,...ts]);setFormCat(null);setViewTicketId(ticket.id);toast(`Ticket ${ticket.id} created!`,"success");};
-  const handleDeleteTicket=(id)=>{setTickets(ts=>ts.filter(t=>t.id!==id));toast("Ticket deleted","info");};
+  const handleNewTicket=(ticket)=>{
+  setTickets(ts=>[ticket,...ts]);
+
+  sendTicketEmail(ticket, currentUser);
+
+  setFormCat(null);
+
+  setViewTicketId(ticket.id);
+
+  toast(`Ticket ${ticket.id} created!`,"success");
+};
 
   if(!session) return (<><style>{CSS}</style><Landing onLogin={handleLogin}/><Toast toasts={toasts} remove={remove}/></>);
 
