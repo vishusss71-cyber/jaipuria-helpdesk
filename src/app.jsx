@@ -1283,9 +1283,13 @@ export default function App() {
     setSession({type:"staff",staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,permissions:staff.permissions});
     setPage("staff-dash");
   };
-
-  const handleNewTicket=(ticket)=>{
-  setTickets(ts=>[ticket,...ts]);
+const handleLogout = () => {
+  setSession(null);
+  setPage("home");
+  setViewTicketId(null);
+  };
+ const handleNewTicket = (ticket) => {
+  setTickets(ts => [ticket, ...ts]);
 
   sendTicketEmail(ticket, currentUser);
 
@@ -1293,7 +1297,7 @@ export default function App() {
 
   setViewTicketId(ticket.id);
 
-  toast(`Ticket ${ticket.id} created!`,"success");
+  toast(`Ticket ${ticket.id} created!`, "success");
 };
 
   if(!session) return (<><style>{CSS}</style><Landing onLogin={handleLogin}/><Toast toasts={toasts} remove={remove}/></>);
