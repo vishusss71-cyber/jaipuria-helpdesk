@@ -1300,6 +1300,11 @@ const handleLogout = () => {
 
   toast(`Ticket ${ticket.id} created!`, "success");
 };
+const handleDeleteTicket = (id) => {
+  setTickets(ts => ts.filter(t => t.id !== id));
+
+  toast("Ticket deleted", "info");
+};
 
   if(!session) return (<><style>{CSS}</style><Landing onLogin={handleLogin}/><Toast toasts={toasts} remove={remove}/></>);
 
