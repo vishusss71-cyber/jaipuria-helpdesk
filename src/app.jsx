@@ -160,43 +160,56 @@ Jaipuria Institute of Management IT Support Team
 
 // ── CSV / EXPORT HELPERS ──────────────────────────────────────────────────
 function downloadCSV(content, filename) {
-  const blob = new Blob([content], { type: "text/csv" });
+  const blob = new Blob([content], {
+    type: "text/csv;charset=utf-8;"
+  });
 
-  const a = document.createElement("a");
+  const url = window.URL.createObjectURL(blob);
 
-  a.href = URL.createObjectURL(blob);
+  window.open(url);
 
-  a.download = filename;
+  const link = document.createElement("a");
 
-  document.body.appendChild(a);
+  link.href = url;
 
-  a.click();
+  link.download = filename;
 
-  document.body.removeChild(a);
+  document.body.appendChild(link);
 
-  URL.revokeObjectURL(a.href);
+  link.click();
+
+  setTimeout(() => {
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  }, 100);
 }
 
 function downloadJSON(data, filename) {
   const blob = new Blob(
     [JSON.stringify(data, null, 2)],
-    { type: "application/json" }
+    { type: "application/json;charset=utf-8;" }
   );
 
-  const a = document.createElement("a");
+  const url = window.URL.createObjectURL(blob);
 
-  a.href = URL.createObjectURL(blob);
+  window.open(url);
 
-  a.download = filename;
+  const link = document.createElement("a");
 
-  document.body.appendChild(a);
+  link.href = url;
 
-  a.click();
+  link.download = filename;
 
-  document.body.removeChild(a);
+  document.body.appendChild(link);
 
-  URL.revokeObjectURL(a.href);
+  link.click();
+
+  setTimeout(() => {
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  }, 100);
 }
+
 
 // ── GLOBAL CSS ─────────────────────────────────────────────────────────────
 const CSS = `
