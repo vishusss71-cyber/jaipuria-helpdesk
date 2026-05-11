@@ -286,25 +286,86 @@ function useToast() {
 }
 
 // ── PASSWORD INPUT ────────────────────────────────────────────────────────
-function PwdInput({ value, onChange, placeholder="Password", showStrength=false, id }) {
+function PwdInput({
+  value,
+  onChange,
+  placeholder="Password",
+  showStrength=false,
+  id,
+  autoComplete,
+  name
+}) {
+
   const [show,setShow]=useState(false);
-  const s=showStrength?pwdStrength(value):0;
+
+  const s = showStrength ? pwdStrength(value) : 0;
+
   return (
     <div>
+
       <div className="pwd-input-wrap">
-        <input id={id} type={show?"text":"password"} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} autoComplete="new-password" />
-        <button type="button" className="pwd-toggle" onClick={()=>setShow(v=>!v)} title={show?"Hide password":"Show password"}>
-          {show?"🙈":"👁"}
+
+        <input
+  id={id}
+  type={show ? "text" : "password"}
+  value={value}
+  name="not-password"
+  autoComplete="off"
+  data-lpignore="true"
+  onChange={e=>onChange(e.target.value)}
+  placeholder={placeholder}
+/>
+
+        <button
+          type="button"
+          className="pwd-toggle"
+          onClick={()=>setShow(v=>!v)}
+          title={show ? "Hide password" : "Show password"}
+        >
+          {show ? "🙈" : "👁"}
         </button>
+
       </div>
-      {showStrength && value.length>0 && (
+
+      {showStrength && value.length > 0 && (
         <div style={{marginTop:8}}>
-          <div style={{height:4,background:"rgba(255,255,255,0.08)",borderRadius:2,overflow:"hidden"}}>
-            <div style={{height:"100%",width:`${(s/5)*100}%`,background:pwdColor(s),borderRadius:2,transition:"all .3s"}}/>
+
+          <div
+            style={{
+              height:4,
+              background:"rgba(255,255,255,0.08)",
+              borderRadius:2,
+              overflow:"hidden"
+            }}
+          >
+            <div
+              style={{
+                height:"100%",
+                width:`${(s/5)*100}%`,
+                background:pwdColor(s),
+                borderRadius:2,
+                transition:"all .3s"
+              }}
+            />
           </div>
-          <div style={{fontSize:12,marginTop:4,color:pwdColor(s),fontWeight:500}}>{pwdLabel(s)}{s<3?" — Use 8+ chars, uppercase, numbers & symbols":""}</div>
+
+          <div
+            style={{
+              fontSize:12,
+              marginTop:4,
+              color:pwdColor(s),
+              fontWeight:500
+            }}
+          >
+            {pwdLabel(s)}
+            {s < 3
+              ? " — Use 8+ chars, uppercase, numbers & symbols"
+              : ""}
+          </div>
+
         </div>
       )}
+
     </div>
   );
 }
@@ -570,6 +631,53 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
               <select value={editAssignee} onChange={e=>setEditAssignee(Number(e.target.value))}>
                 {STAFF_BASE.map(s=><option key={s.id} value={s.id}>{s.name} ({s.role})</option>)}
               </select>
+              <div style={{marginTop:12}}>
+
+  <button
+    onClick={() => {
+
+      const selectedStaff =
+        STAFF_BASE.find(
+          s => s.id === Number(editAssignee)
+        );
+
+      if(!selectedStaff) return;
+
+      const newPwd =
+        prompt("Enter new password");
+
+      if(!newPwd) return;
+
+      const defaultStaffPasswords = {
+        "raj.singh@jaipuria.ac.in": "Jaipur@123",
+        "rohit.jangid@jaipuria.ac.in": "Jaipur@123",
+        "vishal.swami@jaipuria.ac.in": "Jaipur@123",
+      };
+
+      const passwords =
+        DB.get("staff_passwords", defaultStaffPasswords);
+
+      passwords[selectedStaff.email] = newPwd;
+
+      DB.set("staff_passwords", passwords);
+
+      toast("Password updated", "success");
+
+    }}
+
+    style={{
+      padding:"8px 14px",
+      border:"none",
+      borderRadius:8,
+      background:"#2563eb",
+      color:"#fff",
+      cursor:"pointer"
+    }}
+  >
+    Change Staff Password
+  </button>
+
+</div>
             </div>
           </div>
           <button className="glow-btn" style={{marginTop:12,width:"100%",fontSize:14}} onClick={()=>{
@@ -1047,9 +1155,20 @@ function ForgotPassword({onBack,toast}) {
     const hash=await hashPassword(newPwd);
     const staff=STAFF_BASE.find(s=>s.email===email.trim());
     if(staff){
-      const staffPasswords=DB.get("staff_passwords",{});
-      staffPasswords[staff.id]=hash;
-      DB.set("staff_passwords",staffPasswords);
+
+  const defaultStaffPasswords = {
+    "raj.singh@jaipuria.ac.in": "Jaipur@123",
+    "rohit.jangid@jaipuria.ac.in": "Jaipur@123",
+    "vishal.swami@jaipuria.ac.in": "Jaipur@123",
+  };
+
+  `const staffPasswords =
+    DB.get("staff_passwords", defaultStaffPasswords);
+
+  if(staffPasswords[staff.email] !== pwd){
+    toast("Invalid password", "error");
+    return;
+  }`
     } else {
       DB.set("admin_password",hash);
     }
@@ -1193,21 +1312,78 @@ function Landing({onLogin}) {
                 <PwdInput value={pwd} onChange={setPwd} placeholder="Enter admin password"/></div>
             </div>
           )}
-          {mode==="staff"&&(
-            <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:18}}>
-              <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Staff Email</label>
-                <input type="email" placeholder="name@jaipuria.ac.in" value={email} onChange={e=>setEmail(e.target.value)}/></div>
-              <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Password</label>
-                <PwdInput value={pwd} onChange={setPwd} placeholder="Leave blank if first login"/></div>
-              <div style={{fontSize:12,color:"rgba(226,232,240,0.35)"}}>Staff emails: raj.singh@ · rohit.jangid@ · vishal.swami@jaipuria.ac.in</div>
-            </div>
-          )}
+         {mode==="staff"&&(
+  <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:18}}>
+
+    <div>
+      <label
+        style={{
+          fontSize:12,
+          color:"rgba(226,232,240,0.5)",
+          marginBottom:6,
+          display:"block"
+        }}
+      >
+        Staff Email
+      </label>
+
+      <input
+        type="email"
+        autoComplete="username"
+        placeholder="name@jaipuria.ac.in"
+        value={email}
+        onChange={e=>setEmail(e.target.value)}
+      />
+    </div>
+
+    <div>
+      <label
+        style={{
+          fontSize:12,
+          color:"rgba(226,232,240,0.5)",
+          marginBottom:6,
+          display:"block"
+        }}
+      >
+        Password
+      </label>
+
+      <PwdInput
+        value={pwd}
+        onChange={setPwd}
+        autoComplete="current-password"
+        placeholder="Enter your password"
+      />
+    </div>
+
+  </div>
+)}
           {mode==="user"&&(
-            <div style={{marginBottom:18}}>
-              <label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Your Email Address</label>
-              <input type="email" placeholder="your@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()}/>
-            </div>
-          )}
+  <div style={{marginBottom:18}}>
+    
+    <label
+      style={{
+        fontSize:12,
+        color:"rgba(226,232,240,0.5)",
+        marginBottom:6,
+        display:"block"
+      }}
+    >
+      Your Email Address
+    </label>
+
+    <input
+      type="email"
+      name="login-email"
+      autoComplete="username"
+      placeholder="your@email.com"
+      value={email}
+      onChange={e=>setEmail(e.target.value)}
+      onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+    />
+
+  </div>
+)}
           <button className="glow-btn" style={{width:"100%",padding:"13px"}} onClick={handleLogin} disabled={loading}>
             {loading?"⏳ Authenticating...":mode==="admin"?"🔐 Access Admin Portal":"Continue →"}
           </button>
