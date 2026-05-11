@@ -616,129 +616,171 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
       </div>}
 
       {/* Admin Controls */}
-      {(isAdmin||(isStaff&&STAFF_BASE.find(s=>s.id===staffId)?.permissions.includes("assign")))&&(
-        <div className="glass" style={{padding:"16px 18px"}}>
-          <div style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:12}}>CONTROLS</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            <button
-  onClick={() => {
+{(isAdmin||(isStaff&&STAFF_BASE.find(s=>s.id===staffId)?.permissions.includes("assign")))&&(
 
-    const selectedStaff =
-      STAFF_BASE.find(
-        s => s.id === Number(editAssignee)
-      );
+  <div
+    className="glass"
+    style={{padding:"16px 18px"}}
+  >
 
-    if(!selectedStaff){
-      toast("Select staff first", "error");
-      return;
-    }
+    <div
+      style={{
+        display:"flex",
+        justifyContent:"space-between",
+        alignItems:"center",
+        marginBottom:16
+      }}
+    >
 
-    const newPwd =
-      prompt("Enter new password");
+      <div
+        style={{
+          fontSize:12,
+          color:"rgba(226,232,240,0.5)"
+        }}
+      >
+        CONTROLS
+      </div>
 
-    if(!newPwd) return;
+      <button
+        onClick={() => setPage("staff-management")}
+        style={{
+          padding:"8px 14px",
+          border:"none",
+          borderRadius:8,
+          background:"#2563eb",
+          color:"#fff",
+          cursor:"pointer",
+          fontSize:13,
+          fontWeight:600
+        }}
+      >
+        👥 Staff Management
+      </button>
 
-    const defaultStaffPasswords = {
-      "raj.singh@jaipuria.ac.in": "Jaipur@123",
-      "rohit.jangid@jaipuria.ac.in": "Jaipur@123",
-      "vishal.swami@jaipuria.ac.in": "Jaipur@123",
-    };
+    </div>
 
-    const passwords =
-      DB.get("staff_passwords", defaultStaffPasswords);
+    <div
+      style={{
+        display:"grid",
+        gridTemplateColumns:"1fr 1fr",
+        gap:12
+      }}
+    >
 
-    passwords[selectedStaff.email] = newPwd;
+      <div>
 
-    DB.set("staff_passwords", passwords);
+        <label
+          style={{
+            fontSize:12,
+            color:"rgba(226,232,240,0.5)",
+            marginBottom:6,
+            display:"block"
+          }}
+        >
+          Status
+        </label>
 
-    toast("Password updated", "success");
+        <select
+          value={editStatus}
+          onChange={e=>setEditStatus(e.target.value)}
+        >
+          {STATUSES.map(s=>
+            <option key={s}>
+              {s}
+            </option>
+          )}
+        </select>
 
-  }}
+      </div>
 
-  style={{
-    padding:"8px 14px",
-    border:"none",
-    borderRadius:8,
-    background:"#2563eb",
-    color:"#fff",
-    cursor:"pointer",
-    marginBottom:12
-  }}
->
-  Change Staff Password
-</button>
-            <div>
-              <label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Status</label>
-              <select value={editStatus} onChange={e=>setEditStatus(e.target.value)}>
-                {STATUSES.map(s=><option key={s}>{s}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Assign To</label>
-              <select value={editAssignee} onChange={e=>setEditAssignee(Number(e.target.value))}>
-                {STAFF_BASE.map(s=><option key={s.id} value={s.id}>{s.name} ({s.role})</option>)}
-              </select>
-              <div style={{marginTop:12}}>
+      <div>
 
-  <button
-    onClick={() => {
+        <label
+          style={{
+            fontSize:12,
+            color:"rgba(226,232,240,0.5)",
+            marginBottom:6,
+            display:"block"
+          }}
+        >
+          Assign To
+        </label>
 
-      const selectedStaff =
-        STAFF_BASE.find(
-          s => s.id === Number(editAssignee)
+        <select
+          value={editAssignee}
+          onChange={e=>setEditAssignee(Number(e.target.value))}
+        >
+          {STAFF_BASE.map(s=>
+            <option
+              key={s.id}
+              value={s.id}
+            >
+              {s.name} ({s.role})
+            </option>
+          )}
+        </select>
+
+      </div>
+
+    </div>
+
+    <button
+      className="glow-btn"
+
+      style={{
+        marginTop:12,
+        width:"100%",
+        fontSize:14
+      }}
+
+      onClick={() => {
+
+        const oldStatus =
+          currentTicket.status;
+
+        const oldAssignee =
+          currentTicket.assigneeId;
+
+        const changes = {
+          status:editStatus,
+          assigneeId:Number(editAssignee)
+        };
+
+        const actions = [];
+
+        if(editStatus !== oldStatus){
+
+          actions.push(
+            `Status changed: ${oldStatus} → ${editStatus}`
+          );
+
+        }
+
+        if(Number(editAssignee)!==oldAssignee){
+
+          actions.push(
+            `Reassigned to ${
+              STAFF_BASE.find(
+                s=>s.id===Number(editAssignee)
+              )?.name
+            }`
+          );
+
+        }
+
+        updateTicket(
+          changes,
+          actions.join("; ") || "Updated"
         );
 
-      if(!selectedStaff) return;
+      }}
+    >
+      💾 Save Changes
+    </button>
 
-      const newPwd =
-        prompt("Enter new password");
+  </div>
 
-      if(!newPwd) return;
-
-      const defaultStaffPasswords = {
-        "raj.singh@jaipuria.ac.in": "Jaipur@123",
-        "rohit.jangid@jaipuria.ac.in": "Jaipur@123",
-        "vishal.swami@jaipuria.ac.in": "Jaipur@123",
-      };
-
-      const passwords =
-        DB.get("staff_passwords", defaultStaffPasswords);
-
-      passwords[selectedStaff.email] = newPwd;
-
-      DB.set("staff_passwords", passwords);
-
-      toast("Password updated", "success");
-
-    }}
-
-    style={{
-      padding:"8px 14px",
-      border:"none",
-      borderRadius:8,
-      background:"#2563eb",
-      color:"#fff",
-      cursor:"pointer"
-    }}
-  >
-    Change Staff Password
-  </button>
-
-</div>
-            </div>
-          </div>
-          <button className="glow-btn" style={{marginTop:12,width:"100%",fontSize:14}} onClick={()=>{
-            const oldStatus=currentTicket.status;
-            const oldAssignee=currentTicket.assigneeId;
-            const changes={status:editStatus,assigneeId:Number(editAssignee)};
-            const actions=[];
-            if(editStatus!==oldStatus) actions.push(`Status changed: ${oldStatus} → ${editStatus}`);
-            if(Number(editAssignee)!==oldAssignee) actions.push(`Reassigned to ${STAFF_BASE.find(s=>s.id===Number(editAssignee))?.name}`);
-            updateTicket(changes,actions.join("; ")||"Updated");
-          }}>💾 Save Changes</button>
-        </div>
-      )}
-
+)}
       {/* Audit Timeline */}
       <div className="glass" style={{padding:"16px 18px"}}>
         <div style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:14,letterSpacing:".5px"}}>AUDIT TRAIL</div>
