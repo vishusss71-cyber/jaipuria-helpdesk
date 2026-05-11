@@ -5,9 +5,10 @@ const sendTicketEmail = async (ticket, user) => {
       'service_ctyqqbc',
       'template_vuv4jtd',
       {
-        user_name: user?.name || 'User',
-        ticket_id: ticket.id,
-        issue: ticket.issue,
+          user_name: user?.name || 'User',
+          to_email: user?.email,
+          ticket_id: ticket.id,
+          issue: ticket.issue,
       },
       'N9OlDxPyO0uf_IlxJ'
     );
