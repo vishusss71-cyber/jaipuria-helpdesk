@@ -159,18 +159,43 @@ Jaipuria Institute of Management IT Support Team
 }
 
 // ── CSV / EXPORT HELPERS ──────────────────────────────────────────────────
-function toCSV(rows, cols) {
-  const header = cols.map(c=>c.label).join(",");
-  const data = rows.map(r => cols.map(c => `"${String(r[c.key]||"").replace(/"/g,'""')}"`).join(",")).join("\n");
-  return header+"\n"+data;
-}
 function downloadCSV(content, filename) {
-  const blob = new Blob([content], {type:"text/csv"});
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+  const blob = new Blob([content], { type: "text/csv" });
+
+  const a = document.createElement("a");
+
+  a.href = URL.createObjectURL(blob);
+
+  a.download = filename;
+
+  document.body.appendChild(a);
+
+  a.click();
+
+  document.body.removeChild(a);
+
+  URL.revokeObjectURL(a.href);
 }
+
 function downloadJSON(data, filename) {
-  const blob = new Blob([JSON.stringify(data,null,2)], {type:"application/json"});
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+  const blob = new Blob(
+    [JSON.stringify(data, null, 2)],
+    { type: "application/json" }
+  );
+
+  const a = document.createElement("a");
+
+  a.href = URL.createObjectURL(blob);
+
+  a.download = filename;
+
+  document.body.appendChild(a);
+
+  a.click();
+
+  document.body.removeChild(a);
+
+  URL.revokeObjectURL(a.href);
 }
 
 // ── GLOBAL CSS ─────────────────────────────────────────────────────────────
@@ -686,9 +711,11 @@ function ExportPanel({tickets,toast}) {
     if(type==="closed") data=filtered.filter(t=>t.status==="Closed"||t.status==="Resolved");
     const rows=data.map(t=>({...t,
       category:CATEGORIES.find(c=>c.id===t.category)?.label||t.category,
-      "Assigned To (ID)":STAFF_BASE.find(s=>s.id===t.assigneeId)?.name||"",
+      "Assigned To (ID
+      )":STAFF_BASE.find(s=>s.id===t.assigneeId)?.name||"",
       createdAt:fmtDate(t.createdAt),closedAt:fmtDate(t.closedAt)||"",
     }));
+    console.log("Export rows:", rows);
     if(format==="csv"||format==="json") {
       format==="csv"?downloadCSV(toCSV(rows,ticketCols),`tickets_${type}_${now}.csv`):downloadJSON(rows,`tickets_${type}_${now}.json`);
     }
@@ -1289,7 +1316,13 @@ const handleLogout = () => {
   setPage("home");
   setViewTicketId(null);
   };
- const handleNewTicket = (ticket) => {
+const handleLogout = () => {
+  setSession(null);
+  setPage("home");
+  setViewTicketId(null);
+};
+
+const handleNewTicket = (ticket) => {
   setTickets(ts => [ticket, ...ts]);
 
   sendTicketEmail(ticket, session).catch(console.error);
@@ -1300,12 +1333,12 @@ const handleLogout = () => {
 
   toast(`Ticket ${ticket.id} created!`, "success");
 };
+
 const handleDeleteTicket = (id) => {
   setTickets(ts => ts.filter(t => t.id !== id));
 
   toast("Ticket deleted", "info");
 };
-
   if(!session) return (<><style>{CSS}</style><Landing onLogin={handleLogin}/><Toast toasts={toasts} remove={remove}/></>);
 
   // First login flow for staff
