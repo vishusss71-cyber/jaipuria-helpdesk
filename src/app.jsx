@@ -1,21 +1,21 @@
 import emailjs from '@emailjs/browser';
-const sendTicketEmail = (ticket, user) => {
-  emailjs.send(
-    'service_ctyqqbc',
-    'template_vuv4jtd',
-    {
-      user_name: user?.name || 'User',
-      ticket_id: ticket.id,
-      issue: ticket.issue,
-    },
-    'N9OlDxPyO0uf_IlxJ'
-  )
-  .then(() => {
-    console.log('Email sent');
-  })
-  .catch((error) => {
-    console.log(error);
-  });
+const sendTicketEmail = async (ticket, user) => {
+  try {
+    await emailjs.send(
+      'service_ctyqqbc',
+      'template_vuv4jtd',
+      {
+        user_name: user?.name || 'User',
+        ticket_id: ticket.id,
+        issue: ticket.issue,
+      },
+      'N9OlDxPyO0uf_IlxJ'
+    );
+
+    console.log("Email sent");
+  } catch (error) {
+    console.log("Email error:", error);
+  }
 };
 import { useState, useEffect, useRef, useCallback } from "react";
 
