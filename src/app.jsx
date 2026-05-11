@@ -620,6 +620,53 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         <div className="glass" style={{padding:"16px 18px"}}>
           <div style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:12}}>CONTROLS</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <button
+  onClick={() => {
+
+    const selectedStaff =
+      STAFF_BASE.find(
+        s => s.id === Number(editAssignee)
+      );
+
+    if(!selectedStaff){
+      toast("Select staff first", "error");
+      return;
+    }
+
+    const newPwd =
+      prompt("Enter new password");
+
+    if(!newPwd) return;
+
+    const defaultStaffPasswords = {
+      "raj.singh@jaipuria.ac.in": "Jaipur@123",
+      "rohit.jangid@jaipuria.ac.in": "Jaipur@123",
+      "vishal.swami@jaipuria.ac.in": "Jaipur@123",
+    };
+
+    const passwords =
+      DB.get("staff_passwords", defaultStaffPasswords);
+
+    passwords[selectedStaff.email] = newPwd;
+
+    DB.set("staff_passwords", passwords);
+
+    toast("Password updated", "success");
+
+  }}
+
+  style={{
+    padding:"8px 14px",
+    border:"none",
+    borderRadius:8,
+    background:"#2563eb",
+    color:"#fff",
+    cursor:"pointer",
+    marginBottom:12
+  }}
+>
+  Change Staff Password
+</button>
             <div>
               <label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Status</label>
               <select value={editStatus} onChange={e=>setEditStatus(e.target.value)}>
