@@ -1291,7 +1291,7 @@ const handleLogout = () => {
  const handleNewTicket = (ticket) => {
   setTickets(ts => [ticket, ...ts]);
 
-  sendTicketEmail(ticket, currentUser);
+  sendTicketEmail(ticket, session).catch(console.error);
 
   setFormCat(null);
 
