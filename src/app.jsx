@@ -642,7 +642,12 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
       </div>
 
       <button
-        onClick={() => setPage("staff-management")}
+        onClick={() => {
+  toast(
+    "Use sidebar → Staff Management",
+    "info"
+  );
+}}
         style={{
           padding:"8px 14px",
           border:"none",
@@ -1118,7 +1123,7 @@ function Analytics({tickets}) {
 
 // ── SIDEBAR ───────────────────────────────────────────────────────────────
 function Sidebar({current,onChange,isAdmin,isStaff,tickets,mobileOpen,setMobileOpen}) {
-  const adminNav=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"tickets",icon:"🎫",label:"All Tickets"},{id:"staff",icon:"👥",label:"IT Staff"},{id:"analytics",icon:"📊",label:"Analytics"},{id:"export",icon:"⬇",label:"Export Reports"},{id:"emaillog",icon:"📧",label:"Email Log"}];
+  const adminNav=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"tickets",icon:"🎫",label:"All Tickets"},{id:"staff",icon:"👥",label:"IT Staff"},{id:"analytics",icon:"📊",label:"Analytics"},{id:"export",icon:"⬇",label:"Export Reports"},{id:"staff-management",icon:"👥",label:"Staff Management"},{id:"emaillog",icon:"📧",label:"Email Log"}];
   const userNav=[{id:"home",icon:"🏠",label:"Home"},{id:"my-tickets",icon:"🎫",label:"My Tickets"},{id:"new-ticket",icon:"➕",label:"New Ticket"},{id:"track",icon:"🔍",label:"Track Ticket"}];
   const staffNav=[{id:"staff-dash",icon:"🏠",label:"My Dashboard"},{id:"assigned",icon:"📋",label:"Assigned Tickets"}];
   const nav=isAdmin?adminNav:isStaff?staffNav:userNav;
@@ -1675,6 +1680,111 @@ const handleDeleteTicket = (id) => {
       );
       if(page==="tickets") return <TicketsTable tickets={tickets} onView={setViewTicketId} isAdmin onDelete={handleDeleteTicket}/>;
       if(page==="analytics") return <Analytics tickets={tickets}/>;
+      {page==="staff-management" && (
+
+  <div
+    style={{
+      display:"flex",
+      flexDirection:"column",
+      gap:18
+    }}
+  >
+
+    <h2
+      style={{
+        fontFamily:"Syne",
+        fontSize:22,
+        fontWeight:700,
+        color:"#e2e8f0"
+      }}
+    >
+      Staff Management
+    </h2>
+
+    {STAFF_BASE.map(staff => (
+
+      <div
+        key={staff.id}
+        className="glass"
+        style={{
+          padding:"18px 20px"
+        }}
+      >
+
+        <div
+          style={{
+            fontSize:18,
+            fontWeight:700,
+            color:"#fff"
+          }}
+        >
+          {staff.name}
+        </div>
+
+        <div
+          style={{
+            fontSize:13,
+            color:"rgba(226,232,240,0.5)",
+            marginTop:4
+          }}
+        >
+          {staff.email}
+        </div>
+
+        <button
+          onClick={() => {
+
+            const newPwd =
+              prompt("Enter new password");
+
+            if(!newPwd) return;
+
+            const defaultStaffPasswords = {
+              "raj.singh@jaipuria.ac.in":"Jaipur@123",
+              "rohit.jangid@jaipuria.ac.in":"Jaipur@123",
+              "vishal.swami@jaipuria.ac.in":"Jaipur@123",
+            };
+
+            const passwords =
+              DB.get(
+                "staff_passwords",
+                defaultStaffPasswords
+              );
+
+            passwords[staff.email] = newPwd;
+
+            DB.set(
+              "staff_passwords",
+              passwords
+            );
+
+            toast(
+              "Password updated",
+              "success"
+            );
+
+          }}
+
+          style={{
+            marginTop:14,
+            padding:"10px 16px",
+            border:"none",
+            borderRadius:10,
+            background:"#2563eb",
+            color:"#fff",
+            cursor:"pointer"
+          }}
+        >
+          Change Password
+        </button>
+
+      </div>
+
+    ))}
+
+  </div>
+
+)}
       if(page==="export") return <ExportPanel tickets={tickets} toast={toast}/>;
       if(page==="emaillog") return <EmailLog/>;
       if(page==="staff") return (
