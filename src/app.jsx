@@ -5,11 +5,9 @@ import autoTable from "jspdf-autotable";
 import emailjs from '@emailjs/browser';
 const EMAIL_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || 'service_ctyqqbc';
 const EMAIL_CREATE_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_CREATE_TEMPLATE_ID || 'template_vuv4jtd';
-const EMAIL_CLOSE_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_CLOSE_TEMPLATE_ID || 'template_ticket_closed';
 const EMAIL_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || 'N9OlDxPyO0uf_IlxJ';
 const EMAILJS_SERVICE_ID = EMAIL_SERVICE_ID;
 const EMAILJS_TEMPLATE_ID = EMAIL_CREATE_TEMPLATE_ID;
-const EMAILJS_CLOSE_TEMPLATE_ID = EMAIL_CLOSE_TEMPLATE_ID;
 const EMAILJS_PUBLIC_KEY = EMAIL_PUBLIC_KEY;
 function getTicketFeedbackLink(ticketId) {
   return typeof window !== "undefined"
@@ -33,44 +31,6 @@ const sendTicketEmail = async (ticket, user) => {
     console.log("Email sent");
   } catch (error) {
     console.log("Email error:", error);
-  }
-};
-const sendTicketCloseEmail = async (ticket, closedBy = "Admin", closingRemarks = "", comments = [], user = {}) => {
-  const feedbackLink = getTicketFeedbackLink(ticket.id);
-  const latestComment = Array.isArray(comments) && comments.length
-    ? (comments[comments.length - 1]?.text || comments[comments.length - 1]?.remark || "No additional comments.")
-    : "No additional comments.";
-  const finalRemarks = closingRemarks || ticket.closingRemarks || "Issue resolved successfully.";
-  const resolutionMs = ticket.resolutionTime || ((ticket.closedAt || Date.now()) - ticket.createdAt);
-  const issue = ticket.issue || ticket.description || categoryLabel(ticket.category) || "IT Helpdesk Ticket";
-  const params = {
-    to_email: ticket.email || user?.email,
-    user_name: ticket.name || user?.name || "User",
-    ticket_id: ticket.id,
-    issue,
-    status: "Closed",
-    closed_by: closedBy,
-    closed_at: fmtDate(ticket.closedAt || Date.now()),
-    resolution_time: formatDuration(resolutionMs),
-    closing_remarks: finalRemarks,
-    latest_comment: latestComment,
-    feedback_link: feedbackLink,
-    subject: `Your IT Support Ticket Has Been Closed - ${ticket.id}`,
-    message: `Hello ${ticket.name || user?.name || "User"},\n\nYour IT support ticket has been successfully closed.\n\nTicket ID: ${ticket.id}\nIssue: ${issue}\nStatus: Closed\nClosed By: ${closedBy}\nClosed At: ${fmtDate(ticket.closedAt || Date.now())}\nResolution Time: ${formatDuration(resolutionMs)}\n\nClosing Remarks:\n${finalRemarks}\n\nLatest Comment:\n${latestComment}\n\nWe hope your issue has been resolved properly. Please take a moment to share your feedback so we can improve our IT support service.\n\nFeedback Link:\n${feedbackLink}\n\nThanks,\nIT Department Jaipur`,
-  };
-
-  if (!EMAIL_CLOSE_TEMPLATE_ID) {
-    const error = new Error("Missing EmailJS close template ID");
-    console.error("Close email failed:", error);
-    throw error;
-  }
-
-  try {
-    await emailjs.send(EMAIL_SERVICE_ID, EMAIL_CLOSE_TEMPLATE_ID, params, EMAIL_PUBLIC_KEY);
-    console.log("Close email sent", params);
-  } catch (error) {
-    console.error("Close email failed:", error);
-    throw error;
   }
 };
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -266,46 +226,6 @@ Our IT team will resolve your issue within the SLA timeline.
 Regards,
 Jaipuria Institute of Management IT Support Team
   `.trim());
-}
-
-function emailTicketClosed(ticket, assignee, closedBy="Admin") {
-  const duration = formatDuration(ticket.closedAt - ticket.createdAt);
-  const category = categoryLabel(ticket.category);
-  const feedbackUrl = getTicketFeedbackLink(ticket.id);
-  const body = `
-Dear ${ticket.name},
-
-Your IT support ticket has been closed.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-TICKET CLOSURE DETAILS
-━━━━━━━━━━━━━━━━━━━━━━━━━
-Ticket ID           : ${ticket.id}
-Category            : ${category}
-Priority            : ${ticket.priority}
-Final Status        : Closed
-Closed By           : ${closedBy}
-Closed Date/Time    : ${fmtDate(ticket.closedAt)}
-Resolution Duration : ${duration}
-Closing Remarks     : ${ticket.closingRemarks || "Issue resolved successfully."}
-━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Share Your IT Support Feedback:
-${feedbackUrl}
-
-Thank you for using Jaipuria Institute of Management IT Support Portal.
-
-Regards,
-Jaipuria Institute of Management IT Support Team
-  `.trim();
-
-  simulateEmail(ticket.email, `[${ticket.id}] Ticket Closed`, body);
-
-  if (assignee?.email) {
-    simulateEmail(assignee.email, `[${ticket.id}] Assigned Ticket Closed`, `${body}\n\nStaff copy: this ticket was assigned to you.`);
-  }
-
-  simulateEmail("admin@jaipuria.ac.in", `[${ticket.id}] Ticket Closed Notification`, `${body}\n\nAdmin copy: ticket closure has been recorded.`);
 }
 
 function emailTicketAssigned(ticket, newAssignee, previousAssignee, assignedBy="Admin", remark="") {
@@ -1074,9 +994,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
   const cat=CATEGORIES.find(c=>c.id===ticket.category);
 
   const updateTicket = async (changes, auditAction, remark = "") => {
-    let ticketClosedForEmail = null;
-    let oldStatusForEmail = null;
-    let closedByForEmail = "Admin";
+    let closedByStatusChange = false;
 
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
@@ -1090,11 +1008,8 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         updated.closingRemarks=remark||"Closed from ticket controls.";
         updated.resolutionTime=updated.closedAt-t.createdAt;
         updated.feedbackSubmitted=false;
-        closedByForEmail=actor;
-        oldStatusForEmail=oldStatus;
-        ticketClosedForEmail=updated;
-        console.log("CLOSE EMAIL ONLY:", updated);
-        emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===updated.assigneeId),actor);
+        closedByStatusChange=true;
+        console.log("Ticket closed without email:", updated);
       }
       if(changes.assigneeId&&Number(changes.assigneeId)!==Number(t.assigneeId)){
         emailTicketAssigned(updated,STAFF_BASE.find(s=>s.id===Number(changes.assigneeId)),STAFF_BASE.find(s=>s.id===t.assigneeId),actor,remark);
@@ -1102,21 +1017,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
       return updated;
     }));
 
-    if(ticketClosedForEmail){
-      const oldStatus = oldStatusForEmail;
-      const updated = ticketClosedForEmail;
-      if (oldStatus !== "Closed" && updated.status === "Closed" && updated.closedAt) {
-      try {
-        await sendTicketCloseEmail(updated, closedByForEmail, updated.closingRemarks, updated.comments || [], {name:updated.name,email:updated.email});
-        toast("Ticket closed and close email sent to user", "success");
-      } catch (error) {
-        toast("Ticket closed but email failed to send", "error");
-      }
-      }
-      return;
-    }
-
-    toast(auditAction,"success");
+    toast(closedByStatusChange ? "Ticket closed" : auditAction,"success");
   };
   const addComment=()=>{
     if(!comment.trim()) return;
@@ -1132,28 +1033,21 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
 
   const handleCloseTicket=async(remarks)=>{
     const closedAt=Date.now();
-    let closedTicketForEmail = null;
-    let closedByForEmail = staffName || (isAdmin ? "Admin" : "User");
+    const closedBy = staffName || (isAdmin ? "Admin" : "User");
+    let closedTicket = null;
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
       if(t.status==="Closed") return t;
       const updated={...t,status:"Closed",closedAt,closingRemarks:remarks,resolutionTime:closedAt-t.createdAt,updatedAt:closedAt,feedbackSubmitted:false,
-        timeline:[...(t.timeline||[]),{action:"Closed",remark:remarks,at:closedAt,by:closedByForEmail}]};
-      closedTicketForEmail = updated;
-      console.log("CLOSE EMAIL ONLY:", updated);
-      emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===t.assigneeId),closedByForEmail);
+        timeline:[...(t.timeline||[]),{action:"Closed",remark:remarks,at:closedAt,by:closedBy}]};
+      closedTicket = updated;
+      console.log("Ticket closed without email:", updated);
       return updated;
     }));
 
-    if(closedTicketForEmail){
-      try {
-        await sendTicketCloseEmail(closedTicketForEmail, closedByForEmail, remarks, closedTicketForEmail.comments || [], {name:closedTicketForEmail.name,email:closedTicketForEmail.email});
-        setShowClose(false);
-        toast("Ticket closed and close email sent to user", "success");
-      } catch (error) {
-        setShowClose(false);
-        toast("Ticket closed but email failed to send", "error");
-      }
+    setShowClose(false);
+    if(closedTicket){
+      toast("Ticket closed", "success");
     }
   };
   const canClose=(isAdmin||(isStaff&&ticket.assigneeId===staffId))&&ticket.status!=="Closed";
@@ -2958,6 +2852,7 @@ export default function App() {
     </>
   );
 }
+
 
 
 
