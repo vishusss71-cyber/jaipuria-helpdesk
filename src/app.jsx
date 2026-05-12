@@ -117,7 +117,32 @@ function cleanTicketRow(t) {
     "Closing Remarks": t.closingRemarks || "—",
   };
 }
-
+const STAFF_STATUS = {
+  Online:{label:"Online",color:"#10b981"},
+  Away:{label:"Away",color:"#f59e0b"},
+  Busy:{label:"Busy",color:"#ef4444"},
+  Offline:{label:"Offline",color:"#6b7280"},
+};
+function getStaffStatus(staffId,statuses={}) { return statuses[staffId] || "Online"; }
+function getStaffPhoto(staffId,profiles={}) { return profiles[staffId]?.photo || ""; }
+function getStaffInitials(staff) { return staff?.avatar || (staff?.name||"IT").split(" ").map(p=>p[0]).join("").slice(0,2).toUpperCase(); }
+function StaffAvatar({staff,profiles={},statuses={},size=44,showStatus=false}) {
+  const photo=getStaffPhoto(staff?.id,profiles);
+  const status=getStaffStatus(staff?.id,statuses);
+  const statusMeta=STAFF_STATUS[status] || STAFF_STATUS.Online;
+  return (
+    <div style={{position:"relative",width:size,height:size,flexShrink:0}}>
+      <div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",background:staff?.color+"33",border:`2px solid ${staff?.color || "#6366f1"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:Math.max(11,size/3.4),fontWeight:800,color:staff?.color || "#818cf8"}}>
+        {photo ? <img src={photo} alt={staff?.name || "Staff"} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : getStaffInitials(staff)}
+      </div>
+      {showStatus&&<span title={statusMeta.label} style={{position:"absolute",right:0,bottom:0,width:Math.max(10,size/4),height:Math.max(10,size/4),borderRadius:"50%",background:statusMeta.color,border:"2px solid #0a0a0f"}}/>}
+    </div>
+  );
+}
+function StatusDot({status}) {
+  const meta=STAFF_STATUS[status] || STAFF_STATUS.Online;
+  return <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,color:meta.color,fontWeight:700}}><span style={{width:8,height:8,borderRadius:"50%",background:meta.color,display:"inline-block"}}/>{meta.label}</span>;
+}
 // Password strength
 function pwdStrength(pwd) {
   let s=0;
@@ -830,7 +855,7 @@ function CloseTicketDialog({ticket,onClose,onConfirm}) {
 }
 
 // ── TICKET DETAIL ─────────────────────────────────────────────────────────
-function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staffId,staffName,toast}) {
+function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staffId,staffName,toast,staffProfiles={},staffStatuses={}}) {
   const ticket=tickets.find(t=>t.id===ticketId)||{};
   const [comment,setComment]=useState("");
   const [editStatus,setEditStatus]=useState(ticket.status);
@@ -948,7 +973,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
 
       {/* Assigned To */}
       {assignee&&<div className="glass" style={{padding:"16px 18px",display:"flex",gap:14,alignItems:"center"}}>
-        <div style={{width:44,height:44,borderRadius:"50%",background:assignee.color+"33",border:`2px solid ${assignee.color}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:assignee.color,flexShrink:0}}>{assignee.avatar}</div>
+        <StaffAvatar staff={assignee} profiles={staffProfiles} statuses={staffStatuses} size={44} showStatus />
         <div><div style={{fontSize:11,color:"rgba(226,232,240,0.4)"}}>ASSIGNED TO</div><div style={{fontSize:15,fontWeight:600,color:"#e2e8f0"}}>{assignee.name}</div><div style={{fontSize:12,color:"rgba(226,232,240,0.5)"}}>{assignee.role} · {assignee.email}</div></div>
       </div>}
 
@@ -1026,7 +1051,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
               key={s.id}
               value={s.id}
             >
-              {s.name} ({s.role})
+              {s.name} ({s.role}) - {getStaffStatus(s.id,staffStatuses)}
             </option>
           )}
         </select>
@@ -1848,7 +1873,7 @@ function TrackTicket({tickets,onView}) {
 }
 
 // ── STAFF PANEL ───────────────────────────────────────────────────────────
-function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions}) {
+function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions,staffProfiles={},staffStatuses={}}) {
   const staff=STAFF_BASE.find(s=>s.id===staffId);
   const myTickets=tickets.filter(t=>t.assigneeId===staffId);
   const active=myTickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
@@ -1856,7 +1881,7 @@ function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions})
   return (
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       <div className="glass" style={{padding:"24px",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
-        <div style={{width:56,height:56,borderRadius:"50%",background:staff.color+"33",border:`3px solid ${staff.color}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:staff.color}}>{staff.avatar}</div>
+        <StaffAvatar staff={staff} profiles={staffProfiles} statuses={staffStatuses} size={56} showStatus />
         <div style={{flex:1}}>
           <div style={{fontFamily:"Syne",fontSize:20,fontWeight:700,color:"#e2e8f0"}}>{staff.name}</div>
           <div style={{fontSize:13,color:"rgba(226,232,240,0.5)"}}>{staff.role} · {staff.email}</div>
@@ -1879,8 +1904,120 @@ function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions})
   );
 }
 
+// ── STAFF PROFILE / PERFORMANCE / CHAT ───────────────────────────────────
+function StaffProfileMenu({staff,profiles,statuses,onStatusChange,onOpen,onLogout}) {
+  const [open,setOpen]=useState(false);
+  const status=getStaffStatus(staff.id,statuses);
+  return (
+    <div style={{position:"relative"}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",borderRadius:14,padding:"7px 10px"}}>
+        <StaffAvatar staff={staff} profiles={profiles} statuses={statuses} size={38} showStatus />
+        <div style={{textAlign:"left",lineHeight:1.2}}>
+          <div style={{fontSize:13,fontWeight:800}}>{staff.name}</div>
+          <div style={{fontSize:11,color:"rgba(226,232,240,0.48)"}}>{staff.role}</div>
+        </div>
+      </button>
+      {open&&(
+        <div className="glass" style={{position:"absolute",right:0,top:"calc(100% + 10px)",width:250,padding:10,zIndex:50,boxShadow:"0 24px 70px rgba(0,0,0,0.38)"}}>
+          <div style={{display:"flex",gap:10,alignItems:"center",padding:"10px 10px 12px",borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:8}}>
+            <StaffAvatar staff={staff} profiles={profiles} statuses={statuses} size={46} showStatus />
+            <div><div style={{fontSize:14,fontWeight:800,color:"#fff"}}>{staff.name}</div><StatusDot status={status}/></div>
+          </div>
+          <div style={{padding:"6px 8px"}}>
+            <label style={{fontSize:11,color:"rgba(226,232,240,0.45)",display:"block",marginBottom:5}}>Live Status</label>
+            <select value={status} onChange={e=>onStatusChange(e.target.value)} style={{fontSize:12,padding:"8px 10px"}}>
+              {Object.keys(STAFF_STATUS).map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          {[['profile','My Profile'],['password','Change Password'],['performance','My Performance'],['chat','Staff Chat']].map(([id,label])=>(
+            <button key={id} onClick={()=>{setOpen(false);onOpen(id);}} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"rgba(226,232,240,0.78)",padding:"10px 12px",borderRadius:9,fontSize:13,fontWeight:600}}>{label}</button>
+          ))}
+          <button onClick={onLogout} style={{width:"100%",textAlign:"left",background:"rgba(239,68,68,0.12)",border:"1px solid rgba(239,68,68,0.22)",color:"#f87171",padding:"10px 12px",borderRadius:9,fontSize:13,fontWeight:700,marginTop:6}}>Logout</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StaffProfileModal({staff,profiles,statuses,onSave,toast}) {
+  const [photo,setPhoto]=useState(getStaffPhoto(staff.id,profiles));
+  const handleFile=e=>{
+    const file=e.target.files?.[0];
+    if(!file) return;
+    const reader=new FileReader();
+    reader.onload=()=>setPhoto(reader.result);
+    reader.readAsDataURL(file);
+  };
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:18}}>
+      <div style={{display:"flex",gap:16,alignItems:"center"}}>
+        <StaffAvatar staff={{...staff}} profiles={{[staff.id]:{photo}}} statuses={statuses} size={82} showStatus />
+        <div><h3 style={{fontFamily:"Syne",fontSize:20,color:"#fff"}}>{staff.name}</h3><div style={{fontSize:13,color:"rgba(226,232,240,0.5)"}}>{staff.role}</div><StatusDot status={getStaffStatus(staff.id,statuses)}/></div>
+      </div>
+      <div className="glass" style={{padding:16,display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        {[['Name',staff.name],['Email',staff.email],['Role',staff.role],['Permissions',staff.permissions.join(', ')]].map(([l,v])=><div key={l}><div style={{fontSize:11,color:"rgba(226,232,240,0.4)"}}>{l}</div><div style={{fontSize:13,color:"#e2e8f0",fontWeight:600,marginTop:3}}>{v}</div></div>)}
+      </div>
+      <div><label style={{fontSize:12,color:"rgba(226,232,240,0.65)",marginBottom:7,display:"block",fontWeight:700}}>Profile Photo</label><input type="file" accept="image/*" onChange={handleFile}/></div>
+      <button className="glow-btn" onClick={()=>{onSave(staff.id,{photo});toast('Profile updated','success');}}>Save Profile</button>
+    </div>
+  );
+}
+
+function StaffChangePasswordModal({staff,toast}) {
+  const [oldPwd,setOldPwd]=useState('');
+  const [newPwd,setNewPwd]=useState('');
+  const [confirm,setConfirm]=useState('');
+  const save=async()=>{
+    const passwords=DB.get('staff_passwords',{});
+    const current=passwords[staff.id];
+    if(!current){toast('No password set yet. Please complete first login.','error');return;}
+    if(!(await verifyPassword(oldPwd,current))){toast('Old password is incorrect','error');return;}
+    if(pwdStrength(newPwd)<3){toast('New password is too weak','error');return;}
+    if(newPwd!==confirm){toast('Passwords do not match','error');return;}
+    passwords[staff.id]=await hashPassword(newPwd);
+    DB.set('staff_passwords',passwords);
+    setOldPwd('');setNewPwd('');setConfirm('');
+    toast('Password changed successfully','success');
+  };
+  return <div style={{display:'flex',flexDirection:'column',gap:16}}>
+    <div><label style={{fontSize:12,color:'rgba(226,232,240,0.65)',marginBottom:6,display:'block'}}>Old Password</label><PwdInput value={oldPwd} onChange={setOldPwd} placeholder="Old password"/></div>
+    <div><label style={{fontSize:12,color:'rgba(226,232,240,0.65)',marginBottom:6,display:'block'}}>New Password</label><PwdInput value={newPwd} onChange={setNewPwd} placeholder="New password" showStrength/></div>
+    <div><label style={{fontSize:12,color:'rgba(226,232,240,0.65)',marginBottom:6,display:'block'}}>Confirm New Password</label><PwdInput value={confirm} onChange={setConfirm} placeholder="Confirm password"/></div>
+    <button className="glow-btn" onClick={save}>Change Password</button>
+  </div>;
+}
+
+function StaffPerformanceModal({staff,tickets}) {
+  const mine=tickets.filter(t=>t.assigneeId===staff.id);
+  const closed=mine.filter(t=>t.status==='Closed'||t.status==='Resolved');
+  const avg=closed.length?closed.reduce((s,t)=>s+((t.closedAt||Date.now())-t.createdAt),0)/closed.length:0;
+  const breached=mine.filter(t=>(t.closedAt||Date.now())-t.createdAt>SLA_HOURS[t.priority]*3600000).length;
+  const rate=mine.length?Math.round((closed.length/mine.length)*100):0;
+  const months=[...Array(6)].map((_,i)=>{const d=new Date();d.setMonth(d.getMonth()-5+i);return {key:`${d.getFullYear()}-${d.getMonth()}`,label:d.toLocaleString('en-IN',{month:'short'}),count:closed.filter(t=>{const c=new Date(t.closedAt||0);return c.getFullYear()===d.getFullYear()&&c.getMonth()===d.getMonth();}).length};});
+  const cats=CATEGORIES.map(c=>({label:c.label,color:c.color,count:mine.filter(t=>t.category===c.id).length})).filter(c=>c.count);
+  return <div style={{display:'flex',flexDirection:'column',gap:20}}>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:12}}>
+      {[["Assigned",mine.length,'#818cf8'],["Open",mine.filter(t=>t.status==='Open'||t.status==='Assigned').length,'#38bdf8'],["In Progress",mine.filter(t=>t.status==='In Progress').length,'#fbbf24'],["Closed",closed.length,'#34d399'],["Avg Time",avg?formatDuration(avg):'—','#f97316'],["SLA Breach",breached,'#f87171'],["Rate",`${rate}%`,'#10b981']].map(([l,v,c])=><div key={l} className="glass" style={{padding:16}}><div style={{fontSize:12,color:'rgba(226,232,240,0.45)'}}>{l}</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:c,marginTop:6}}>{v}</div></div>)}
+    </div>
+    <div className="glass" style={{padding:18}}><h3 style={{fontFamily:'Syne',fontSize:16,color:'#fff',marginBottom:14}}>Monthly Closed Tickets</h3>{months.map(m=><div key={m.key} style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}><div style={{width:42,fontSize:12,color:'rgba(226,232,240,0.55)'}}>{m.label}</div><div style={{flex:1,height:8,background:'rgba(255,255,255,0.07)',borderRadius:6}}><div style={{width:`${Math.min(100,m.count*20)}%`,height:'100%',background:'#6366f1',borderRadius:6}}/></div><div style={{width:24,color:'#e2e8f0',fontSize:12,fontWeight:700}}>{m.count}</div></div>)}</div>
+    <div className="glass" style={{padding:18}}><h3 style={{fontFamily:'Syne',fontSize:16,color:'#fff',marginBottom:14}}>Category-wise Tickets</h3>{cats.length?cats.map(c=><div key={c.label} style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}><div style={{width:150,fontSize:12,color:'rgba(226,232,240,0.68)'}}>{c.label}</div><div style={{flex:1,height:8,background:'rgba(255,255,255,0.07)',borderRadius:6}}><div style={{width:`${Math.min(100,c.count*18)}%`,height:'100%',background:c.color,borderRadius:6}}/></div><div style={{width:24,color:c.color,fontSize:12,fontWeight:800}}>{c.count}</div></div>):<div style={{color:'rgba(226,232,240,0.4)'}}>No category data yet</div>}</div>
+  </div>;
+}
+
+function StaffChatModal({staff,profiles,statuses,messages,setMessages}) {
+  const [selected,setSelected]=useState(STAFF_BASE.find(s=>s.id!==staff.id)?.id || STAFF_BASE[0].id);
+  const [text,setText]=useState('');
+  const peer=STAFF_BASE.find(s=>s.id===selected);
+  const thread=[staff.id,selected].sort((a,b)=>a-b).join('-');
+  const visible=messages.filter(m=>m.thread===thread);
+  const send=()=>{if(!text.trim())return;setMessages(ms=>[...ms,{id:genToken(),thread,from:staff.id,to:selected,text:text.trim(),at:Date.now(),read:false}]);setText('');};
+  return <div style={{display:'grid',gridTemplateColumns:'220px 1fr',gap:14,minHeight:430}}>
+    <div className="glass" style={{padding:10,overflowY:'auto'}}>{STAFF_BASE.filter(s=>s.id!==staff.id).map(s=>{const unread=messages.filter(m=>m.thread===[staff.id,s.id].sort((a,b)=>a-b).join('-')&&m.to===staff.id&&!m.read).length;return <button key={s.id} onClick={()=>setSelected(s.id)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,background:selected===s.id?'rgba(99,102,241,0.18)':'transparent',border:'none',borderRadius:10,padding:10,color:'#e2e8f0',textAlign:'left',marginBottom:6}}><StaffAvatar staff={s} profiles={profiles} statuses={statuses} size={34} showStatus/><div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>{s.name}</div><StatusDot status={getStaffStatus(s.id,statuses)}/></div>{unread>0&&<span style={{background:'#ef4444',color:'#fff',borderRadius:999,padding:'2px 7px',fontSize:11}}>{unread}</span>}</button>})}</div>
+    <div className="glass" style={{display:'flex',flexDirection:'column',overflow:'hidden'}}><div style={{padding:14,borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10,alignItems:'center'}}><StaffAvatar staff={peer} profiles={profiles} statuses={statuses} size={38} showStatus/><div><div style={{fontSize:14,fontWeight:800,color:'#fff'}}>{peer?.name}</div><StatusDot status={getStaffStatus(peer?.id,statuses)}/></div></div><div style={{flex:1,padding:14,overflowY:'auto'}}>{visible.map(m=>{const mine=m.from===staff.id;return <div key={m.id} style={{display:'flex',justifyContent:mine?'flex-end':'flex-start',marginBottom:10}}><div style={{maxWidth:'72%',background:mine?'rgba(99,102,241,0.28)':'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:14,padding:'9px 12px'}}><div style={{fontSize:12,color:'rgba(226,232,240,0.45)',marginBottom:3}}>{STAFF_BASE.find(s=>s.id===m.from)?.name} · {timeAgo(m.at)}</div><div style={{fontSize:13,color:'#e2e8f0',lineHeight:1.4}}>{m.text}</div></div></div>})}{visible.length===0&&<div style={{textAlign:'center',color:'rgba(226,232,240,0.35)',paddingTop:80}}>No messages yet</div>}</div><div style={{padding:12,borderTop:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10}}><input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Type a message..."/><button className="glow-btn" style={{padding:'10px 18px'}} onClick={send}>Send</button></div></div>
+  </div>;
+}
 // ── QUICK ASSIGN DIALOG ───────────────────────────────────────────────────
-function QuickAssignDialog({ticket,onClose,onSave}) {
+function QuickAssignDialog({ticket,onClose,onSave,statuses={}}) {
   const [assigneeId,setAssigneeId]=useState(ticket?.assigneeId || STAFF_BASE[0]?.id || "");
   const [remark,setRemark]=useState("");
   const currentAssignee=STAFF_BASE.find(s=>s.id===ticket?.assigneeId);
@@ -1903,7 +2040,7 @@ function QuickAssignDialog({ticket,onClose,onSave}) {
         <label style={{fontSize:12,color:"rgba(226,232,240,0.65)",marginBottom:6,display:"block",fontWeight:600}}>Assign To</label>
         <select value={assigneeId} onChange={e=>setAssigneeId(Number(e.target.value))}>
           {STAFF_BASE.map(staff=>(
-            <option key={staff.id} value={staff.id}>{staff.name} ({staff.role})</option>
+            <option key={staff.id} value={staff.id}>{staff.name} ({staff.role}) - {getStaffStatus(staff.id,statuses)}</option>
           ))}
         </select>
       </div>
@@ -1942,10 +2079,17 @@ export default function App() {
   const [quickAssignTicketId, setQuickAssignTicketId] = useState(null);
   const [formCat, setFormCat] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [staffProfiles, setStaffProfiles] = useState(() => DB.get("staff_profiles", {}));
+  const [staffStatuses, setStaffStatuses] = useState(() => DB.get("staff_statuses", {}));
+  const [staffMessages, setStaffMessages] = useState(() => DB.get("staff_messages", []));
+  const [staffPanel, setStaffPanel] = useState(null);
 
   useEffect(() => {
     DB.set("tickets", tickets);
   }, [tickets]);
+  useEffect(() => DB.set("staff_profiles", staffProfiles), [staffProfiles]);
+  useEffect(() => DB.set("staff_statuses", staffStatuses), [staffStatuses]);
+  useEffect(() => DB.set("staff_messages", staffMessages), [staffMessages]);
 
   const handleLogin = (sess) => {
     if (sess.type === "staff_firstlogin") {
@@ -2027,6 +2171,15 @@ export default function App() {
     setQuickAssignTicketId(null);
   };
 
+  const updateStaffProfile = (staffId, changes) => {
+    setStaffProfiles(p => ({...p, [staffId]: {...(p[staffId] || {}), ...changes}}));
+  };
+
+  const updateOwnStatus = (status) => {
+    if (!session?.staffId) return;
+    setStaffStatuses(s => ({...s, [session.staffId]: status}));
+  };
+
   const handleFirstLoginComplete = (hash) => {
     const staffPasswords = DB.get("staff_passwords", {});
     staffPasswords[session.staffId] = hash;
@@ -2077,8 +2230,14 @@ export default function App() {
       <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Staff Management</h2>
       {STAFF_BASE.map(staff => (
         <div key={staff.id} className="glass" style={{padding:"18px 20px"}}>
-          <div style={{fontSize:18,fontWeight:700,color:"#fff"}}>{staff.name}</div>
-          <div style={{fontSize:13,color:"rgba(226,232,240,0.5)",marginTop:4}}>{staff.email}</div>
+          <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:12}}>
+            <StaffAvatar staff={staff} profiles={staffProfiles} statuses={staffStatuses} size={46} showStatus />
+            <div>
+              <div style={{fontSize:18,fontWeight:700,color:"#fff"}}>{staff.name}</div>
+              <div style={{fontSize:13,color:"rgba(226,232,240,0.5)",marginTop:4}}>{staff.email}</div>
+              <StatusDot status={getStaffStatus(staff.id,staffStatuses)} />
+            </div>
+          </div>
           <button
             onClick={async () => {
               const newPwd = prompt("Enter new password");
@@ -2145,8 +2304,8 @@ export default function App() {
               return (
                 <div key={s.id} className="glass" style={{padding:"22px"}}>
                   <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:16}}>
-                    <div style={{width:50,height:50,borderRadius:"50%",background:s.color+"33",border:`3px solid ${s.color}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:s.color}}>{s.avatar}</div>
-                    <div><div style={{fontSize:15,fontWeight:700,color:"#e2e8f0"}}>{s.name}</div><div style={{fontSize:12,color:"rgba(226,232,240,0.5)"}}>{s.role}</div><div style={{fontSize:11,color:"rgba(226,232,240,0.35)"}}>{s.email}</div></div>
+                    <StaffAvatar staff={s} profiles={staffProfiles} statuses={staffStatuses} size={50} showStatus />
+                    <div><div style={{fontSize:15,fontWeight:700,color:"#e2e8f0"}}>{s.name}</div><div style={{fontSize:12,color:"rgba(226,232,240,0.5)"}}>{s.role}</div><div style={{fontSize:11,color:"rgba(226,232,240,0.35)"}}>{s.email}</div><StatusDot status={getStaffStatus(s.id,staffStatuses)} /></div>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
                     {[["Assigned",asgn,"#818cf8"],["Active",active,"#fbbf24"],["Resolved",res,"#34d399"]].map(([l,v,c]) => (
@@ -2164,7 +2323,7 @@ export default function App() {
     }
 
     if (isStaff && (page === "staff-dash" || page === "assigned")) {
-      return <StaffPanel staffId={session.staffId} tickets={tickets} setTickets={setTickets} toast={toast} onViewTicket={setViewTicketId} permissions={session.permissions} />;
+      return <StaffPanel staffId={session.staffId} tickets={tickets} setTickets={setTickets} toast={toast} onViewTicket={setViewTicketId} permissions={session.permissions} staffProfiles={staffProfiles} staffStatuses={staffStatuses} />;
     }
 
     if (page === "home") return <CategoryGrid onSelect={cat => setFormCat(cat)} />;
@@ -2199,12 +2358,23 @@ export default function App() {
           <div style={{padding:"14px 24px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(10,10,20,0.9)",backdropFilter:"blur(20px)",position:"sticky",top:0,zIndex:10}}>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <button onClick={() => setMobileOpen(o => !o)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",width:36,height:36,borderRadius:8,fontSize:18}}>☰</button>
-              <span style={{fontSize:13,color:"rgba(226,232,240,0.4)"}}>{isAdmin ? "Admin Portal" : isStaff ? `${session.name} (${session.role})` : session.email}</span>
+              {isStaff ? (
+                <StaffProfileMenu
+                  staff={STAFF_BASE.find(s=>s.id===session.staffId)}
+                  profiles={staffProfiles}
+                  statuses={staffStatuses}
+                  onStatusChange={updateOwnStatus}
+                  onOpen={setStaffPanel}
+                  onLogout={logoutUser}
+                />
+              ) : (
+                <span style={{fontSize:13,color:"rgba(226,232,240,0.4)"}}>{isAdmin ? "Admin Portal" : session.email}</span>
+              )}
             </div>
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
               <div className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#10b981"}} />
               <span style={{fontSize:12,color:"rgba(226,232,240,0.4)"}}>Live</span>
-              <button onClick={logoutUser} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",padding:"6px 14px",borderRadius:8,fontSize:13}}>Logout</button>
+              {!isStaff&&<button onClick={logoutUser} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",padding:"6px 14px",borderRadius:8,fontSize:13}}>Logout</button>}
             </div>
           </div>
           <div style={{padding:"24px 28px",flex:1,overflowY:"auto"}}>{renderPage()}</div>
@@ -2223,6 +2393,7 @@ export default function App() {
             ticket={quickAssignTicket}
             onClose={() => setQuickAssignTicketId(null)}
             onSave={handleQuickAssign}
+            statuses={staffStatuses}
           />
         </Modal>
       )}
@@ -2238,7 +2409,30 @@ export default function App() {
             staffId={session.staffId}
             staffName={session.name}
             toast={toast}
+            staffProfiles={staffProfiles}
+            staffStatuses={staffStatuses}
           />
+        </Modal>
+      )}
+
+      {isStaff&&staffPanel==="profile"&&(
+        <Modal title="My Profile" onClose={()=>setStaffPanel(null)}>
+          <StaffProfileModal staff={STAFF_BASE.find(s=>s.id===session.staffId)} profiles={staffProfiles} statuses={staffStatuses} onSave={updateStaffProfile} toast={toast}/>
+        </Modal>
+      )}
+      {isStaff&&staffPanel==="password"&&(
+        <Modal title="Change Password" onClose={()=>setStaffPanel(null)}>
+          <StaffChangePasswordModal staff={STAFF_BASE.find(s=>s.id===session.staffId)} toast={toast}/>
+        </Modal>
+      )}
+      {isStaff&&staffPanel==="performance"&&(
+        <Modal title="My Performance" onClose={()=>setStaffPanel(null)} wide>
+          <StaffPerformanceModal staff={STAFF_BASE.find(s=>s.id===session.staffId)} tickets={tickets}/>
+        </Modal>
+      )}
+      {isStaff&&staffPanel==="chat"&&(
+        <Modal title="Staff Chat" onClose={()=>setStaffPanel(null)} wide>
+          <StaffChatModal staff={STAFF_BASE.find(s=>s.id===session.staffId)} profiles={staffProfiles} statuses={staffStatuses} messages={staffMessages} setMessages={setStaffMessages}/>
         </Modal>
       )}
 
@@ -2246,6 +2440,12 @@ export default function App() {
     </>
   );
 }
+
+
+
+
+
+
 
 
 
