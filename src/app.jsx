@@ -3,10 +3,14 @@ import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import emailjs from '@emailjs/browser';
-const EMAILJS_SERVICE_ID = 'service_ctyqqbc';
-const EMAILJS_TEMPLATE_ID = 'template_vuv4jtd';
-const EMAILJS_CLOSE_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_CLOSE_TEMPLATE_ID || 'template_ticket_closed';
-const EMAILJS_PUBLIC_KEY = 'N9OlDxPyO0uf_IlxJ';
+const EMAIL_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || 'service_ctyqqbc';
+const EMAIL_CREATE_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_CREATE_TEMPLATE_ID || 'template_vuv4jtd';
+const EMAIL_CLOSE_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_CLOSE_TEMPLATE_ID || 'template_ticket_closed';
+const EMAIL_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || 'N9OlDxPyO0uf_IlxJ';
+const EMAILJS_SERVICE_ID = EMAIL_SERVICE_ID;
+const EMAILJS_TEMPLATE_ID = EMAIL_CREATE_TEMPLATE_ID;
+const EMAILJS_CLOSE_TEMPLATE_ID = EMAIL_CLOSE_TEMPLATE_ID;
+const EMAILJS_PUBLIC_KEY = EMAIL_PUBLIC_KEY;
 function getTicketFeedbackLink(ticketId) {
   return typeof window !== "undefined"
     ? `${window.location.origin}/?feedbackTicket=${encodeURIComponent(ticketId)}`
@@ -31,7 +35,7 @@ const sendTicketEmail = async (ticket, user) => {
     console.log("Email error:", error);
   }
 };
-const sendTicketCloseEmail = async (ticket, user = {}, closedBy = "Admin", closingRemarks = "", comments = []) => {
+const sendTicketCloseEmail = async (ticket, closedBy = "Admin", closingRemarks = "", comments = [], user = {}) => {
   const feedbackLink = getTicketFeedbackLink(ticket.id);
   const latestComment = Array.isArray(comments) && comments.length
     ? (comments[comments.length - 1]?.text || comments[comments.length - 1]?.remark || "No additional comments.")
@@ -55,11 +59,17 @@ const sendTicketCloseEmail = async (ticket, user = {}, closedBy = "Admin", closi
     message: `Hello ${ticket.name || user?.name || "User"},\n\nYour IT support ticket has been successfully closed.\n\nTicket ID: ${ticket.id}\nIssue: ${issue}\nStatus: Closed\nClosed By: ${closedBy}\nClosed At: ${fmtDate(ticket.closedAt || Date.now())}\nResolution Time: ${formatDuration(resolutionMs)}\n\nClosing Remarks:\n${finalRemarks}\n\nLatest Comment:\n${latestComment}\n\nWe hope your issue has been resolved properly. Please take a moment to share your feedback so we can improve our IT support service.\n\nFeedback Link:\n${feedbackLink}\n\nThanks,\nIT Department Jaipur`,
   };
 
+  if (!EMAIL_CLOSE_TEMPLATE_ID) {
+    const error = new Error("Missing EmailJS close template ID");
+    console.error("Close email failed:", error);
+    throw error;
+  }
+
   try {
-    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_CLOSE_TEMPLATE_ID, params, EMAILJS_PUBLIC_KEY);
+    await emailjs.send(EMAIL_SERVICE_ID, EMAIL_CLOSE_TEMPLATE_ID, params, EMAIL_PUBLIC_KEY);
     console.log("Close email sent", params);
   } catch (error) {
-    console.error("EmailJS close email error:", error);
+    console.error("Close email failed:", error);
     throw error;
   }
 };
@@ -120,6 +130,10 @@ const DB = {
   set: (k, v) => { try { if (hasStorage()) localStorage.setItem("helpdesk_"+k, JSON.stringify(v)); } catch {} },
 };
 
+function getActiveStaffForAssignment() {
+  const statuses = DB.get("staff_statuses", {});
+  return STAFF_BASE.find(staff => (statuses[staff.id] || "Online") !== "Offline") || STAFF_BASE[0];
+}
 // ── UTILS ─────────────────────────────────────────────────────────────────
 function genId() { return "TKT-"+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,5).toUpperCase(); }
 function genOTP() { return Math.floor(100000+Math.random()*900000).toString(); }
@@ -1086,10 +1100,10 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
 
     if(ticketClosedForEmail){
       try {
-        await sendTicketCloseEmail(ticketClosedForEmail, {name:ticketClosedForEmail.name,email:ticketClosedForEmail.email}, closedByForEmail, ticketClosedForEmail.closingRemarks, ticketClosedForEmail.comments || []);
+        await sendTicketCloseEmail(ticketClosedForEmail, closedByForEmail, ticketClosedForEmail.closingRemarks, ticketClosedForEmail.comments || [], {name:ticketClosedForEmail.name,email:ticketClosedForEmail.email});
         toast("Ticket closed and close email sent to user", "success");
       } catch (error) {
-        toast("Ticket closed but email failed to send", "error");
+        toast(`Ticket closed but email failed to send: ${error?.text || error?.message || "Unknown EmailJS error"}`, "error");
       }
       return;
     }
@@ -1123,12 +1137,12 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
 
     if(closedTicketForEmail){
       try {
-        await sendTicketCloseEmail(closedTicketForEmail, {name:closedTicketForEmail.name,email:closedTicketForEmail.email}, closedByForEmail, remarks, closedTicketForEmail.comments || []);
+        await sendTicketCloseEmail(closedTicketForEmail, closedByForEmail, remarks, closedTicketForEmail.comments || [], {name:closedTicketForEmail.name,email:closedTicketForEmail.email});
         setShowClose(false);
         toast("Ticket closed and close email sent to user", "success");
       } catch (error) {
         setShowClose(false);
-        toast("Ticket closed but email failed to send", "error");
+        toast(`Ticket closed but email failed to send: ${error?.text || error?.message || "Unknown EmailJS error"}`, "error");
       }
     }
   };
@@ -1372,11 +1386,13 @@ function TicketForm({userEmail,initialCategory,onSubmit,onCancel,toast}) {
     if(!/\S+@\S+\.\S+/.test(form.email)){toast("Invalid email format","error");return;}
     setLoading(true);
     await new Promise(r=>setTimeout(r,700));
-    const assignee=STAFF_BASE[Math.floor(Math.random()*STAFF_BASE.length)];
+    const assignee=getActiveStaffForAssignment();
     const ticket={...form,id:genId(),status:"Assigned",assigneeId:assignee.id,createdAt:Date.now(),updatedAt:Date.now(),comments:[],
       timeline:[{action:"Created",at:Date.now(),by:"User"},{action:`Assigned to ${assignee.name}`,at:Date.now(),by:"System (Auto)"}]};
+    console.log("Created ticket:", ticket);
+    console.log("Assigned staff:", assignee);
     emailTicketCreated(ticket,assignee);
-    onSubmit(ticket);
+    await Promise.resolve(onSubmit(ticket));
     setLoading(false);
     toast(`Ticket created! Confirmation sent to ${ticket.email} 📧`,"email");
   };
@@ -2554,24 +2570,42 @@ export default function App() {
   };
 
   const handleNewTicket = async (ticket) => {
-    setTickets(ts => [ticket, ...ts]);
+    const assignee = STAFF_BASE.find(s => s.id === Number(ticket.assigneeId)) || getActiveStaffForAssignment();
+    const now = Date.now();
+    const existingTimeline = Array.isArray(ticket.timeline) ? ticket.timeline : [];
+    const hasCreated = existingTimeline.some(ev => String(ev.action || "").startsWith("Created"));
+    const hasAssigned = existingTimeline.some(ev => String(ev.action || "").includes("Assigned to"));
+    const newTicket = {
+      ...ticket,
+      id: ticket.id || genId(),
+      status: "Assigned",
+      assigneeId: assignee.id,
+      createdAt: ticket.createdAt || now,
+      updatedAt: now,
+      comments: Array.isArray(ticket.comments) ? ticket.comments : [],
+      timeline: [
+        ...(hasCreated ? [] : [{action:"Created",at:now,by:"User"}]),
+        ...existingTimeline,
+        ...(hasAssigned ? [] : [{action:`Assigned to ${assignee.name}`,at:now,by:"System (Auto)"}]),
+      ],
+    };
+
+    console.log("Created ticket:", newTicket);
+    console.log("Assigned staff:", assignee);
+    setTickets(ts => [newTicket, ...ts]);
     setFormCat(null);
 
-    const assignee = STAFF_BASE.find(s => s.id === ticket.assigneeId);
-    await sendTicketEmail(ticket, {
-      name: ticket.name,
-      email: ticket.email,
+    await sendTicketEmail(newTicket, {
+      name: newTicket.name,
+      email: newTicket.email,
     });
 
-    if (assignee) {
-      simulateEmail(
-        assignee.email,
-        `[${ticket.id}] New Ticket Assigned`,
-        `${ticket.name} submitted a ${CATEGORIES.find(c => c.id === ticket.category)?.label || ticket.category} ticket.\n\n${ticket.description}`
-      );
-    }
+    simulateEmail(
+      assignee.email,
+      `[${newTicket.id}] New Ticket Assigned`,
+      `${newTicket.name} submitted a ${CATEGORIES.find(c => c.id === newTicket.category)?.label || newTicket.category} ticket.\n\n${newTicket.description}`
+    );
   };
-
 
   const handleFeedbackSubmit = (entry) => {
     setFeedback(fs => [entry, ...fs]);
@@ -2910,6 +2944,11 @@ export default function App() {
     </>
   );
 }
+
+
+
+
+
 
 
 
