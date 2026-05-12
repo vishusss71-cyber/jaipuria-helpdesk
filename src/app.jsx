@@ -4,7 +4,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import emailjs from '@emailjs/browser';
 const EMAIL_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || 'service_ctyqqbc';
-const EMAIL_CREATE_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_CREATE_TEMPLATE_ID || 'template_vuv4jtd';
+const EMAIL_CREATE_TEMPLATE_ID = "template_a30g4md";
 const EMAIL_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || 'N9OlDxPyO0uf_IlxJ';
 const EMAILJS_SERVICE_ID = EMAIL_SERVICE_ID;
 const EMAILJS_TEMPLATE_ID = EMAIL_CREATE_TEMPLATE_ID;
@@ -2852,6 +2852,7 @@ export default function App() {
     </>
   );
 }
+
 
 
 
