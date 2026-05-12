@@ -415,6 +415,125 @@ function downloadPDF(data, filename, options = {}) {
 
   addPdfFooter(doc);
   doc.save(filename);
+}
+
+function downloadGenericReportPDF(title, rows, filename, options = {}) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const generatedAt = new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  const dateRange = `${options.dateFrom || "—"} to ${options.dateTo || "—"}`;
+  const headers = rows.length ? Object.keys(rows[0]) : ["Report"];
+
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, pageWidth, 32, "F");
+  doc.setFillColor(99, 102, 241);
+  doc.circle(18, 16, 7, "F");
+  doc.setTextColor(255,255,255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("Jaipuria Institute of Management", 30, 13);
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(title, 30, 21);
+  doc.setFontSize(8);
+  doc.text(`Date range: ${dateRange}`, pageWidth - 82, 12);
+  doc.text(`Generated: ${generatedAt}`, pageWidth - 82, 19);
+
+  autoTable(doc, {
+    startY: 42,
+    head: [headers],
+    body: rows.map(row => headers.map(h => row[h] ?? "—")),
+    theme: "grid",
+    margin: { left: 12, right: 12, bottom: 16 },
+    styles: { font: "helvetica", fontSize: 8, cellPadding: 2, overflow: "linebreak", valign: "top", lineColor: [226,232,240], lineWidth: 0.1, textColor: [30,41,59] },
+    headStyles: { fillColor: [79,70,229], textColor: 255, fontStyle: "bold", halign: "center" },
+    alternateRowStyles: { fillColor: [248,250,252] },
+  });
+  addPdfFooter(doc);
+  doc.save(filename);
+}
+
+function downloadStaffPerformancePDF(staffRows, filename, options = {}) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const generatedAt = new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  const dateRange = `${options.dateFrom || "—"} to ${options.dateTo || "—"}`;
+  const totalAssigned = staffRows.reduce((sum, s) => sum + s.assigned, 0);
+  const totalResolved = staffRows.reduce((sum, s) => sum + s.resolved, 0);
+  const top = [...staffRows].sort((a,b) => b.resolutionRate - a.resolutionRate || b.resolved - a.resolved)[0];
+
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, pageWidth, 36, "F");
+  doc.setFillColor(139, 92, 246);
+  doc.circle(18, 18, 8, "F");
+  doc.setTextColor(255,255,255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(17);
+  doc.text("Jaipuria Institute of Management", 31, 14);
+  doc.setFontSize(11);
+  doc.text("IT Staff Performance Report", 31, 23);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text(`Date range: ${dateRange}`, pageWidth - 82, 13);
+  doc.text(`Generated: ${generatedAt}`, pageWidth - 82, 21);
+
+  drawSummaryCards(doc, [
+    { label: "Total Staff", value: staffRows.length, rgb: [99,102,241] },
+    { label: "Assigned Tickets", value: totalAssigned, rgb: [14,165,233] },
+    { label: "Resolved Tickets", value: totalResolved, rgb: [16,185,129] },
+    { label: "Pending Tickets", value: Math.max(0,totalAssigned-totalResolved), rgb: [245,158,11] },
+    { label: "Top Performer", value: top?.name?.split(" ")[0] || "—", rgb: [139,92,246] },
+  ], 44);
+
+  if (top) {
+    doc.setFillColor(240, 253, 244);
+    doc.setDrawColor(34, 197, 94);
+    doc.roundedRect(12, 70, pageWidth - 24, 22, 3, 3, "FD");
+    doc.setTextColor(22, 101, 52);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(`Top Performer: ${top.name}`, 18, 79);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.text(`${top.resolved} resolved of ${top.assigned} assigned tickets · ${top.resolutionRate}% resolution rate`, 18, 86);
+  }
+
+  autoTable(doc, {
+    startY: 102,
+    head: [["Staff Name", "Role", "Email", "Assigned Tickets", "Resolved Tickets", "Pending Tickets", "Resolution Rate", "Performance"]],
+    body: staffRows.map(s => [s.name, s.role, s.email, s.assigned, s.resolved, s.pending, `${s.resolutionRate}%`, ""]),
+    theme: "grid",
+    margin: { left: 12, right: 12, bottom: 16 },
+    styles: { font: "helvetica", fontSize: 8, cellPadding: 2, overflow: "linebreak", valign: "middle", lineColor: [226,232,240], lineWidth: 0.1, textColor: [30,41,59] },
+    headStyles: { fillColor: [79,70,229], textColor: 255, fontStyle: "bold", halign: "center" },
+    alternateRowStyles: { fillColor: [248,250,252] },
+    columnStyles: { 0:{cellWidth:34,fontStyle:"bold"}, 1:{cellWidth:27}, 2:{cellWidth:48}, 3:{cellWidth:24,halign:"center"}, 4:{cellWidth:24,halign:"center"}, 5:{cellWidth:24,halign:"center"}, 6:{cellWidth:24,halign:"center",fontStyle:"bold"}, 7:{cellWidth:70} },
+    didParseCell: data => {
+      if (data.section === "body" && data.column.index === 6) {
+        const rate = parseFloat(String(data.cell.raw));
+        const color = rate >= 75 ? "#16a34a" : rate >= 40 ? "#ca8a04" : "#dc2626";
+        const rgb = hexToRgb(color);
+        data.cell.styles.textColor = [rgb.r, rgb.g, rgb.b];
+      }
+    },
+    didDrawCell: data => {
+      if (data.section === "body" && data.column.index === 7) {
+        const s = staffRows[data.row.index];
+        const color = s.resolutionRate >= 75 ? "#16a34a" : s.resolutionRate >= 40 ? "#ca8a04" : "#dc2626";
+        const rgb = hexToRgb(color);
+        const x = data.cell.x + 3;
+        const y = data.cell.y + data.cell.height / 2 - 2;
+        const w = data.cell.width - 8;
+        doc.setFillColor(226,232,240);
+        doc.roundedRect(x, y, w, 4, 1.5, 1.5, "F");
+        doc.setFillColor(rgb.r, rgb.g, rgb.b);
+        doc.roundedRect(x, y, Math.max(1, w * (s.resolutionRate / 100)), 4, 1.5, 1.5, "F");
+      }
+    },
+  });
+
+  addPdfFooter(doc);
+  doc.save(filename);
 }// ── GLOBAL CSS ─────────────────────────────────────────────────────────────
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -1102,7 +1221,13 @@ function ExportPanel({tickets,toast}) {
     return true;
   });
 
+  const requireDateRange=()=>{
+    if(!dateFrom||!dateTo){toast("Please select date range","error");return false;}
+    return true;
+  };
+
   const doExport=async(type)=>{
+    if(!requireDateRange()) return;
     setLoading(type);
     await new Promise(r=>setTimeout(r,900));
     const now=new Date().toISOString().slice(0,10);
@@ -1122,16 +1247,34 @@ function ExportPanel({tickets,toast}) {
     setLoading("");
   };
 
+  const exportSlaReport=()=>{
+    if(!requireDateRange()) return;
+    const now=new Date().toISOString().slice(0,10);
+    if(format==="excel") downloadExcel(slaData, `sla_report_${now}.xlsx`);
+    if(format==="pdf") downloadGenericReportPDF("IT Helpdesk SLA Report", slaData, `sla_report_${now}.pdf`, {dateFrom,dateTo});
+    toast("SLA report exported ✅","success");
+  };
+
+  const exportStaffReport=()=>{
+    if(!requireDateRange()) return;
+    const now=new Date().toISOString().slice(0,10);
+    if(format==="excel") downloadExcel(staffData, `staff_performance_${now}.xlsx`);
+    if(format==="pdf") downloadStaffPerformancePDF(staffData, `staff_performance_${now}.pdf`, {dateFrom,dateTo});
+    toast("Staff performance exported ✅","success");
+  };
+
   const slaData=filtered.map(t=>({
     id:t.id,priority:t.priority,slaHours:SLA_HOURS[t.priority],
     status:t.status,elapsed:t.closedAt?formatDuration(t.closedAt-t.createdAt):"Active",met:t.closedAt?(t.closedAt-t.createdAt<SLA_HOURS[t.priority]*3600000?"✅ Met":"❌ Breached"):"—"
   }));
 
-  const staffData=STAFF_BASE.map(s=>({
-    name:s.name,role:s.role,email:s.email,
-    assigned:filtered.filter(t=>t.assigneeId===s.id).length,
-    resolved:filtered.filter(t=>t.assigneeId===s.id&&(t.status==="Resolved"||t.status==="Closed")).length,
-  }));
+  const staffData=STAFF_BASE.map(s=>{
+    const assigned=filtered.filter(t=>t.assigneeId===s.id).length;
+    const resolved=filtered.filter(t=>t.assigneeId===s.id&&(t.status==="Resolved"||t.status==="Closed")).length;
+    const pending=Math.max(0,assigned-resolved);
+    const resolutionRate=assigned?Math.round((resolved/assigned)*100):0;
+    return {name:s.name,role:s.role,email:s.email,assigned,resolved,pending,resolutionRate};
+  });
 
   const exports=[
     {id:"all",label:"All Tickets",icon:"🎫",color:"#6366f1",desc:`${filtered.length} tickets`},
@@ -1165,27 +1308,9 @@ function ExportPanel({tickets,toast}) {
             <div style={{fontSize:14,fontWeight:600,color:"#e2e8f0",marginBottom:4}}>{ex.label}</div>
             <div style={{fontSize:12,color:"rgba(226,232,240,0.4)",marginBottom:14}}>{ex.desc}</div>
             <button onClick={()=>{
-              if(ex.id==="sla") {
-  downloadExcel(
-    slaData,
-    `sla_report_${new Date().toISOString().slice(0,10)}.xlsx`
-  );
-
-  toast("SLA report exported ✅","success");
-  return;
-}
-
-if(ex.id==="staff") {
-  downloadExcel(
-    staffData,
-    `staff_performance_${new Date().toISOString().slice(0,10)}.xlsx`
-  );
-
-  toast("Staff performance exported ✅","success");
-  return;
-}
-
-doExport(ex.id);
+              if(ex.id==="sla") { exportSlaReport(); return; }
+              if(ex.id==="staff") { exportStaffReport(); return; }
+              doExport(ex.id);
             }} disabled={loading===ex.id} style={{
               background:`${ex.color}20`,border:`1px solid ${ex.color}40`,color:ex.color,
               padding:"9px 18px",borderRadius:8,fontSize:13,fontWeight:600,width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,
@@ -1560,88 +1685,108 @@ function Landing({onLogin}) {
   };
 
   if(showForgot) return (
-    <div style={{minHeight:"100vh",background:"radial-gradient(circle at 18% 18%,rgba(99,102,241,0.22),transparent 32%),radial-gradient(circle at 86% 30%,rgba(20,184,166,0.14),transparent 30%),#0a0a0f",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#111436 0%,#1d1450 48%,#071827 100%)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <ForgotPassword onBack={()=>setShowForgot(false)} toast={toast}/>
       <Toast toasts={toasts} remove={remove}/>
     </div>
   );
 
   const modeCopy = {
-    user:{title:"User Access",subtitle:"Raise and track IT support tickets with your institutional email.",placeholder:"name@jaipuria.ac.in"},
-    staff:{title:"IT Staff Access",subtitle:"Manage assigned tickets, updates, SLA progress, and closures.",placeholder:"staff@jaipuria.ac.in"},
-    admin:{title:"Admin Portal",subtitle:"Full dashboard access for tickets, analytics, exports, and staff management.",placeholder:"Admin or admin@jaipuria.ac.in"},
+    user:{title:"User Login",emailLabel:"Email",placeholder:"name@jaipuria.ac.in",needsPassword:false},
+    staff:{title:"Staff Login",emailLabel:"Email",placeholder:"staff@jaipuria.ac.in",needsPassword:true},
+    admin:{title:"Admin Login",emailLabel:"Username / Email",placeholder:"Admin or admin@jaipuria.ac.in",needsPassword:true},
   }[mode];
 
   return (
-    <div style={{minHeight:"100vh",background:"radial-gradient(circle at 16% 20%,rgba(99,102,241,0.24),transparent 34%),radial-gradient(circle at 84% 28%,rgba(16,185,129,0.16),transparent 30%),radial-gradient(circle at 50% 100%,rgba(14,165,233,0.10),transparent 38%),#0a0a0f",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}}>
-      <div style={{width:"100%",maxWidth:980,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,360px),1fr))",gap:28,alignItems:"center"}} className="fade-up">
-        <div style={{padding:"10px 4px"}}>
-          <div style={{display:"inline-flex",alignItems:"center",gap:12,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,padding:"10px 14px",marginBottom:22}}>
-            <div style={{width:42,height:42,borderRadius:12,background:"linear-gradient(135deg,#6366f1,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>🛡️</div>
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#111436 0%,#211552 52%,#071827 100%)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px",position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 15% 20%,rgba(99,102,241,0.28),transparent 32%),radial-gradient(circle at 85% 18%,rgba(14,165,233,0.20),transparent 30%),radial-gradient(circle at 72% 86%,rgba(16,185,129,0.16),transparent 28%)",pointerEvents:"none"}} />
+      <div className="fade-up" style={{width:"100%",maxWidth:1040,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,360px),1fr))",background:"rgba(8,12,34,0.82)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:26,boxShadow:"0 34px 110px rgba(0,0,0,0.42)",overflow:"hidden",position:"relative",backdropFilter:"blur(22px)"}}>
+        <form onSubmit={e=>{e.preventDefault();handleLogin();}} style={{padding:"clamp(26px,5vw,54px)",display:"flex",flexDirection:"column",justifyContent:"center",minHeight:560}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:32}}>
+            <div style={{width:44,height:44,borderRadius:14,background:"linear-gradient(135deg,#6366f1,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>J</div>
             <div>
-              <div style={{fontFamily:"Syne",fontWeight:800,fontSize:13,color:"#fff",letterSpacing:0}}>JAIPURIA</div>
-              <div style={{fontSize:11,color:"rgba(226,232,240,0.52)"}}>Institute IT Helpdesk</div>
+              <div style={{fontFamily:"Syne",fontWeight:800,fontSize:15,color:"#fff",letterSpacing:0}}>JAIPURIA</div>
+              <div style={{fontSize:11,color:"rgba(226,232,240,0.54)"}}>IT Helpdesk Portal</div>
             </div>
           </div>
-          <h1 style={{fontFamily:"Syne",fontSize:"clamp(30px,5vw,54px)",lineHeight:1.02,fontWeight:800,color:"#f8fafc",letterSpacing:0,marginBottom:16}}>IT Support Portal</h1>
-          <p style={{fontSize:16,lineHeight:1.7,color:"rgba(226,232,240,0.66)",maxWidth:560,marginBottom:24}}>Fast ticket logging, transparent assignment, SLA tracking, analytics, and export-ready reports for Jaipuria Institute of Management.</p>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,maxWidth:560}}>
-            {[["24/7","Support Desk"],["SLA","Live Tracking"],["PDF/XLSX","Reports"],["Secure","Role Access"]].map(([value,label])=>(
-              <div key={label} className="glass" style={{padding:"16px 14px"}}>
-                <div style={{fontFamily:"Syne",fontWeight:800,fontSize:22,color:"#818cf8"}}>{value}</div>
-                <div style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginTop:3}}>{label}</div>
+
+          <div style={{marginBottom:24}}>
+            <div style={{fontFamily:"Syne",fontWeight:800,fontSize:"clamp(30px,4vw,44px)",lineHeight:1,color:"#f8fafc",letterSpacing:0}}>WELCOME BACK</div>
+            <div style={{fontSize:16,color:"rgba(226,232,240,0.62)",marginTop:10}}>Login With Jaipuria Helpdesk</div>
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.09)",borderRadius:14,padding:5,marginBottom:22,gap:4}}>
+            {[["user","User"],["staff","Staff"],["admin","Admin"]].map(([m,l])=>(
+              <button type="button" key={m} onClick={()=>resetMode(m)} style={{padding:"10px 8px",borderRadius:10,border:"none",fontSize:13,fontWeight:700,background:mode===m?"linear-gradient(135deg,#6366f1,#14b8a6)":"transparent",color:mode===m?"#fff":"rgba(226,232,240,0.58)",boxShadow:mode===m?"0 10px 28px rgba(99,102,241,0.25)":"none"}}>{l}</button>
+            ))}
+          </div>
+
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div>
+              <label style={{fontSize:12,color:"rgba(226,232,240,0.68)",marginBottom:7,display:"block",fontWeight:700}}>{modeCopy.emailLabel}</label>
+              {mode==="admin" ? (
+                <input placeholder={modeCopy.placeholder} value={adminUser} autoComplete="username" onChange={e=>setAdminUser(e.target.value)} />
+              ) : (
+                <input type="email" name="login-email" autoComplete="username" placeholder={modeCopy.placeholder} value={email} onChange={e=>setEmail(e.target.value)} />
+              )}
+              {mode!=="admin"&&<div style={{fontSize:11,color:"rgba(226,232,240,0.36)",marginTop:7}}>Only @jaipuria.ac.in email IDs are allowed.</div>}
+            </div>
+
+            {modeCopy.needsPassword&&(
+              <div>
+                <label style={{fontSize:12,color:"rgba(226,232,240,0.68)",marginBottom:7,display:"block",fontWeight:700}}>Password</label>
+                <PwdInput value={pwd} onChange={setPwd} autoComplete="current-password" placeholder="Enter password" />
               </div>
-            ))}
-          </div>
-        </div>
-
-        <form onSubmit={e=>{e.preventDefault();handleLogin();}} className="glass" style={{padding:"28px 24px",boxShadow:"0 24px 80px rgba(0,0,0,0.35)",borderRadius:20}}>
-          <div style={{marginBottom:20}}>
-            <div style={{fontSize:12,color:"#818cf8",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Welcome back</div>
-            <h2 style={{fontFamily:"Syne",fontSize:24,fontWeight:800,color:"#f8fafc",letterSpacing:0}}>{modeCopy.title}</h2>
-            <p style={{fontSize:13,lineHeight:1.6,color:"rgba(226,232,240,0.52)",marginTop:6}}>{modeCopy.subtitle}</p>
+            )}
           </div>
 
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:5,marginBottom:20,gap:4}}>
-            {[["user","User"],["staff","IT Staff"],["admin","Admin"]].map(([m,l])=>(
-              <button type="button" key={m} onClick={()=>resetMode(m)} style={{padding:"10px 8px",borderRadius:10,border:"none",fontSize:13,fontWeight:700,background:mode===m?"linear-gradient(135deg,rgba(99,102,241,0.95),rgba(20,184,166,0.82))":"transparent",color:mode===m?"#fff":"rgba(226,232,240,0.58)",boxShadow:mode===m?"0 10px 28px rgba(99,102,241,0.25)":"none"}}>{l}</button>
-            ))}
-          </div>
-
-          {mode==="admin"&&(
-            <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:18}}>
-              <div><label style={{fontSize:12,color:"rgba(226,232,240,0.62)",marginBottom:6,display:"block",fontWeight:600}}>Username or Admin Email</label>
-                <input placeholder={modeCopy.placeholder} value={adminUser} autoComplete="username" onChange={e=>setAdminUser(e.target.value)}/></div>
-              <div><label style={{fontSize:12,color:"rgba(226,232,240,0.62)",marginBottom:6,display:"block",fontWeight:600}}>Password</label>
-                <PwdInput value={pwd} onChange={setPwd} autoComplete="current-password" placeholder="Enter admin password"/></div>
-            </div>
-          )}
-
-          {mode==="staff"&&(
-            <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:18}}>
-              <div><label style={{fontSize:12,color:"rgba(226,232,240,0.62)",marginBottom:6,display:"block",fontWeight:600}}>Staff Email</label>
-                <input type="email" autoComplete="username" placeholder={modeCopy.placeholder} value={email} onChange={e=>setEmail(e.target.value)}/></div>
-              <div><label style={{fontSize:12,color:"rgba(226,232,240,0.62)",marginBottom:6,display:"block",fontWeight:600}}>Password</label>
-                <PwdInput value={pwd} onChange={setPwd} autoComplete="current-password" placeholder="Enter your password"/></div>
-            </div>
-          )}
-
-          {mode==="user"&&(
-            <div style={{marginBottom:18}}>
-              <label style={{fontSize:12,color:"rgba(226,232,240,0.62)",marginBottom:6,display:"block",fontWeight:600}}>Institutional Email Address</label>
-              <input type="email" name="login-email" autoComplete="username" placeholder={modeCopy.placeholder} value={email} onChange={e=>setEmail(e.target.value)}/>
-              <div style={{fontSize:11,color:"rgba(226,232,240,0.36)",marginTop:7}}>Only @jaipuria.ac.in email IDs are allowed.</div>
-            </div>
-          )}
-
-          <button type="submit" className="glow-btn" style={{width:"100%",padding:"13px",boxShadow:"0 14px 36px rgba(99,102,241,0.28)"}} disabled={loading}>
-            {loading?"Authenticating...":mode==="admin"?"Access Admin Portal":"Continue"}
+          <button type="submit" className="glow-btn" style={{width:"100%",padding:"14px",marginTop:22,boxShadow:"0 16px 38px rgba(99,102,241,0.32)"}} disabled={loading}>
+            {loading?"Authenticating...":mode==="admin"?"Login as Admin":"Login"}
           </button>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginTop:14,flexWrap:"wrap"}}>
-            <button type="button" onClick={()=>setShowForgot(true)} style={{background:"none",border:"none",color:"rgba(129,140,248,0.9)",fontSize:13,textDecoration:"underline"}}>Forgot Password?</button>
+
+          <div style={{display:"flex",justifyContent:mode==="admin"?"space-between":"flex-end",alignItems:"center",gap:12,marginTop:14,flexWrap:"wrap"}}>
+            {mode!=="user"&&<button type="button" onClick={()=>setShowForgot(true)} style={{background:"none",border:"none",color:"rgba(129,140,248,0.92)",fontSize:13,textDecoration:"underline"}}>Forgot Password?</button>}
             {mode==="admin"&&<div style={{fontSize:12,color:"rgba(226,232,240,0.34)"}}>Default: Admin / Admin@123</div>}
           </div>
         </form>
+
+        <div style={{minHeight:560,padding:"clamp(26px,5vw,54px)",background:"linear-gradient(160deg,rgba(99,102,241,0.18),rgba(20,184,166,0.08))",borderLeft:"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{width:"100%",maxWidth:390,position:"relative"}}>
+            <div className="glass" style={{padding:22,borderRadius:20,boxShadow:"0 22px 70px rgba(0,0,0,0.30)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+                <div>
+                  <div style={{fontSize:12,color:"rgba(226,232,240,0.48)",fontWeight:700}}>LIVE QUEUE</div>
+                  <div style={{fontFamily:"Syne",fontSize:26,fontWeight:800,color:"#fff",marginTop:4}}>Helpdesk Tickets</div>
+                </div>
+                <div style={{width:50,height:50,borderRadius:16,background:"linear-gradient(135deg,#10b981,#0ea5e9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>✓</div>
+              </div>
+
+              {[
+                ["Laptop Issue","Assigned","#6366f1","Raj Parkash"],
+                ["Network Problem","In Progress","#f59e0b","Vishal Swami"],
+                ["Printer Issue","Closed","#10b981","Rohit Jangid"],
+              ].map(([title,status,color,staff],idx)=>(
+                <div key={title} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 15px",marginBottom:12,display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:10,height:44,borderRadius:999,background:color}} />
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:14,fontWeight:800,color:"#e2e8f0"}}>{title}</div>
+                    <div style={{fontSize:12,color:"rgba(226,232,240,0.45)",marginTop:3}}>Assigned to {staff}</div>
+                  </div>
+                  <span style={{fontSize:11,fontWeight:800,color,background:`${color}20`,border:`1px solid ${color}55`,borderRadius:999,padding:"5px 8px"}}>{status}</span>
+                </div>
+              ))}
+
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:18}}>
+                {[["99%","SLA"],["24/7","Support"],["PDF","Reports"]].map(([v,l])=>(
+                  <div key={l} style={{textAlign:"center",background:"rgba(15,23,42,0.5)",borderRadius:14,padding:"14px 8px"}}>
+                    <div style={{fontFamily:"Syne",fontSize:20,fontWeight:800,color:"#818cf8"}}>{v}</div>
+                    <div style={{fontSize:11,color:"rgba(226,232,240,0.42)",marginTop:2}}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <Toast toasts={toasts} remove={remove}/>
     </div>
@@ -2101,6 +2246,9 @@ export default function App() {
     </>
   );
 }
+
+
+
 
 
 
