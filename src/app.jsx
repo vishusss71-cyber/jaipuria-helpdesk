@@ -976,8 +976,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
   const assignee=STAFF_BASE.find(s=>s.id===ticket.assigneeId);
   const cat=CATEGORIES.find(c=>c.id===ticket.category);
 
-  const 
-  updateTicket=(changes,auditAction,remark="")=>{
+  const updateTicket = (changes, auditAction, remark = "") => {
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
       const actor=isAdmin?"Admin":staffName||"User";
