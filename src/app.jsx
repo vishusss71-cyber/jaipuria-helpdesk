@@ -9,10 +9,13 @@ const EMAIL_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || 'N9OlDxPyO0u
 const EMAILJS_SERVICE_ID = EMAIL_SERVICE_ID;
 const EMAILJS_TEMPLATE_ID = EMAIL_CREATE_TEMPLATE_ID;
 const EMAILJS_PUBLIC_KEY = EMAIL_PUBLIC_KEY;
-// -- ONLINE SHARED TICKET STORAGE (Firebase Firestore REST) -----------------
-const FIREBASE_PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID || "";
-const FIREBASE_API_KEY = import.meta.env.VITE_FIREBASE_API_KEY || "";
+const FIREBASE_PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+const FIREBASE_API_KEY = import.meta.env.VITE_FIREBASE_API_KEY;
 const FIRESTORE_DATABASE_ID = import.meta.env.VITE_FIRESTORE_DATABASE_ID || "(default)";
+
+console.log("Firebase Project:", FIREBASE_PROJECT_ID);
+console.log("Firestore DB:", FIRESTORE_DATABASE_ID);
+
 const ONLINE_TICKETS_ENABLED = Boolean(FIREBASE_PROJECT_ID && FIREBASE_API_KEY);
 const FIRESTORE_DATABASE_PATH = FIRESTORE_DATABASE_ID || "(default)";
 const FIRESTORE_BASE_URL = ONLINE_TICKETS_ENABLED
@@ -63,20 +66,7 @@ function normalizeTicket(ticket = {}) {
   };
 }
 
-async function fetchTickets() {
-  if (!ONLINE_TICKETS_ENABLED) {
-    console.warn("Firestore ticket storage is not configured. Set VITE_FIREBASE_PROJECT_ID and VITE_FIREBASE_API_KEY.");
-    return [];
-  }
-  const res = await fetch(`${FIRESTORE_BASE_URL}/tickets?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
-  if (!res.ok) throw new Error(`Ticket fetch failed: ${res.status} ${await res.text()}`);
-  const data = await res.json();
-  return (data.documents || [])
-    .map(doc => normalizeTicket({ id: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-}
-
-function getFirestoreErrorMessage(status, body) {
+function getFirestoreErrorMessage(body) {
   try {
     const parsed = JSON.parse(body);
     return parsed?.error?.message || body;
@@ -85,24 +75,35 @@ function getFirestoreErrorMessage(status, body) {
   }
 }
 
+async function fetchTickets() {
+  if (!ONLINE_TICKETS_ENABLED) {
+    console.warn("Firestore is not configured. Check Vercel env vars and redeploy.");
+    return [];
+  }
+  const res = await fetch(`${FIRESTORE_BASE_URL}/tickets?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
+  if (!res.ok) throw new Error(`Firestore ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
+  const data = await res.json();
+  return (data.documents || [])
+    .map(doc => normalizeTicket({ id: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
 async function saveTicket(ticket) {
   if (!ONLINE_TICKETS_ENABLED) {
     throw new Error("Firestore is not configured. Check Vercel env vars and redeploy.");
   }
   const cleanTicket = normalizeTicket(ticket);
   const url = `${FIRESTORE_BASE_URL}/tickets/${encodeURIComponent(cleanTicket.id)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`;
-  const body = JSON.stringify({ fields: toFirestoreFields(cleanTicket) });
   console.log("Firestore save URL:", url);
   const res = await fetch(url, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body,
+    body: JSON.stringify({ fields: toFirestoreFields(cleanTicket) }),
   });
   if (!res.ok) {
-    const errorBody = await res.text();
-    const message = getFirestoreErrorMessage(res.status, errorBody);
-    console.error("Firestore save response:", res.status, errorBody);
-    throw new Error(`Firestore ${res.status}: ${message}`);
+    const body = await res.text();
+    console.error("Firestore save response:", res.status, body);
+    throw new Error(`Firestore ${res.status}: ${getFirestoreErrorMessage(body)}`);
   }
 }
 
@@ -115,10 +116,64 @@ async function saveTickets(tickets) {
   await Promise.all((tickets || []).map(ticket => saveTicket(ticket)));
 }
 
-async function deleteTicket(id) {
-  if (!ONLINE_TICKETS_ENABLED || !id) return;
-  const res = await fetch(`${FIRESTORE_BASE_URL}/tickets/${encodeURIComponent(id)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 404) throw new Error(`Ticket delete failed: ${res.status} ${await res.text()}`);
+async function deleteTicket(ticketId) {
+  if (!ONLINE_TICKETS_ENABLED || !ticketId) return;
+  const res = await fetch(`${FIRESTORE_BASE_URL}/tickets/${encodeURIComponent(ticketId)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) throw new Error(`Firestore ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
+}
+
+function normalizeFeedback(entry = {}) {
+  return {
+    ...entry,
+    id: entry.id || genFeedbackId(),
+    ticketId: entry.ticketId || "",
+    name: entry.name || "",
+    email: entry.email || "",
+    dept: entry.dept || "",
+    category: entry.category || "",
+    rating: Number(entry.rating || 0),
+    satisfaction: entry.satisfaction || "",
+    recommend: entry.recommend || "Yes",
+    message: entry.message || "",
+    suggestions: entry.suggestions || "",
+    createdAt: entry.createdAt || Date.now(),
+    reviewed: Boolean(entry.reviewed),
+  };
+}
+
+async function fetchFeedback() {
+  if (!ONLINE_TICKETS_ENABLED) {
+    console.warn("Firestore feedback storage is not configured. Check Vercel env vars and redeploy.");
+    return [];
+  }
+  const res = await fetch(`${FIRESTORE_BASE_URL}/feedback?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
+  if (!res.ok) throw new Error(`Firestore feedback ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
+  const data = await res.json();
+  return (data.documents || [])
+    .map(doc => normalizeFeedback({ id: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+async function saveFeedback(entry) {
+  if (!ONLINE_TICKETS_ENABLED) {
+    throw new Error("Firestore is not configured. Check Vercel env vars and redeploy.");
+  }
+  const cleanEntry = normalizeFeedback(entry);
+  const res = await fetch(`${FIRESTORE_BASE_URL}/feedback/${encodeURIComponent(cleanEntry.id)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: toFirestoreFields(cleanEntry) }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    console.error("Firestore feedback save response:", res.status, body);
+    throw new Error(`Firestore feedback ${res.status}: ${getFirestoreErrorMessage(body)}`);
+  }
+  return cleanEntry;
+}
+
+async function updateFeedback(entry) {
+  return saveFeedback(entry);
 }
 function getTicketFeedbackLink(ticketId) {
   return typeof window !== "undefined"
@@ -1718,7 +1773,7 @@ function FeedbackForm({userEmail,onSubmit,toast,ticket=null}) {
 
   useEffect(()=>setForm(f=>({...f,ticketId:ticket?.id||"",name:ticket?.name||f.name,email:ticket?.email||userEmail||f.email,dept:ticket?.dept||f.dept,category:ticket?"Ticket Resolution":f.category})),[userEmail,ticket]);
 
-  const submit=()=>{
+  const submit=async()=>{
     if(!form.name.trim()||!form.email.trim()||!form.dept||!form.category||!form.rating||!form.satisfaction||!form.message.trim()){
       toast("Please complete all required feedback fields","error");
       return;
@@ -1728,10 +1783,13 @@ function FeedbackForm({userEmail,onSubmit,toast,ticket=null}) {
       return;
     }
     const entry={...form,ticketId:form.ticketId||"",name:form.name.trim(),email:form.email.trim(),message:form.message.trim(),suggestions:form.suggestions.trim(),id:genFeedbackId(),createdAt:Date.now(),reviewed:false};
-    onSubmit(entry);
-    setForm({...empty,ticketId:ticket?.id||"",name:ticket?.name||"",email:ticket?.email||userEmail||"",dept:ticket?.dept||"",category:ticket?"Ticket Resolution":""});
-    setHoverRating(0);
-    toast("Thank you for your feedback!","success");
+    try {
+      await Promise.resolve(onSubmit(entry));
+      setForm({...empty,ticketId:ticket?.id||"",name:ticket?.name||"",email:ticket?.email||userEmail||"",dept:ticket?.dept||"",category:ticket?"Ticket Resolution":""});
+      setHoverRating(0);
+    } catch (error) {
+      console.error("Feedback submit failed:", error);
+    }
   };
 
   return (
@@ -1826,9 +1884,31 @@ function AdminFeedbackPage({feedback,setFeedback,toast}) {
   const deptRows=DEPTS.map(d=>({label:d,value:filtered.filter(f=>f.dept===d).length})).filter(r=>r.value);
   const categoryRows=FEEDBACK_CATEGORIES.map(c=>({label:c,value:filtered.filter(f=>f.category===c).length})).filter(r=>r.value);
 
-  const markReviewed=(id)=>{
-    setFeedback(fs=>fs.map(f=>f.id===id?{...f,reviewed:true,reviewedAt:Date.now()}:f));
-    toast("Feedback marked as reviewed","success");
+  const markReviewed=async(id)=>{
+    const current = feedback.find(f=>f.id===id);
+    if(!current) return;
+    const updated = {...current,reviewed:true,reviewedAt:Date.now()};
+    try {
+      await updateFeedback(updated);
+      setFeedback(fs=>fs.map(f=>f.id===id?updated:f));
+      toast("Feedback marked as reviewed","success");
+    } catch (error) {
+      console.error("Feedback review update failed:", error);
+      toast("Feedback review update failed","error");
+    }
+  };
+
+  const markAllReviewed=async()=>{
+    const changed = feedback.filter(f=>!f.reviewed).map(f=>({...f,reviewed:true,reviewedAt:f.reviewedAt||Date.now()}));
+    if(!changed.length) return;
+    try {
+      await Promise.all(changed.map(updateFeedback));
+      setFeedback(fs=>fs.map(f=>changed.find(c=>c.id===f.id)||f));
+      toast("All feedback marked reviewed","success");
+    } catch (error) {
+      console.error("Feedback bulk review update failed:", error);
+      toast("Feedback review update failed","error");
+    }
   };
 
   const doExport=()=>{
@@ -1888,7 +1968,7 @@ function AdminFeedbackPage({feedback,setFeedback,toast}) {
       </div>
 
       <div className="glass" style={{padding:"18px 20px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:10,flexWrap:"wrap"}}><div style={{fontSize:13,fontWeight:700,color:"rgba(226,232,240,0.62)"}}>RECENT FEEDBACK</div>{unread>0&&<button onClick={()=>{setFeedback(fs=>fs.map(f=>({...f,reviewed:true,reviewedAt:f.reviewedAt||Date.now()})));toast("All feedback marked reviewed","success");}} style={{background:"rgba(16,185,129,0.14)",border:"1px solid rgba(16,185,129,0.28)",color:"#34d399",padding:"8px 12px",borderRadius:8,fontSize:12,fontWeight:700}}>Mark all reviewed</button>}</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:10,flexWrap:"wrap"}}><div style={{fontSize:13,fontWeight:700,color:"rgba(226,232,240,0.62)"}}>RECENT FEEDBACK</div>{unread>0&&<button onClick={markAllReviewed} style={{background:"rgba(16,185,129,0.14)",border:"1px solid rgba(16,185,129,0.28)",color:"#34d399",padding:"8px 12px",borderRadius:8,fontSize:12,fontWeight:700}}>Mark all reviewed</button>}</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
           {filtered.map(f=>{
             const sat=SATISFACTION_LEVELS.find(s=>s.id===f.satisfaction);
@@ -2529,7 +2609,8 @@ export default function App() {
   const [page, setPage] = useState(() => getInitialPage(getSavedSession()));
   const [tickets, setTickets] = useState([]);
   const [ticketsLoaded, setTicketsLoaded] = useState(false);
-  const [feedback, setFeedback] = useState(() => DB.get("feedback", []));
+  const [feedback, setFeedback] = useState([]);
+  const [feedbackLoaded, setFeedbackLoaded] = useState(false);
   const [feedbackTicketId, setFeedbackTicketId] = useState("");
   const [dismissedFeedbackTickets, setDismissedFeedbackTickets] = useState([]);
   const [viewTicketId, setViewTicketId] = useState(null);
@@ -2541,7 +2622,6 @@ export default function App() {
   const [staffMessages, setStaffMessages] = useState(() => DB.get("staff_messages", []));
   const [staffPanel, setStaffPanel] = useState(null);
   const [staffMenuOpen, setStaffMenuOpen] = useState(false);
-
   useEffect(() => {
     let alive = true;
     const loadTickets = async () => {
@@ -2560,12 +2640,29 @@ export default function App() {
     const interval = setInterval(loadTickets, 15000);
     return () => { alive = false; clearInterval(interval); };
   }, []);
+  useEffect(() => {
+    let alive = true;
+    const loadFeedback = async () => {
+      try {
+        const onlineFeedback = await fetchFeedback();
+        if (alive) {
+          setFeedback(onlineFeedback);
+          setFeedbackLoaded(true);
+        }
+      } catch (error) {
+        console.error("Online feedback load failed:", error);
+        if (alive) setFeedbackLoaded(true);
+      }
+    };
+    loadFeedback();
+    const interval = setInterval(loadFeedback, 15000);
+    return () => { alive = false; clearInterval(interval); };
+  }, []);
 
   useEffect(() => {
     if (!ticketsLoaded || !ONLINE_TICKETS_ENABLED) return;
     saveTickets(tickets).catch(error => console.error("Online ticket sync failed:", error));
   }, [tickets, ticketsLoaded]);
-  useEffect(() => DB.set("feedback", feedback), [feedback]);
   useEffect(() => DB.set("staff_profiles", staffProfiles), [staffProfiles]);
   useEffect(() => DB.set("staff_statuses", staffStatuses), [staffStatuses]);
   useEffect(() => DB.set("staff_messages", staffMessages), [staffMessages]);
@@ -2609,6 +2706,17 @@ export default function App() {
     }
   }, [tickets]);
 
+  const reloadFeedback = useCallback(async () => {
+    try {
+      const onlineFeedback = await fetchFeedback();
+      setFeedback(onlineFeedback);
+      setFeedbackLoaded(true);
+      return onlineFeedback;
+    } catch (error) {
+      console.error("Online feedback refresh failed:", error);
+      return feedback;
+    }
+  }, [feedback]);
   const handleDeleteTicket = async (id) => {
     try {
       await deleteTicket(id);
@@ -2621,10 +2729,15 @@ export default function App() {
     }
   };
 
-  const handleNewTicket = async (form) => {
-    const assignee = getActiveStaffForAssignment() || STAFF_BASE[0];
-    const now = Date.now();
-    const newTicket = {
+const handleNewTicket = async (form) => {
+
+  const assignee =
+    getActiveStaffForAssignment() ||
+    STAFF_BASE[0];
+
+  const now = Date.now();
+
+  const newTicket = {
       id: genId(),
       name: form.name,
       email: form.email,
@@ -2667,7 +2780,7 @@ export default function App() {
       if (session?.type === "user") setPage("my-tickets");
       reloadTickets().catch(error => console.error("Post-create ticket refresh failed:", error));
 
-      await sendTicketEmail(newTicket, { name:newTicket.name, email:newTicket.email });
+      await sendTicketEmail(newTicket, { name: newTicket.name, email: newTicket.email });
       emailTicketCreated(newTicket, assignee);
 
       if (assignee?.email) {
@@ -2684,18 +2797,55 @@ export default function App() {
       toast(`Ticket save failed: ${error?.message || "Firestore error"}`, "error");
     }
   };
+  const handleFeedbackSubmit = async (entry) => {
+    const feedbackEntry = normalizeFeedback({
+      id: entry.id || genFeedbackId(),
+      ticketId: entry.ticketId || "",
+      name: entry.name || "",
+      email: entry.email || "",
+      dept: entry.dept || "",
+      category: entry.category || "",
+      rating: Number(entry.rating || 0),
+      satisfaction: entry.satisfaction || "",
+      recommend: entry.recommend || "Yes",
+      message: entry.message || "",
+      suggestions: entry.suggestions || "",
+      createdAt: entry.createdAt || Date.now(),
+      reviewed: false,
+    });
 
-  const handleFeedbackSubmit = (entry) => {
-    setFeedback(fs => [entry, ...fs]);
-    if (entry.ticketId) {
-      setTickets(ts => ts.map(t => t.id === entry.ticketId ? {...t, feedbackSubmitted:true, feedbackId:entry.id} : t));
-      setDismissedFeedbackTickets(ids => Array.from(new Set([...ids, entry.ticketId])));
+    try {
+      console.log("Saving feedback:", feedbackEntry);
+      await saveFeedback(feedbackEntry);
+      console.log("Feedback save success:", feedbackEntry.id);
+
+      setFeedback(fs => [feedbackEntry, ...fs.filter(f => f.id !== feedbackEntry.id)]);
+
+      if (feedbackEntry.ticketId) {
+        const currentTicket = tickets.find(t => t.id === feedbackEntry.ticketId);
+        const updatedTicket = currentTicket
+          ? {...currentTicket, feedbackSubmitted:true, feedbackId:feedbackEntry.id, updatedAt:Date.now()}
+          : null;
+        if (updatedTicket) {
+          await updateTicket(updatedTicket);
+          setTickets(ts => ts.map(t => t.id === feedbackEntry.ticketId ? updatedTicket : t));
+        }
+        setDismissedFeedbackTickets(ids => Array.from(new Set([...ids, feedbackEntry.ticketId])));
+      }
+
+      simulateEmail(
+        "admin@jaipuria.ac.in",
+        `New IT feedback submitted by ${feedbackEntry.name}`,
+        `New IT feedback submitted by ${feedbackEntry.name}\n\nFeedback ID: ${feedbackEntry.id}\nEmail: ${feedbackEntry.email}\nDepartment: ${feedbackEntry.dept}\nService: ${feedbackEntry.category}\nRating: ${feedbackEntry.rating}/5\nSatisfaction: ${feedbackEntry.satisfaction}\nRecommendation: ${feedbackEntry.recommend}\nSubmitted: ${fmtDate(feedbackEntry.createdAt)}\n\nFeedback:\n${feedbackEntry.message}\n\nSuggestions:\n${feedbackEntry.suggestions || "—"}`
+      );
+
+      reloadFeedback().catch(error => console.error("Post-submit feedback refresh failed:", error));
+      toast("Thank you for your feedback", "success");
+    } catch (error) {
+      console.error("Feedback save failed:", error);
+      toast(`Feedback save failed: ${error?.message || "Firestore error"}`, "error");
+      throw error;
     }
-    simulateEmail(
-      "admin@jaipuria.ac.in",
-      `New IT feedback submitted by ${entry.name}`,
-      `New IT feedback submitted by ${entry.name}\n\nFeedback ID: ${entry.id}\nEmail: ${entry.email}\nDepartment: ${entry.dept}\nService: ${entry.category}\nRating: ${entry.rating}/5\nSatisfaction: ${entry.satisfaction}\nRecommendation: ${entry.recommend}\nSubmitted: ${fmtDate(entry.createdAt)}\n\nFeedback:\n${entry.message}\n\nSuggestions:\n${entry.suggestions || "—"}`
-    );
   };
   const handleQuickAssign = (ticketId, assigneeId, remark="") => {
     let assignedTicket = null;
@@ -3022,6 +3172,8 @@ export default function App() {
     </>
   );
 }
+
+
 
 
 
