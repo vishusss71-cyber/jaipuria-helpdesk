@@ -57,7 +57,7 @@ const CATEGORIES = [
   { id:"other", label:"Other Complaint", icon:"💬", color:"#6b7280", bg:"rgba(107,114,128,0.15)" },
 ];
 
-const DEPTS = ["IT Department","Computer Science","Electronics","Administration","Library","Finance","HR","Management","Maintenance","Faculty"];
+const DEPTS = ["Director's Office","Faculty","Student","Admin. Office","HR","Accounts","PMC","Student Affairs","MRC Office","Examination","FPM","IT","Library","Admissions & Marketing","Training","Placements & Corporate Relations","MDP","Training & Consultancy","IRC & E-Cell","Support Staff"];
 const PRIORITIES = ["Low","Medium","High","Critical"];
 const STATUSES = ["Open","Assigned","In Progress","Resolved","Closed"];
 const SLA_HOURS = { Low:72, Medium:48, High:24, Critical:4 };
@@ -112,6 +112,7 @@ function satisfactionColor(level) { return SATISFACTION_LEVELS.find(s=>s.id===le
 function cleanFeedbackRow(f) {
   return {
     "Feedback ID": f.id || "—",
+    "Ticket ID": f.ticketId || "—",
     "User Name": f.name || "—",
     Email: f.email || "—",
     Department: f.dept || "—",
@@ -215,6 +216,9 @@ Jaipuria Institute of Management IT Support Team
 function emailTicketClosed(ticket, assignee, closedBy="Admin") {
   const duration = formatDuration(ticket.closedAt - ticket.createdAt);
   const category = categoryLabel(ticket.category);
+  const feedbackUrl = typeof window !== "undefined"
+    ? `${window.location.origin}/?feedbackTicket=${encodeURIComponent(ticket.id)}`
+    : `Feedback Ticket: ${ticket.id}`;
   const body = `
 Dear ${ticket.name},
 
@@ -232,6 +236,9 @@ Closed Date/Time    : ${fmtDate(ticket.closedAt)}
 Resolution Duration : ${duration}
 Closing Remarks     : ${ticket.closingRemarks || "Issue resolved successfully."}
 ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Share Your IT Support Feedback:
+${feedbackUrl}
 
 Thank you for using Jaipuria Institute of Management IT Support Portal.
 
@@ -632,14 +639,14 @@ function downloadFeedbackPDF(feedbackRows, filename, options = {}) {
 
   autoTable(doc, {
     startY: 126,
-    head: [["Feedback ID", "User", "Email", "Dept", "Service", "Rating", "Satisfaction", "Recommend", "Feedback", "Suggestions", "Submitted", "Status"]],
-    body: rows.map(row => [row["Feedback ID"], row["User Name"], row.Email, row.Department, row["Service Category"], row.Rating, row.Satisfaction, row.Recommendation, row["Feedback Message"], row.Suggestions, row["Submitted At"], row["Reviewed Status"]]),
+    head: [["Feedback ID", "Ticket ID", "User", "Email", "Dept", "Rating", "Satisfaction", "Recommend", "Feedback", "Suggestions", "Submitted", "Status"]],
+    body: rows.map(row => [row["Feedback ID"], row["Ticket ID"], row["User Name"], row.Email, row.Department, row.Rating, row.Satisfaction, row.Recommendation, row["Feedback Message"], row.Suggestions, row["Submitted At"], row["Reviewed Status"]]),
     theme: "grid",
     margin: { left:10, right:10, bottom:16 },
     styles: { font:"helvetica", fontSize:7, cellPadding:1.7, overflow:"linebreak", valign:"top", lineColor:[226,232,240], lineWidth:0.1, textColor:[30,41,59] },
     headStyles: { fillColor:[79,70,229], textColor:255, fontStyle:"bold", halign:"center", fontSize:7.3 },
     alternateRowStyles: { fillColor:[248,250,252] },
-    columnStyles: { 0:{cellWidth:22,fontStyle:"bold"}, 1:{cellWidth:24}, 2:{cellWidth:36}, 3:{cellWidth:24}, 4:{cellWidth:30}, 5:{cellWidth:15,halign:"center"}, 6:{cellWidth:20,halign:"center"}, 7:{cellWidth:18,halign:"center"}, 8:{cellWidth:42}, 9:{cellWidth:38}, 10:{cellWidth:24}, 11:{cellWidth:16,halign:"center"} },
+    columnStyles: { 0:{cellWidth:21,fontStyle:"bold"}, 1:{cellWidth:22,fontStyle:"bold"}, 2:{cellWidth:24}, 3:{cellWidth:36}, 4:{cellWidth:24}, 5:{cellWidth:15,halign:"center"}, 6:{cellWidth:20,halign:"center"}, 7:{cellWidth:18,halign:"center"}, 8:{cellWidth:46}, 9:{cellWidth:40}, 10:{cellWidth:24}, 11:{cellWidth:16,halign:"center"} },
     didParseCell: data => {
       if (data.section !== "body") return;
       if (data.column.index === 6) {
@@ -981,6 +988,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         updated.closedAt=Date.now();
         updated.closingRemarks=remark||"Closed from ticket controls.";
         updated.resolutionTime=updated.closedAt-t.createdAt;
+        updated.feedbackSubmitted=false;
         emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===updated.assigneeId),actor);
       }
       if(changes.assigneeId&&Number(changes.assigneeId)!==Number(t.assigneeId)){
@@ -1008,7 +1016,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
       const closedBy = staffName || (isAdmin ? "Admin" : "User");
-      const updated={...t,status:"Closed",closedAt,closingRemarks:remarks,resolutionTime:closedAt-t.createdAt,updatedAt:closedAt,
+      const updated={...t,status:"Closed",closedAt,closingRemarks:remarks,resolutionTime:closedAt-t.createdAt,updatedAt:closedAt,feedbackSubmitted:false,
         timeline:[...(t.timeline||[]),{action:"Closed",remark:remarks,at:closedAt,by:closedBy}]};
       emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===t.assigneeId),closedBy);
       return updated;
@@ -1274,7 +1282,7 @@ function TicketForm({userEmail,initialCategory,onSubmit,onCancel,toast}) {
           <input type={type} placeholder={label} value={form[k]} onChange={e=>set(k,e.target.value)}/></div>
         ))}
         <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Department *</label>
-          <select value={form.dept} onChange={e=>set("dept",e.target.value)}><option value="">Select Department</option>{DEPTS.map(d=><option key={d}>{d}</option>)}</select></div>
+          <select value={form.dept} onChange={e=>set("dept",e.target.value)} disabled={!!ticket}><option value="">Select Department</option>{DEPTS.map(d=><option key={d}>{d}</option>)}</select></div>
         <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Category *</label>
           <select value={form.category} onChange={e=>set("category",e.target.value)}><option value="">Select Category</option>{CATEGORIES.map(c=><option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}</select></div>
         <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Priority</label>
@@ -1567,13 +1575,13 @@ function MiniBar({label,value,total,color="#6366f1"}) {
   );
 }
 
-function FeedbackForm({userEmail,onSubmit,toast}) {
-  const empty = {name:"",email:userEmail||"",dept:"",category:"",rating:0,satisfaction:"",message:"",suggestions:"",recommend:"Yes"};
+function FeedbackForm({userEmail,onSubmit,toast,ticket=null}) {
+  const empty = {ticketId:ticket?.id||"",name:ticket?.name||"",email:ticket?.email||userEmail||"",dept:ticket?.dept||"",category:ticket?"Ticket Resolution":"",rating:0,satisfaction:"",message:"",suggestions:"",recommend:"Yes"};
   const [form,setForm]=useState(empty);
   const [hoverRating,setHoverRating]=useState(0);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
-  useEffect(()=>setForm(f=>({...f,email:userEmail||f.email})),[userEmail]);
+  useEffect(()=>setForm(f=>({...f,ticketId:ticket?.id||"",name:ticket?.name||f.name,email:ticket?.email||userEmail||f.email,dept:ticket?.dept||f.dept,category:ticket?"Ticket Resolution":f.category})),[userEmail,ticket]);
 
   const submit=()=>{
     if(!form.name.trim()||!form.email.trim()||!form.dept||!form.category||!form.rating||!form.satisfaction||!form.message.trim()){
@@ -1584,9 +1592,9 @@ function FeedbackForm({userEmail,onSubmit,toast}) {
       toast("Only @jaipuria.ac.in email ID is allowed","error");
       return;
     }
-    const entry={...form,name:form.name.trim(),email:form.email.trim(),message:form.message.trim(),suggestions:form.suggestions.trim(),id:genFeedbackId(),createdAt:Date.now(),reviewed:false};
+    const entry={...form,ticketId:form.ticketId||"",name:form.name.trim(),email:form.email.trim(),message:form.message.trim(),suggestions:form.suggestions.trim(),id:genFeedbackId(),createdAt:Date.now(),reviewed:false};
     onSubmit(entry);
-    setForm({...empty,email:userEmail||""});
+    setForm({...empty,ticketId:ticket?.id||"",name:ticket?.name||"",email:ticket?.email||userEmail||"",dept:ticket?.dept||"",category:ticket?"Ticket Resolution":""});
     setHoverRating(0);
     toast("Thank you for your feedback!","success");
   };
@@ -1607,10 +1615,12 @@ function FeedbackForm({userEmail,onSubmit,toast}) {
       </div>
 
       <div className="glass" style={{padding:"24px",display:"flex",flexDirection:"column",gap:18}}>
+        {ticket&&<div className="glass2" style={{padding:"14px 16px",borderColor:"rgba(99,102,241,0.35)",background:"rgba(99,102,241,0.1)"}}><div style={{fontSize:12,color:"#a5b4fc",fontWeight:800,letterSpacing:".5px",marginBottom:4}}>CLOSED TICKET FEEDBACK</div><div style={{fontSize:14,color:"#e2e8f0"}}>Your ticket <strong>{ticket.id}</strong> has been closed. Please share your experience with the IT support team.</div></div>}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:14}}>
-          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>User Name *</label><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Your full name" /></div>
-          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>User Email *</label><input type="email" value={form.email} onChange={e=>set("email",e.target.value)} placeholder="name@jaipuria.ac.in" /></div>
-          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>Department *</label><select value={form.dept} onChange={e=>set("dept",e.target.value)}><option value="">Select Department</option>{DEPTS.map(d=><option key={d}>{d}</option>)}</select></div>
+          {ticket&&<div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>Ticket ID</label><input value={form.ticketId} readOnly style={{opacity:.75}} /></div>}
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>User Name *</label><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Your full name" readOnly={!!ticket} /></div>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>User Email *</label><input type="email" value={form.email} onChange={e=>set("email",e.target.value)} placeholder="name@jaipuria.ac.in" readOnly={!!ticket} /></div>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>Department *</label><select value={form.dept} onChange={e=>set("dept",e.target.value)} disabled={!!ticket}><option value="">Select Department</option>{DEPTS.map(d=><option key={d}>{d}</option>)}</select></div>
           <div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>Service Category *</label><select value={form.category} onChange={e=>set("category",e.target.value)}><option value="">Select Service</option>{FEEDBACK_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
         </div>
 
@@ -1658,9 +1668,18 @@ function AdminFeedbackPage({feedback,setFeedback,toast}) {
   const [dateFrom,setDateFrom]=useState("");
   const [dateTo,setDateTo]=useState("");
   const [format,setFormat]=useState("excel");
+  const [ticketFilter,setTicketFilter]=useState("");
+  const [deptFilter,setDeptFilter]=useState("All");
+  const [ratingFilter,setRatingFilter]=useState("All");
+  const [reviewFilter,setReviewFilter]=useState("All");
   const filtered=feedback.filter(f=>{
     if(dateFrom && f.createdAt < new Date(dateFrom).getTime()) return false;
     if(dateTo && f.createdAt > new Date(dateTo).getTime()+86399999) return false;
+    if(ticketFilter.trim() && !(f.ticketId||"").toLowerCase().includes(ticketFilter.trim().toLowerCase())) return false;
+    if(deptFilter!=="All" && f.dept!==deptFilter) return false;
+    if(ratingFilter!=="All" && Number(f.rating)!==Number(ratingFilter)) return false;
+    if(reviewFilter==="Reviewed" && !f.reviewed) return false;
+    if(reviewFilter==="Unreviewed" && f.reviewed) return false;
     return true;
   });
   const total=feedback.length;
@@ -1680,7 +1699,7 @@ function AdminFeedbackPage({feedback,setFeedback,toast}) {
   const doExport=()=>{
     if(!dateFrom || !dateTo){ toast("Please select date range","error"); return; }
     const now=new Date().toISOString().slice(0,10);
-    if(format==="excel") downloadExcel(filtered.map(cleanFeedbackRow), `it_feedback_report_${now}.xlsx`);
+    if(format==="excel") downloadExcel(filtered.map(f=>{ const r=cleanFeedbackRow(f); return {"Feedback ID":r["Feedback ID"],"Ticket ID":r["Ticket ID"],"User Name":r["User Name"],Email:r.Email,Department:r.Department,Rating:r.Rating,Satisfaction:r.Satisfaction,Recommendation:r.Recommendation,"Feedback Message":r["Feedback Message"],Suggestions:r.Suggestions,"Submitted At":r["Submitted At"],"Reviewed Status":r["Reviewed Status"]}; }), `it_feedback_report_${now}.xlsx`);
     else downloadFeedbackPDF(filtered, `it_feedback_report_${now}.pdf`, {dateFrom,dateTo});
     toast(`Feedback report exported (${filtered.length} records)`,"success");
   };
@@ -1709,6 +1728,12 @@ function AdminFeedbackPage({feedback,setFeedback,toast}) {
           <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Format</label><select value={format} onChange={e=>setFormat(e.target.value)}><option value="excel">Excel (.xlsx)</option><option value="pdf">PDF (.pdf)</option></select></div>
           <button className="glow-btn" onClick={doExport}>Export Feedback</button>
         </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:14,alignItems:"end",marginTop:14}}>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Ticket ID Filter</label><input value={ticketFilter} onChange={e=>setTicketFilter(e.target.value)} placeholder="TKT-..." /></div>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Department</label><select value={deptFilter} onChange={e=>setDeptFilter(e.target.value)}><option value="All">All Departments</option>{DEPTS.map(d=><option key={d}>{d}</option>)}</select></div>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Rating</label><select value={ratingFilter} onChange={e=>setRatingFilter(e.target.value)}><option value="All">All Ratings</option>{[5,4,3,2,1].map(r=><option key={r} value={r}>{r} Star</option>)}</select></div>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Review Status</label><select value={reviewFilter} onChange={e=>setReviewFilter(e.target.value)}><option value="All">All</option><option value="Reviewed">Reviewed</option><option value="Unreviewed">Unreviewed</option></select></div>
+        </div>
         <div style={{fontSize:12,color:"rgba(226,232,240,0.42)",marginTop:10}}>Showing {filtered.length} of {feedback.length} feedback submissions</div>
       </div>
 
@@ -1733,7 +1758,7 @@ function AdminFeedbackPage({feedback,setFeedback,toast}) {
           {filtered.map(f=>{
             const sat=SATISFACTION_LEVELS.find(s=>s.id===f.satisfaction);
             return <div key={f.id} className="glass2" style={{padding:"16px",borderColor:f.reviewed?"rgba(255,255,255,0.1)":"rgba(245,158,11,0.45)",background:f.reviewed?"rgba(255,255,255,0.06)":"rgba(245,158,11,0.08)"}}>
-              <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"flex-start",marginBottom:10}}><div><div style={{fontSize:13,fontWeight:800,color:"#e2e8f0"}}>{f.id}</div><div style={{fontSize:12,color:"rgba(226,232,240,0.45)",marginTop:2}}>{fmtDate(f.createdAt)}</div></div>{!f.reviewed&&<span className="tag" style={{background:"rgba(245,158,11,0.16)",color:"#fbbf24"}}>New</span>}</div>
+              <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"flex-start",marginBottom:10}}><div><div style={{fontSize:13,fontWeight:800,color:"#e2e8f0"}}>{f.id}</div>{f.ticketId&&<div style={{fontSize:12,color:"#a5b4fc",marginTop:2}}>Ticket: {f.ticketId}</div>}<div style={{fontSize:12,color:"rgba(226,232,240,0.45)",marginTop:2}}>{fmtDate(f.createdAt)}</div></div>{!f.reviewed&&<span className="tag" style={{background:"rgba(245,158,11,0.16)",color:"#fbbf24"}}>New</span>}</div>
               <div style={{fontSize:14,fontWeight:700,color:"#e2e8f0"}}>{f.name}</div>
               <div style={{fontSize:12,color:"rgba(226,232,240,0.48)",marginTop:2}}>{f.email} · {f.dept}</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}><span className="tag" style={{background:"rgba(99,102,241,0.14)",color:"#a5b4fc"}}>{f.category}</span><span className="tag" style={{background:"rgba(251,191,36,0.14)",color:"#fbbf24"}}>★ {f.rating}/5</span><span className="tag" style={{background:sat?.bg||"rgba(255,255,255,0.08)",color:sat?.color||"#e2e8f0"}}>{sat?.icon} {f.satisfaction}</span></div>
@@ -2369,6 +2394,8 @@ export default function App() {
   const [page, setPage] = useState(() => getInitialPage(getSavedSession()));
   const [tickets, setTickets] = useState(() => DB.get("tickets", []));
   const [feedback, setFeedback] = useState(() => DB.get("feedback", []));
+  const [feedbackTicketId, setFeedbackTicketId] = useState("");
+  const [dismissedFeedbackTickets, setDismissedFeedbackTickets] = useState([]);
   const [viewTicketId, setViewTicketId] = useState(null);
   const [quickAssignTicketId, setQuickAssignTicketId] = useState(null);
   const [formCat, setFormCat] = useState(null);
@@ -2386,6 +2413,14 @@ export default function App() {
   useEffect(() => DB.set("staff_profiles", staffProfiles), [staffProfiles]);
   useEffect(() => DB.set("staff_statuses", staffStatuses), [staffStatuses]);
   useEffect(() => DB.set("staff_messages", staffMessages), [staffMessages]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const ticketId = new URLSearchParams(window.location.search).get("feedbackTicket");
+    if (ticketId) {
+      setFeedbackTicketId(ticketId);
+      setPage("feedback");
+    }
+  }, []);
 
   const handleLogin = (sess) => {
     if (sess.type === "staff_firstlogin") {
@@ -2433,6 +2468,10 @@ export default function App() {
 
   const handleFeedbackSubmit = (entry) => {
     setFeedback(fs => [entry, ...fs]);
+    if (entry.ticketId) {
+      setTickets(ts => ts.map(t => t.id === entry.ticketId ? {...t, feedbackSubmitted:true, feedbackId:entry.id} : t));
+      setDismissedFeedbackTickets(ids => Array.from(new Set([...ids, entry.ticketId])));
+    }
     simulateEmail(
       "admin@jaipuria.ac.in",
       `New IT feedback submitted by ${entry.name}`,
@@ -2529,6 +2568,8 @@ export default function App() {
   const isStaff = session.type === "staff";
   const myTickets = isAdmin || isStaff ? tickets : tickets.filter(t => t.email === session.email);
   const quickAssignTicket = tickets.find(t => t.id === quickAssignTicketId);
+  const linkedFeedbackTicket = tickets.find(t => t.id === feedbackTicketId);
+  const pendingFeedbackTicket = !isAdmin && !isStaff ? tickets.find(t => t.email === session.email && t.status === "Closed" && !t.feedbackSubmitted && !feedback.some(f => f.ticketId === t.id && f.email === session.email) && !dismissedFeedbackTickets.includes(t.id)) : null;
 
   const renderStaffManagement = () => (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
@@ -2642,7 +2683,7 @@ export default function App() {
         </div>
       </div>
     );
-    if (page === "feedback") return <FeedbackForm userEmail={session.email} onSubmit={handleFeedbackSubmit} toast={toast} />;
+    if (page === "feedback") return <FeedbackForm userEmail={session.email} onSubmit={handleFeedbackSubmit} toast={toast} ticket={linkedFeedbackTicket || null} />;
     if (page === "track") return <TrackTicket tickets={tickets} onView={setViewTicketId} />;
     if (page === "new-ticket") return (
       <div>
@@ -2705,6 +2746,21 @@ export default function App() {
         </Modal>
       )}
 
+
+      {pendingFeedbackTicket && page !== "feedback" && (
+        <Modal title="Share IT Support Feedback" onClose={() => setDismissedFeedbackTickets(ids => Array.from(new Set([...ids, pendingFeedbackTicket.id])))}>
+          <div style={{display:"flex",flexDirection:"column",gap:18}}>
+            <div className="glass" style={{padding:"18px 20px",background:"rgba(99,102,241,0.1)",borderColor:"rgba(99,102,241,0.3)"}}>
+              <div style={{fontSize:18,fontWeight:800,fontFamily:"Syne",color:"#e2e8f0",marginBottom:8}}>Your ticket {pendingFeedbackTicket.id} has been closed.</div>
+              <div style={{fontSize:14,lineHeight:1.6,color:"rgba(226,232,240,0.68)"}}>Please share your feedback so the IT team can improve support quality.</div>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
+              <button onClick={() => setDismissedFeedbackTickets(ids => Array.from(new Set([...ids, pendingFeedbackTicket.id])))} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",padding:"10px 18px",borderRadius:10,fontSize:14}}>Later</button>
+              <button className="glow-btn" onClick={() => { setFeedbackTicketId(pendingFeedbackTicket.id); setPage("feedback"); }}>Give Feedback</button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {viewTicketId && (
         <Modal title={`Ticket - ${viewTicketId}`} onClose={() => setViewTicketId(null)}>
           <TicketDetail
@@ -2747,6 +2803,13 @@ export default function App() {
     </>
   );
 }
+
+
+
+
+
+
+
 
 
 
