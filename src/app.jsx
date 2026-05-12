@@ -24,6 +24,7 @@ const sendTicketEmail = async (ticket, user) => {
           to_email: user?.email,
           ticket_id: ticket.id,
           issue: ticket.issue || ticket.description || ticket.category || "IT Helpdesk Ticket",
+          status: ticket.status || "Assigned",
       },
       EMAILJS_PUBLIC_KEY
     );
@@ -2474,28 +2475,44 @@ export default function App() {
     const assignee = getActiveStaffForAssignment() || STAFF_BASE[0];
     const now = Date.now();
     const newTicket = {
-      ...form,
       id: genId(),
+      name: form.name,
+      email: form.email,
+      dept: form.dept,
+      mobile: form.mobile || "",
+      location: form.location || "",
+      category: form.category,
+      description: form.description,
+      priority: form.priority || "Medium",
       status: "Assigned",
       assigneeId: assignee.id,
+      assigneeName: assignee.name,
       createdAt: now,
       updatedAt: now,
       closedAt: null,
-      closingRemarks: "",
       feedbackSubmitted: false,
+      closingRemarks: "",
       comments: [],
       timeline: [
-        { action: "Created", at: now, by: "User" },
-        { action: `Assigned to ${assignee.name}`, at: now, by: "System (Auto)" }
+        {
+          action: "Created",
+          by: form.name,
+          at: now
+        },
+        {
+          action: `Assigned to ${assignee.name}`,
+          by: "System",
+          at: now
+        }
       ]
     };
 
-    console.log("CREATE EMAIL ONLY - do not close:", newTicket);
-    console.log("Ticket assigned to:", assignee);
+    console.log("NEW TICKET:", newTicket);
 
     setTickets(prev => {
       const updated = [newTicket, ...prev];
       DB.set("tickets", updated);
+      console.log("SAVED TICKETS:", updated);
       return updated;
     });
     setFormCat(null);
@@ -2852,6 +2869,7 @@ export default function App() {
     </>
   );
 }
+
 
 
 
