@@ -3,6 +3,7 @@ import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import emailjs from '@emailjs/browser';
+import { motion, AnimatePresence } from 'framer-motion';
 const EMAIL_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || 'service_ctyqqbc';
 const EMAIL_CREATE_TEMPLATE_ID = "template_a30g4md";
 const EMAIL_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || 'N9OlDxPyO0uf_IlxJ';
@@ -1769,7 +1770,40 @@ function FeedbackForm({userEmail,onSubmit,toast,ticket=null}) {
   const empty = {ticketId:ticket?.id||"",name:ticket?.name||"",email:ticket?.email||userEmail||"",dept:ticket?.dept||"",category:ticket?"Ticket Resolution":"",rating:0,satisfaction:"",message:"",suggestions:"",recommend:"Yes"};
   const [form,setForm]=useState(empty);
   const [hoverRating,setHoverRating]=useState(0);
+  const [reactionBursts,setReactionBursts]=useState([]);
+  const reactionTimers=useRef([]);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  useEffect(()=>()=>{
+    reactionTimers.current.forEach(clearTimeout);
+  },[]);
+
+  const triggerSatisfactionReaction=(s,e)=>{
+    if(typeof window === "undefined") return;
+    const rect=e.currentTarget.getBoundingClientRect();
+    const originX=rect.left+rect.width/2;
+    const originY=rect.top+rect.height/2;
+    const count=12+Math.floor(Math.random()*9);
+    const particles=Array.from({length:count},(_,i)=>({
+      id:`${Date.now()}-${s.id}-${i}-${Math.random()}`,
+      emoji:s.icon,
+      x:originX+(Math.random()*28-14),
+      y:originY+(Math.random()*16-8),
+      dx:Math.random()*220-110,
+      dy:150+Math.random()*170,
+      rotate:Math.random()*110-55,
+      scale:.78+Math.random()*.7,
+      duration:1.15+Math.random()*.65,
+      delay:Math.random()*.14,
+      sparkle:Math.random()>.45,
+      color:s.color,
+    }));
+    setReactionBursts(prev=>[...prev,...particles]);
+    const timer=setTimeout(()=>{
+      setReactionBursts(prev=>prev.filter(p=>!particles.some(n=>n.id===p.id)));
+    },2100);
+    reactionTimers.current.push(timer);
+  };
 
   useEffect(()=>setForm(f=>({...f,ticketId:ticket?.id||"",name:ticket?.name||f.name,email:ticket?.email||userEmail||f.email,dept:ticket?.dept||f.dept,category:ticket?"Ticket Resolution":f.category})),[userEmail,ticket]);
 
@@ -1828,12 +1862,86 @@ function FeedbackForm({userEmail,onSubmit,toast,ticket=null}) {
             </div>
           </div>
 
-          <div className="glass2" style={{padding:"18px"}}>
+          <div className="glass2" style={{padding:"18px",position:"relative",overflow:"hidden"}}>
+            <AnimatePresence>
+              {reactionBursts.map(p=>(
+                <motion.span
+                  key={p.id}
+                  aria-hidden="true"
+                  initial={{x:p.x,y:p.y,opacity:0,scale:.35,rotate:0}}
+                  animate={{
+                    x:p.x+p.dx,
+                    y:p.y-p.dy,
+                    opacity:[0,1,.92,0],
+                    scale:[.35,p.scale,p.scale*.92],
+                    rotate:p.rotate,
+                  }}
+                  exit={{opacity:0,scale:.2}}
+                  transition={{duration:p.duration,delay:p.delay,ease:[.16,1,.3,1]}}
+                  style={{
+                    position:"fixed",
+                    left:0,
+                    top:0,
+                    zIndex:9998,
+                    pointerEvents:"none",
+                    fontSize:26,
+                    lineHeight:1,
+                    filter:"drop-shadow(0 10px 18px rgba(0,0,0,.35))",
+                    willChange:"transform, opacity",
+                  }}
+                >
+                  {p.emoji}
+                  {p.sparkle&&<span style={{position:"absolute",left:"58%",top:"-28%",fontSize:11,color:p.color,textShadow:`0 0 12px ${p.color}`}}>✦</span>}
+                </motion.span>
+              ))}
+            </AnimatePresence>
             <div style={{fontSize:13,fontWeight:700,color:"rgba(226,232,240,0.75)",marginBottom:12}}>Satisfaction Level *</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
-              {SATISFACTION_LEVELS.map(s=>(
-                <button key={s.id} type="button" onClick={()=>set("satisfaction",s.id)} style={{padding:"12px",borderRadius:12,border:`1px solid ${form.satisfaction===s.id?s.color:"rgba(255,255,255,0.08)"}`,background:form.satisfaction===s.id?s.bg:"rgba(255,255,255,0.04)",color:form.satisfaction===s.id?s.color:"rgba(226,232,240,0.72)",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><span style={{fontSize:20}}>{s.icon}</span>{s.id}</button>
-              ))}
+              {SATISFACTION_LEVELS.map(s=>{
+                const selected=form.satisfaction===s.id;
+                return (
+                  <motion.button
+                    key={s.id}
+                    type="button"
+                    aria-pressed={selected}
+                    aria-label={`Select ${s.id} satisfaction`}
+                    onClick={(e)=>{set("satisfaction",s.id);triggerSatisfactionReaction(s,e);}}
+                    whileTap={{scale:.93}}
+                    animate={{
+                      scale:selected?1.03:1,
+                      boxShadow:selected?`0 0 0 1px ${s.color}, 0 0 28px ${s.color}55, inset 0 0 22px ${s.color}22`:"0 0 0 rgba(0,0,0,0)",
+                    }}
+                    transition={{type:"spring",stiffness:380,damping:24}}
+                    style={{
+                      padding:"12px",
+                      borderRadius:12,
+                      border:`1px solid ${selected?s.color:"rgba(255,255,255,0.08)"}`,
+                      background:selected?`linear-gradient(135deg,${s.bg},rgba(255,255,255,0.055))`:"rgba(255,255,255,0.04)",
+                      color:selected?s.color:"rgba(226,232,240,0.72)",
+                      fontWeight:700,
+                      display:"flex",
+                      alignItems:"center",
+                      justifyContent:"center",
+                      gap:8,
+                      position:"relative",
+                      overflow:"hidden",
+                      transformOrigin:"center",
+                    }}
+                  >
+                    {selected&&(
+                      <motion.span
+                        aria-hidden="true"
+                        initial={{opacity:.55,scale:.5}}
+                        animate={{opacity:0,scale:2.7}}
+                        transition={{duration:.75,ease:"easeOut"}}
+                        style={{position:"absolute",inset:0,margin:"auto",width:52,height:52,borderRadius:"50%",background:s.color,filter:"blur(18px)"}}
+                      />
+                    )}
+                    <motion.span animate={{scale:selected?[1,1.18,1]:1,rotate:selected?[0,-5,5,0]:0}} transition={{duration:.45}} style={{fontSize:20,position:"relative"}}>{s.icon}</motion.span>
+                    <span style={{position:"relative"}}>{s.id}</span>
+                  </motion.button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -3172,6 +3280,7 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
+
 
 
 
