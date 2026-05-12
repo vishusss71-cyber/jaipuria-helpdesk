@@ -77,8 +77,7 @@ async function fetchTickets() {
 
 async function saveTicket(ticket) {
   if (!ONLINE_TICKETS_ENABLED) {
-    console.warn("Firestore ticket storage is not configured; ticket was not saved online.", ticket);
-    return;
+    throw new Error("Firestore ticket storage is not configured. Check VITE_FIREBASE_PROJECT_ID and VITE_FIREBASE_API_KEY.");
   }
   const cleanTicket = normalizeTicket(ticket);
   const res = await fetch(`${FIRESTORE_BASE_URL}/tickets/${encodeURIComponent(cleanTicket.id)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`, {
@@ -1387,7 +1386,6 @@ function TicketForm({userEmail,initialCategory,onSubmit,onCancel,toast}) {
     await new Promise(r=>setTimeout(r,700));
     try {
       await Promise.resolve(onSubmit({...form}));
-      toast(`Ticket created! Confirmation sent to ${form.email} 📧`,"email");
     } finally {
       setLoading(false);
     }
@@ -2641,30 +2639,32 @@ export default function App() {
       ]
     };
 
-    console.log("NEW TICKET:", newTicket);
+    try {
+      console.log("Saving ticket to Firestore:", newTicket);
+      await saveTicket(newTicket);
+      console.log("Firestore save success:", newTicket.id);
 
-    await saveTicket(newTicket);
-    setTickets(prev => {
-      const updated = [newTicket, ...prev.filter(t => t.id !== newTicket.id)];
-      console.log("SAVED TICKETS:", updated);
-      return updated;
-    });
-    setFormCat(null);
-    if (session?.type === "user") setPage("my-tickets");
-    reloadTickets().catch(error => console.error("Post-create ticket refresh failed:", error));
+      setTickets(prev => [newTicket, ...prev.filter(t => t.id !== newTicket.id)]);
+      setFormCat(null);
+      if (session?.type === "user") setPage("my-tickets");
+      reloadTickets().catch(error => console.error("Post-create ticket refresh failed:", error));
 
-    await sendTicketEmail(newTicket, {
-      name: newTicket.name,
-      email: newTicket.email,
-    });
-    emailTicketCreated(newTicket, assignee);
+      await sendTicketEmail(newTicket, { name:newTicket.name, email:newTicket.email });
+      emailTicketCreated(newTicket, assignee);
 
-    if (assignee?.email) {
-      simulateEmail(
-        assignee.email,
-        `[${newTicket.id}] New Ticket Assigned`,
-        `${newTicket.name} submitted a ${categoryLabel(newTicket.category)} ticket.\n\n${newTicket.description}`
-      );
+      if (assignee?.email) {
+        simulateEmail(
+          assignee.email,
+          `[${newTicket.id}] New Ticket Assigned`,
+          `${newTicket.name} submitted a ${categoryLabel(newTicket.category)} ticket.\n\n${newTicket.description}`
+        );
+      }
+
+      toast("Ticket created successfully", "success");
+    } catch (error) {
+      console.error("Ticket create/save failed:", error);
+      toast("Ticket save failed", "error");
+      throw error;
     }
   };
 
@@ -3005,6 +3005,7 @@ export default function App() {
     </>
   );
 }
+
 
 
 
