@@ -3,23 +3,54 @@ import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import emailjs from '@emailjs/browser';
+const EMAILJS_SERVICE_ID = 'service_ctyqqbc';
+const EMAILJS_TEMPLATE_ID = 'template_vuv4jtd';
+const EMAILJS_PUBLIC_KEY = 'N9OlDxPyO0uf_IlxJ';
+function getTicketFeedbackLink(ticketId) {
+  return typeof window !== "undefined"
+    ? `${window.location.origin}/?feedbackTicket=${encodeURIComponent(ticketId)}`
+    : `Feedback Ticket: ${ticketId}`;
+}
 const sendTicketEmail = async (ticket, user) => {
   try {
     await emailjs.send(
-      'service_ctyqqbc',
-      'template_vuv4jtd',
+      EMAILJS_SERVICE_ID,
+      EMAILJS_TEMPLATE_ID,
       {
           user_name: user?.name || 'User',
           to_email: user?.email,
           ticket_id: ticket.id,
           issue: ticket.issue || ticket.description || ticket.category || "IT Helpdesk Ticket",
       },
-      'N9OlDxPyO0uf_IlxJ'
+      EMAILJS_PUBLIC_KEY
     );
 
     console.log("Email sent");
   } catch (error) {
     console.log("Email error:", error);
+  }
+};
+const sendTicketCloseEmail = async (ticket, user = {}, closedBy = "Admin") => {
+  const feedbackLink = getTicketFeedbackLink(ticket.id);
+  const params = {
+    to_email: ticket.email || user?.email,
+    user_name: ticket.name || user?.name || "User",
+    ticket_id: ticket.id,
+    issue: ticket.issue || ticket.description || categoryLabel(ticket.category) || "IT Helpdesk Ticket",
+    category: categoryLabel(ticket.category),
+    status: "Closed",
+    closed_by: closedBy,
+    closed_at: fmtDate(ticket.closedAt || Date.now()),
+    closing_remarks: ticket.closingRemarks || "Issue resolved successfully.",
+    feedback_link: feedbackLink,
+  };
+
+  try {
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params, EMAILJS_PUBLIC_KEY);
+    console.log("Close email sent", params);
+  } catch (error) {
+    console.error("EmailJS close email error:", error);
+    throw error;
   }
 };
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -216,9 +247,7 @@ Jaipuria Institute of Management IT Support Team
 function emailTicketClosed(ticket, assignee, closedBy="Admin") {
   const duration = formatDuration(ticket.closedAt - ticket.createdAt);
   const category = categoryLabel(ticket.category);
-  const feedbackUrl = typeof window !== "undefined"
-    ? `${window.location.origin}/?feedbackTicket=${encodeURIComponent(ticket.id)}`
-    : `Feedback Ticket: ${ticket.id}`;
+  const feedbackUrl = getTicketFeedbackLink(ticket.id);
   const body = `
 Dear ${ticket.name},
 
@@ -927,8 +956,11 @@ function CloseTicketDialog({ticket,onClose,onConfirm}) {
     if(!remarks.trim()){return;}
     setLoading(true);
     await new Promise(r=>setTimeout(r,800));
-    onConfirm(remarks);
-    setLoading(false);
+    try {
+      await Promise.resolve(onConfirm(remarks));
+    } finally {
+      setLoading(false);
+    }
   };
   const duration=formatDuration(Date.now()-ticket.createdAt);
   return (
@@ -976,7 +1008,10 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
   const assignee=STAFF_BASE.find(s=>s.id===ticket.assigneeId);
   const cat=CATEGORIES.find(c=>c.id===ticket.category);
 
-  const updateTicket = (changes, auditAction, remark = "") => {
+  const updateTicket = async (changes, auditAction, remark = "") => {
+    let ticketClosedForEmail = null;
+    let closedByForEmail = "Admin";
+
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
       const actor=isAdmin?"Admin":staffName||"User";
@@ -988,6 +1023,8 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         updated.closingRemarks=remark||"Closed from ticket controls.";
         updated.resolutionTime=updated.closedAt-t.createdAt;
         updated.feedbackSubmitted=false;
+        closedByForEmail=actor;
+        ticketClosedForEmail=updated;
         emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===updated.assigneeId),actor);
       }
       if(changes.assigneeId&&Number(changes.assigneeId)!==Number(t.assigneeId)){
@@ -995,9 +1032,19 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
       }
       return updated;
     }));
+
+    if(ticketClosedForEmail){
+      try {
+        await sendTicketCloseEmail(ticketClosedForEmail, {name:ticketClosedForEmail.name,email:ticketClosedForEmail.email}, closedByForEmail);
+        toast("Ticket closed! Email notification sent", "success");
+      } catch (error) {
+        toast("Ticket closed but email failed to send", "error");
+      }
+      return;
+    }
+
     toast(auditAction,"success");
   };
-
   const addComment=()=>{
     if(!comment.trim()) return;
     setTickets(ts=>ts.map(t=>{
@@ -1010,20 +1057,30 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     toast("Comment added","success");
   };
 
-  const handleCloseTicket=(remarks)=>{
+  const handleCloseTicket=async(remarks)=>{
     const closedAt=Date.now();
+    let closedTicketForEmail = null;
+    let closedByForEmail = staffName || (isAdmin ? "Admin" : "User");
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
-      const closedBy = staffName || (isAdmin ? "Admin" : "User");
       const updated={...t,status:"Closed",closedAt,closingRemarks:remarks,resolutionTime:closedAt-t.createdAt,updatedAt:closedAt,feedbackSubmitted:false,
-        timeline:[...(t.timeline||[]),{action:"Closed",remark:remarks,at:closedAt,by:closedBy}]};
-      emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===t.assigneeId),closedBy);
+        timeline:[...(t.timeline||[]),{action:"Closed",remark:remarks,at:closedAt,by:closedByForEmail}]};
+      closedTicketForEmail = updated;
+      emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===t.assigneeId),closedByForEmail);
       return updated;
     }));
-    setShowClose(false);
-    toast("Ticket closed! Email notification sent 📧","success");
-  };
 
+    if(closedTicketForEmail){
+      try {
+        await sendTicketCloseEmail(closedTicketForEmail, {name:closedTicketForEmail.name,email:closedTicketForEmail.email}, closedByForEmail);
+        setShowClose(false);
+        toast("Ticket closed! Email notification sent", "success");
+      } catch (error) {
+        setShowClose(false);
+        toast("Ticket closed but email failed to send", "error");
+      }
+    }
+  };
   const canClose=(isAdmin||(isStaff&&ticket.assigneeId===staffId))&&ticket.status!=="Closed";
   const currentTicket=tickets.find(t=>t.id===ticketId)||ticket;
 
@@ -2802,6 +2859,9 @@ export default function App() {
     </>
   );
 }
+
+
+
 
 
 
