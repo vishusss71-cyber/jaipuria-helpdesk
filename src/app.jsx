@@ -95,6 +95,28 @@ function timeAgo(ts) {
   return `${Math.floor(h/24)}d ago`;
 }
 function fmtDate(ts) { return ts ? new Date(ts).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}) : "—"; }
+function isInstitutionEmail(value) { return /^[^\s@]+@jaipuria\.ac\.in$/i.test((value || "").trim()); }
+function statusColor(status) { return {Open:"#6366f1",Assigned:"#0ea5e9","In Progress":"#f59e0b",Resolved:"#10b981",Closed:"#6b7280"}[status] || "#64748b"; }
+function priorityColor(priority) { return {Low:"#64748b",Medium:"#f59e0b",High:"#f97316",Critical:"#ef4444"}[priority] || "#64748b"; }
+function categoryLabel(id) { return CATEGORIES.find(c=>c.id===id)?.label || id || "—"; }
+function staffName(id) { return STAFF_BASE.find(s=>s.id===Number(id))?.name || "Unassigned"; }
+function cleanTicketRow(t) {
+  return {
+    "Ticket ID": t.id || "—",
+    Name: t.name || "—",
+    Email: t.email || "—",
+    Department: t.dept || "—",
+    Category: categoryLabel(t.category),
+    Priority: t.priority || "—",
+    Status: t.status || "—",
+    "Assigned To": staffName(t.assigneeId),
+    "Created At": fmtDate(t.createdAt),
+    "Closed At": t.closedAt ? fmtDate(t.closedAt) : "—",
+    "Resolution Time": t.closedAt && t.createdAt ? formatDuration(t.closedAt - t.createdAt) : "Active",
+    Description: t.description || "—",
+    "Closing Remarks": t.closingRemarks || "—",
+  };
+}
 
 // Password strength
 function pwdStrength(pwd) {
@@ -168,55 +190,196 @@ Jaipuria Institute of Management IT Support Team
 
 // ── CSV / EXPORT HELPERS ──────────────────────────────────────────────────
 function downloadExcel(data, filename) {
-
   const cleanData = data.map(row => {
     const cleaned = {};
-
     Object.keys(row).forEach(key => {
-      cleaned[key] =
-        typeof row[key] === "object"
-          ? JSON.stringify(row[key])
-          : row[key];
+      cleaned[key] = typeof row[key] === "object" && row[key] !== null ? JSON.stringify(row[key]) : row[key];
     });
-
     return cleaned;
   });
 
   const worksheet = XLSX.utils.json_to_sheet(cleanData);
-
   const workbook = XLSX.utils.book_new();
-
   XLSX.utils.book_append_sheet(workbook, worksheet, "Tickets");
-
   XLSX.writeFile(workbook, filename);
 }
 
-function downloadPDF(data, filename) {
+function countBy(items, values, getter) {
+  return values.map(value => ({ label: value, value: items.filter(item => getter(item) === value).length }));
+}
 
-  const doc = new jsPDF();
+function drawSummaryCards(doc, cards, y) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 12;
+  const gap = 5;
+  const cardW = (pageWidth - margin * 2 - gap * (cards.length - 1)) / cards.length;
+  cards.forEach((card, i) => {
+    const x = margin + i * (cardW + gap);
+    doc.setFillColor(...card.rgb);
+    doc.roundedRect(x, y, cardW, 18, 3, 3, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text(String(card.value), x + 4, y + 7);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.text(card.label, x + 4, y + 14);
+  });
+}
 
-  if (!data.length) {
-    doc.text("No Data", 10, 10);
-    doc.save(filename);
-    return;
+function drawBarSummary(doc, title, rows, x, y, w, colors) {
+  doc.setTextColor(30, 41, 59);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text(title, x, y);
+  const total = Math.max(1, rows.reduce((sum, row) => sum + row.value, 0));
+  let cy = y + 7;
+  rows.forEach((row, idx) => {
+    const color = colors[row.label] || colors[idx] || "#64748b";
+    const rgb = hexToRgb(color);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`${row.label} (${row.value})`, x, cy + 3);
+    doc.setFillColor(226, 232, 240);
+    doc.roundedRect(x + 35, cy, w - 43, 4, 1.5, 1.5, "F");
+    doc.setFillColor(rgb.r, rgb.g, rgb.b);
+    doc.roundedRect(x + 35, cy, Math.max(1, (w - 43) * (row.value / total)), 4, 1.5, 1.5, "F");
+    cy += 8;
+  });
+  return cy;
+}
+
+function hexToRgb(hex) {
+  const clean = (hex || "#64748b").replace("#", "");
+  const value = parseInt(clean.length === 3 ? clean.split("").map(c => c + c).join("") : clean, 16);
+  return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
+}
+
+function addPdfFooter(doc) {
+  const pageCount = doc.internal.getNumberOfPages();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(226, 232, 240);
+    doc.line(12, pageHeight - 12, pageWidth - 12, pageHeight - 12);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text("Jaipuria Institute of Management - IT Helpdesk", 12, pageHeight - 7);
+    doc.text(`Page ${i} of ${pageCount}`, pageWidth - 32, pageHeight - 7);
   }
+}
 
-  const headers = [Object.keys(data[0])];
+function downloadPDF(data, filename, options = {}) {
+  const tickets = options.sourceTickets || data || [];
+  const rows = tickets.map(cleanTicketRow);
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const generatedAt = new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  const dateRange = options.dateFrom || options.dateTo
+    ? `${options.dateFrom || "Beginning"} to ${options.dateTo || "Today"}`
+    : "All dates";
+  const closed = tickets.filter(t => t.status === "Closed" || t.status === "Resolved");
+  const avgMs = closed.length ? closed.reduce((sum, t) => sum + ((t.closedAt || Date.now()) - t.createdAt), 0) / closed.length : 0;
 
-  const rows = data.map(obj =>
-    Object.values(obj).map(v =>
-      typeof v === "object" ? JSON.stringify(v) : String(v)
-    )
-  );
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, pageWidth, 34, "F");
+  doc.setFillColor(99, 102, 241);
+  doc.circle(18, 17, 8, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(17);
+  doc.text("Jaipuria Institute of Management", 31, 14);
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text("IT Helpdesk Report", 31, 22);
+  doc.setFontSize(8);
+  doc.text(`Date range: ${dateRange}`, pageWidth - 82, 13);
+  doc.text(`Generated: ${generatedAt}`, pageWidth - 82, 20);
+
+  drawSummaryCards(doc, [
+    { label: "Total Tickets", value: tickets.length, rgb: [99, 102, 241] },
+    { label: "Open", value: tickets.filter(t => t.status === "Open").length, rgb: [14, 165, 233] },
+    { label: "In Progress", value: tickets.filter(t => t.status === "In Progress").length, rgb: [245, 158, 11] },
+    { label: "Closed/Resolved", value: closed.length, rgb: [16, 185, 129] },
+    { label: "Critical", value: tickets.filter(t => t.priority === "Critical").length, rgb: [239, 68, 68] },
+    { label: "Avg Resolution", value: avgMs ? formatDuration(avgMs) : "—", rgb: [139, 92, 246] },
+  ], 42);
+
+  const statusRows = countBy(tickets, STATUSES, t => t.status);
+  const priorityRows = countBy(tickets, PRIORITIES, t => t.priority);
+  const staffRows = STAFF_BASE.map(s => ({ label: s.name.split(" ").slice(0,2).join(" "), value: tickets.filter(t => t.assigneeId === s.id).length }));
+  const categoryRows = CATEGORIES.map(c => ({ label: c.label, value: tickets.filter(t => t.category === c.id).length })).filter(r => r.value).slice(0, 8);
+
+  drawBarSummary(doc, "Status Distribution", statusRows, 12, 72, 65, Object.fromEntries(STATUSES.map(s => [s, statusColor(s)])));
+  drawBarSummary(doc, "Priority Distribution", priorityRows, 84, 72, 58, Object.fromEntries(PRIORITIES.map(p => [p, priorityColor(p)])));
+  drawBarSummary(doc, "Staff Ticket Count", staffRows, 149, 72, 58, { 0: "#6366f1", 1: "#0ea5e9", 2: "#10b981" });
+  drawBarSummary(doc, "Top Categories", categoryRows.length ? categoryRows : [{ label: "No category data", value: 0 }], 214, 72, 70, { 0: "#8b5cf6", 1: "#06b6d4", 2: "#f97316" });
 
   autoTable(doc, {
-    head: headers,
-    body: rows,
+    startY: 122,
+    head: [["Ticket ID", "Name", "Email", "Dept", "Category", "Priority", "Status", "Assigned To", "Created", "Closed", "Resolution", "Description", "Closing Remarks"]],
+    body: rows.map(row => [
+      row["Ticket ID"], row.Name, row.Email, row.Department, row.Category, row.Priority, row.Status,
+      row["Assigned To"], row["Created At"], row["Closed At"], row["Resolution Time"], row.Description, row["Closing Remarks"]
+    ]),
+    theme: "grid",
+    tableWidth: "auto",
+    margin: { left: 10, right: 10, bottom: 16 },
+    styles: {
+      font: "helvetica",
+      fontSize: 6.8,
+      cellPadding: 1.7,
+      overflow: "linebreak",
+      valign: "top",
+      lineColor: [226, 232, 240],
+      lineWidth: 0.1,
+      textColor: [30, 41, 59],
+    },
+    headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: "bold", fontSize: 7.2, halign: "center" },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { cellWidth: 21, fontStyle: "bold" },
+      1: { cellWidth: 22 },
+      2: { cellWidth: 34 },
+      3: { cellWidth: 24 },
+      4: { cellWidth: 27 },
+      5: { cellWidth: 17, halign: "center" },
+      6: { cellWidth: 20, halign: "center" },
+      7: { cellWidth: 25 },
+      8: { cellWidth: 23 },
+      9: { cellWidth: 23 },
+      10: { cellWidth: 18, halign: "center" },
+      11: { cellWidth: 38 },
+      12: { cellWidth: 34 },
+    },
+    didParseCell: data => {
+      if (data.section !== "body") return;
+      if (data.column.index === 5) {
+        const rgb = hexToRgb(priorityColor(data.cell.raw));
+        data.cell.styles.textColor = [rgb.r, rgb.g, rgb.b];
+        data.cell.styles.fontStyle = "bold";
+      }
+      if (data.column.index === 6) {
+        const rgb = hexToRgb(statusColor(data.cell.raw));
+        data.cell.styles.textColor = [rgb.r, rgb.g, rgb.b];
+        data.cell.styles.fontStyle = "bold";
+      }
+    },
   });
 
+  if (!rows.length) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(100, 116, 139);
+    doc.text("No tickets found for the selected filters.", 12, 130);
+  }
+
+  addPdfFooter(doc);
   doc.save(filename);
-}
-// ── GLOBAL CSS ─────────────────────────────────────────────────────────────
+}// ── GLOBAL CSS ─────────────────────────────────────────────────────────────
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
@@ -297,7 +460,8 @@ function PwdInput({
   showStrength=false,
   id,
   autoComplete,
-  name
+  name,
+  onKeyDown
 }) {
 
   const [show,setShow]=useState(false);
@@ -317,6 +481,7 @@ function PwdInput({
   autoComplete={autoComplete || "off"}
   data-lpignore="true"
   onChange={e=>onChange(e.target.value)}
+  onKeyDown={onKeyDown}
   placeholder={placeholder}
 />
 
@@ -923,28 +1088,18 @@ function ExportPanel({tickets,toast}) {
     setLoading(type);
     await new Promise(r=>setTimeout(r,900));
     const now=new Date().toISOString().slice(0,10);
-    const ticketCols=[{key:"id",label:"Ticket ID"},{key:"name",label:"Name"},{key:"email",label:"Email"},{key:"dept",label:"Department"},
-      {key:"category",label:"Category"},{key:"priority",label:"Priority"},{key:"status",label:"Status"},
-      {key:"description",label:"Description"},{key:"assigneeId",label:"Assigned To (ID)"},{key:"createdAt",label:"Created At"},{key:"closedAt",label:"Closed At"},{key:"closingRemarks",label:"Closing Remarks"}];
     let data=filtered;
     if(type==="open") data=filtered.filter(t=>t.status==="Open"||t.status==="Assigned"||t.status==="In Progress");
     if(type==="closed") data=filtered.filter(t=>t.status==="Closed"||t.status==="Resolved");
-    const rows = data.map(t => ({
-  ...t,
-  category: CATEGORIES.find(c => c.id === t.category)?.label || t.category,
-  "Assigned To": STAFF_BASE.find(s => s.id === t.assigneeId)?.name || "",
-  createdAt: fmtDate(t.createdAt),
-  closedAt: fmtDate(t.closedAt) || "",
-}));
-    console.log("FORMAT VALUE =", format);
+    const rows = data.map(cleanTicketRow);
 
-if(format==="excel"||format==="pdf") {
+    if(format==="excel") {
+      downloadExcel(rows, `tickets_${type}_${now}.xlsx`);
+    }
+    if(format==="pdf") {
+      downloadPDF(rows, `tickets_${type}_${now}.pdf`, { sourceTickets:data, dateFrom, dateTo, type });
+    }
 
-  format==="excel"
-    ? downloadExcel(rows, `tickets_${type}_${now}.xlsx`)
-    : downloadPDF(rows, `tickets_${type}_${now}.pdf`);
-
-}
     toast(`${type} report exported (${data.length} tickets) ✅`,"success");
     setLoading("");
   };
@@ -1229,15 +1384,17 @@ function ForgotPassword({onBack,toast}) {
   const [token,setToken]=useState("");
 
   const sendOTP=async()=>{
-    const staff=STAFF_BASE.find(s=>s.email===email.trim());
-    const isAdmin=email.trim()==="admin@jaipuria.ac.in"||email.trim().toLowerCase()==="admin";
+    const cleanEmail=email.trim().toLowerCase();
+    const isAdmin=cleanEmail==="admin@jaipuria.ac.in"||cleanEmail==="admin";
+    if(cleanEmail.includes("@") && !isInstitutionEmail(cleanEmail)){toast("Only @jaipuria.ac.in email ID is allowed","error");return;}
+    const staff=STAFF_BASE.find(s=>s.email.toLowerCase()===cleanEmail);
     if(!staff&&!isAdmin){toast("Email not found in our system","error");return;}
     setLoading(true);
     await new Promise(r=>setTimeout(r,800));
     const code=genOTP(); const tok=genToken();
     setOtp(code); setToken(tok);
-    simulateEmail(email,"IT Helpdesk Password Reset OTP",`Your OTP for password reset is: ${code}\n\nThis OTP expires in 10 minutes.\n\nIf you did not request this, please ignore this email.`);
-    toast(`OTP sent to ${email} (check Email Log for demo) 📧`,"email");
+    simulateEmail(isAdmin ? "admin@jaipuria.ac.in" : cleanEmail,"IT Helpdesk Password Reset OTP",`Your OTP for password reset is: ${code}\n\nThis OTP expires in 10 minutes.\n\nIf you did not request this, please ignore this email.`);
+    toast(`OTP sent to ${isAdmin ? "admin@jaipuria.ac.in" : cleanEmail} (check Email Log for demo) 📧`,"email");
     setLoading(false); setStep(2);
   };
 
@@ -1251,7 +1408,7 @@ function ForgotPassword({onBack,toast}) {
     if(newPwd!==confirmPwd){toast("Passwords do not match","error");return;}
     setLoading(true);
     const hash=await hashPassword(newPwd);
-    const staff=STAFF_BASE.find(s=>s.email===email.trim());
+    const staff=STAFF_BASE.find(s=>s.email.toLowerCase()===email.trim().toLowerCase());
     if(staff){
       const staffPasswords = DB.get("staff_passwords", {});
       staffPasswords[staff.id] = hash;
@@ -1295,9 +1452,9 @@ function ForgotPassword({onBack,toast}) {
         </>}
         {step===3&&<>
           <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>New Password</label>
-            <PwdInput value={newPwd} onChange={setNewPwd} placeholder="New password" showStrength/></div>
+            <PwdInput value={newPwd} onChange={setNewPwd} placeholder="New password" showStrength onKeyDown={e=>e.key==="Enter"&&resetPassword()}/></div>
           <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Confirm Password</label>
-            <PwdInput value={confirmPwd} onChange={setConfirmPwd} placeholder="Repeat new password"/>
+            <PwdInput value={confirmPwd} onChange={setConfirmPwd} placeholder="Repeat new password" onKeyDown={e=>e.key==="Enter"&&resetPassword()}/>
             {confirmPwd&&newPwd!==confirmPwd&&<div style={{fontSize:12,color:"#f87171",marginTop:4}}>Passwords do not match</div>}
           </div>
           <button className="glow-btn" style={{width:"100%"}} onClick={resetPassword} disabled={loading||pwdStrength(newPwd)<2||newPwd!==confirmPwd}>
@@ -1320,15 +1477,36 @@ function Landing({onLogin}) {
   const {toasts,toast,remove}=useToast();
   const [adminUser,setAdminUser]=useState("");
 
+  const resetMode = (nextMode) => {
+    setMode(nextMode);
+    setPwd("");
+    setEmail("");
+    setAdminUser("");
+  };
+
+  const validateInstituteEmail = (value) => {
+    if(!isInstitutionEmail(value)){
+      toast("Only @jaipuria.ac.in email ID is allowed","error");
+      return false;
+    }
+    return true;
+  };
+
   const handleLogin=async()=>{
+    const cleanEmail=email.trim().toLowerCase();
+    const cleanAdmin=adminUser.trim().toLowerCase();
+
     if(mode==="user"){
-      if(!/\S+@\S+\.\S+/.test(email)){toast("Enter a valid email address","error");return;}
-      onLogin({type:"user",email});
+      if(!cleanEmail){toast("Enter your email address","error");return;}
+      if(!validateInstituteEmail(cleanEmail)) return;
+      onLogin({type:"user",email:cleanEmail});
       return;
     }
+
     if(mode==="admin"){
-      if(!adminUser.trim()||!pwd.trim()){toast("Enter username and password","error");return;}
-      if(adminUser.trim().toLowerCase()!=="admin"){toast("Invalid username","error");return;}
+      if(!cleanAdmin||!pwd.trim()){toast("Enter username and password","error");return;}
+      if(cleanAdmin.includes("@") && !validateInstituteEmail(cleanAdmin)) return;
+      if(cleanAdmin!=="admin" && cleanAdmin!=="admin@jaipuria.ac.in"){toast("Invalid username","error");return;}
       setLoading(true);
       await new Promise(r=>setTimeout(r,500));
       const storedHash=DB.get("admin_password",null);
@@ -1340,15 +1518,17 @@ function Landing({onLogin}) {
       else{toast("Invalid credentials","error");}
       return;
     }
+
     if(mode==="staff"){
-      const staff=STAFF_BASE.find(s=>s.email===email.trim());
+      if(!cleanEmail){toast("Enter staff email","error");return;}
+      if(!validateInstituteEmail(cleanEmail)) return;
+      const staff=STAFF_BASE.find(s=>s.email.toLowerCase()===cleanEmail);
       if(!staff){toast("Staff email not found","error");return;}
       setLoading(true);
       await new Promise(r=>setTimeout(r,500));
       const staffPasswords=DB.get("staff_passwords",{});
       const storedHash=staffPasswords[staff.id];
       if(!storedHash){
-        // First login
         setLoading(false);
         onLogin({type:"staff_firstlogin",staffId:staff.id,staff});
         return;
@@ -1362,139 +1542,93 @@ function Landing({onLogin}) {
   };
 
   if(showForgot) return (
-    <div style={{minHeight:"100vh",background:"radial-gradient(ellipse at 20% 50%,rgba(99,102,241,0.15) 0%,transparent 50%),#0a0a0f",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{minHeight:"100vh",background:"radial-gradient(circle at 18% 18%,rgba(99,102,241,0.22),transparent 32%),radial-gradient(circle at 86% 30%,rgba(20,184,166,0.14),transparent 30%),#0a0a0f",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <ForgotPassword onBack={()=>setShowForgot(false)} toast={toast}/>
       <Toast toasts={toasts} remove={remove}/>
     </div>
   );
 
+  const modeCopy = {
+    user:{title:"User Access",subtitle:"Raise and track IT support tickets with your institutional email.",placeholder:"name@jaipuria.ac.in"},
+    staff:{title:"IT Staff Access",subtitle:"Manage assigned tickets, updates, SLA progress, and closures.",placeholder:"staff@jaipuria.ac.in"},
+    admin:{title:"Admin Portal",subtitle:"Full dashboard access for tickets, analytics, exports, and staff management.",placeholder:"Admin or admin@jaipuria.ac.in"},
+  }[mode];
+
   return (
-    <div style={{minHeight:"100vh",background:"radial-gradient(ellipse at 20% 50%,rgba(99,102,241,0.15) 0%,transparent 50%),radial-gradient(ellipse at 80% 50%,rgba(139,92,246,0.1) 0%,transparent 50%),#0a0a0f",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{width:"100%",maxWidth:460}} className="fade-up">
-        {/* Branding */}
-        <div style={{textAlign:"center",marginBottom:36}}>
-          <div style={{width:72,height:72,borderRadius:20,background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,margin:"0 auto 14px"}}>🛡️</div>
-          <h1 style={{fontFamily:"Syne",fontSize:28,fontWeight:800,color:"#e2e8f0",letterSpacing:"-0.5px",marginBottom:6}}>Jaipuria Institute of Management</h1>
-          <p style={{fontSize:13,color:"rgba(226,232,240,0.4)",letterSpacing:"2px",textTransform:"uppercase"}}>IT Support Portal v2.0</p>
-          <div style={{display:"flex",gap:8,justifyContent:"center",marginTop:14,flexWrap:"wrap"}}>
-            {["⚡ 24/7 Support","🤖 AI-Powered","🔐 Enterprise Secure"].map(t=>(
-              <span key={t} className="tag" style={{background:"rgba(99,102,241,0.1)",color:"#818cf8",border:"1px solid rgba(99,102,241,0.2)"}}>{t}</span>
+    <div style={{minHeight:"100vh",background:"radial-gradient(circle at 16% 20%,rgba(99,102,241,0.24),transparent 34%),radial-gradient(circle at 84% 28%,rgba(16,185,129,0.16),transparent 30%),radial-gradient(circle at 50% 100%,rgba(14,165,233,0.10),transparent 38%),#0a0a0f",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}}>
+      <div style={{width:"100%",maxWidth:980,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,360px),1fr))",gap:28,alignItems:"center"}} className="fade-up">
+        <div style={{padding:"10px 4px"}}>
+          <div style={{display:"inline-flex",alignItems:"center",gap:12,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,padding:"10px 14px",marginBottom:22}}>
+            <div style={{width:42,height:42,borderRadius:12,background:"linear-gradient(135deg,#6366f1,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>🛡️</div>
+            <div>
+              <div style={{fontFamily:"Syne",fontWeight:800,fontSize:13,color:"#fff",letterSpacing:0}}>JAIPURIA</div>
+              <div style={{fontSize:11,color:"rgba(226,232,240,0.52)"}}>Institute IT Helpdesk</div>
+            </div>
+          </div>
+          <h1 style={{fontFamily:"Syne",fontSize:"clamp(30px,5vw,54px)",lineHeight:1.02,fontWeight:800,color:"#f8fafc",letterSpacing:0,marginBottom:16}}>IT Support Portal</h1>
+          <p style={{fontSize:16,lineHeight:1.7,color:"rgba(226,232,240,0.66)",maxWidth:560,marginBottom:24}}>Fast ticket logging, transparent assignment, SLA tracking, analytics, and export-ready reports for Jaipuria Institute of Management.</p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,maxWidth:560}}>
+            {[["24/7","Support Desk"],["SLA","Live Tracking"],["PDF/XLSX","Reports"],["Secure","Role Access"]].map(([value,label])=>(
+              <div key={label} className="glass" style={{padding:"16px 14px"}}>
+                <div style={{fontFamily:"Syne",fontWeight:800,fontSize:22,color:"#818cf8"}}>{value}</div>
+                <div style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginTop:3}}>{label}</div>
+              </div>
             ))}
           </div>
         </div>
-        {/* Login card */}
-        <div className="glass" style={{padding:"28px 24px"}}>
-          {/* Mode tabs */}
-          <div style={{display:"flex",background:"rgba(255,255,255,0.04)",borderRadius:10,padding:4,marginBottom:22}}>
-            {[["user","👤 User"],["staff","🧑‍💼 IT Staff"],["admin","⚙️ Admin"]].map(([m,l])=>(
-              <button key={m} onClick={()=>{setMode(m);setPwd("");setEmail("");setAdminUser("");}} style={{flex:1,padding:"8px 4px",borderRadius:8,border:"none",fontSize:13,fontWeight:500,
-                background:mode===m?"rgba(99,102,241,0.3)":"transparent",color:mode===m?"#818cf8":"rgba(226,232,240,0.5)"}}>{l}</button>
+
+        <form onSubmit={e=>{e.preventDefault();handleLogin();}} className="glass" style={{padding:"28px 24px",boxShadow:"0 24px 80px rgba(0,0,0,0.35)",borderRadius:20}}>
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:12,color:"#818cf8",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Welcome back</div>
+            <h2 style={{fontFamily:"Syne",fontSize:24,fontWeight:800,color:"#f8fafc",letterSpacing:0}}>{modeCopy.title}</h2>
+            <p style={{fontSize:13,lineHeight:1.6,color:"rgba(226,232,240,0.52)",marginTop:6}}>{modeCopy.subtitle}</p>
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:5,marginBottom:20,gap:4}}>
+            {[["user","User"],["staff","IT Staff"],["admin","Admin"]].map(([m,l])=>(
+              <button type="button" key={m} onClick={()=>resetMode(m)} style={{padding:"10px 8px",borderRadius:10,border:"none",fontSize:13,fontWeight:700,background:mode===m?"linear-gradient(135deg,rgba(99,102,241,0.95),rgba(20,184,166,0.82))":"transparent",color:mode===m?"#fff":"rgba(226,232,240,0.58)",boxShadow:mode===m?"0 10px 28px rgba(99,102,241,0.25)":"none"}}>{l}</button>
             ))}
           </div>
+
           {mode==="admin"&&(
             <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:18}}>
-              <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Username</label>
-                <input placeholder="Admin" value={adminUser} onChange={e=>setAdminUser(e.target.value)}/></div>
-              <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Password</label>
-                <PwdInput value={pwd} onChange={setPwd} placeholder="Enter admin password"/></div>
+              <div><label style={{fontSize:12,color:"rgba(226,232,240,0.62)",marginBottom:6,display:"block",fontWeight:600}}>Username or Admin Email</label>
+                <input placeholder={modeCopy.placeholder} value={adminUser} autoComplete="username" onChange={e=>setAdminUser(e.target.value)}/></div>
+              <div><label style={{fontSize:12,color:"rgba(226,232,240,0.62)",marginBottom:6,display:"block",fontWeight:600}}>Password</label>
+                <PwdInput value={pwd} onChange={setPwd} autoComplete="current-password" placeholder="Enter admin password"/></div>
             </div>
           )}
-         {mode==="staff"&&(
-  <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:18}}>
 
-    <div>
-      <label
-        style={{
-          fontSize:12,
-          color:"rgba(226,232,240,0.5)",
-          marginBottom:6,
-          display:"block"
-        }}
-      >
-        Staff Email
-      </label>
-
-      <input
-        type="email"
-        autoComplete="username"
-        placeholder="name@jaipuria.ac.in"
-        value={email}
-        onChange={e=>setEmail(e.target.value)}
-      />
-    </div>
-
-    <div>
-      <label
-        style={{
-          fontSize:12,
-          color:"rgba(226,232,240,0.5)",
-          marginBottom:6,
-          display:"block"
-        }}
-      >
-        Password
-      </label>
-
-      <PwdInput
-        value={pwd}
-        onChange={setPwd}
-        autoComplete="current-password"
-        placeholder="Enter your password"
-      />
-    </div>
-
-  </div>
-)}
-          {mode==="user"&&(
-  <div style={{marginBottom:18}}>
-    
-    <label
-      style={{
-        fontSize:12,
-        color:"rgba(226,232,240,0.5)",
-        marginBottom:6,
-        display:"block"
-      }}
-    >
-      Your Email Address
-    </label>
-
-    <input
-      type="email"
-      name="login-email"
-      autoComplete="username"
-      placeholder="your@email.com"
-      value={email}
-      onChange={e=>setEmail(e.target.value)}
-      onKeyDown={e=>e.key==="Enter"&&handleLogin()}
-    />
-
-  </div>
-)}
-          <button className="glow-btn" style={{width:"100%",padding:"13px"}} onClick={handleLogin} disabled={loading}>
-            {loading?"⏳ Authenticating...":mode==="admin"?"🔐 Access Admin Portal":"Continue →"}
-          </button>
-          <div style={{textAlign:"center",marginTop:14}}>
-            <button onClick={()=>setShowForgot(true)} style={{background:"none",border:"none",color:"rgba(99,102,241,0.7)",fontSize:13,textDecoration:"underline"}}>Forgot Password?</button>
-          </div>
-          {mode==="admin"&&<div style={{textAlign:"center",marginTop:8,fontSize:12,color:"rgba(226,232,240,0.3)"}}>Default: Admin / Admin@123</div>}
-        </div>
-        {/* Stats */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginTop:20}}>
-          {[["🎯","99.2%","SLA Rate"],["⚡","< 2h","Avg Resolution"],["🔐","JWT","Secured"]].map(([icon,val,label])=>(
-            <div key={label} className="glass" style={{padding:"14px 12px",textAlign:"center"}}>
-              <div style={{fontSize:20}}>{icon}</div>
-              <div style={{fontFamily:"Syne",fontSize:17,fontWeight:700,color:"#818cf8",marginTop:4}}>{val}</div>
-              <div style={{fontSize:11,color:"rgba(226,232,240,0.4)",marginTop:2}}>{label}</div>
+          {mode==="staff"&&(
+            <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:18}}>
+              <div><label style={{fontSize:12,color:"rgba(226,232,240,0.62)",marginBottom:6,display:"block",fontWeight:600}}>Staff Email</label>
+                <input type="email" autoComplete="username" placeholder={modeCopy.placeholder} value={email} onChange={e=>setEmail(e.target.value)}/></div>
+              <div><label style={{fontSize:12,color:"rgba(226,232,240,0.62)",marginBottom:6,display:"block",fontWeight:600}}>Password</label>
+                <PwdInput value={pwd} onChange={setPwd} autoComplete="current-password" placeholder="Enter your password"/></div>
             </div>
-          ))}
-        </div>
+          )}
+
+          {mode==="user"&&(
+            <div style={{marginBottom:18}}>
+              <label style={{fontSize:12,color:"rgba(226,232,240,0.62)",marginBottom:6,display:"block",fontWeight:600}}>Institutional Email Address</label>
+              <input type="email" name="login-email" autoComplete="username" placeholder={modeCopy.placeholder} value={email} onChange={e=>setEmail(e.target.value)}/>
+              <div style={{fontSize:11,color:"rgba(226,232,240,0.36)",marginTop:7}}>Only @jaipuria.ac.in email IDs are allowed.</div>
+            </div>
+          )}
+
+          <button type="submit" className="glow-btn" style={{width:"100%",padding:"13px",boxShadow:"0 14px 36px rgba(99,102,241,0.28)"}} disabled={loading}>
+            {loading?"Authenticating...":mode==="admin"?"Access Admin Portal":"Continue"}
+          </button>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginTop:14,flexWrap:"wrap"}}>
+            <button type="button" onClick={()=>setShowForgot(true)} style={{background:"none",border:"none",color:"rgba(129,140,248,0.9)",fontSize:13,textDecoration:"underline"}}>Forgot Password?</button>
+            {mode==="admin"&&<div style={{fontSize:12,color:"rgba(226,232,240,0.34)"}}>Default: Admin / Admin@123</div>}
+          </div>
+        </form>
       </div>
       <Toast toasts={toasts} remove={remove}/>
     </div>
   );
 }
-
 // ── TICKETS TABLE ─────────────────────────────────────────────────────────
 function TicketsTable({tickets,onView,isAdmin,onDelete}) {
   const [search,setSearch]=useState("");
@@ -1849,5 +1983,11 @@ export default function App() {
     </>
   );
 }
+
+
+
+
+
+
 
 
