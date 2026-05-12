@@ -5,6 +5,7 @@ import autoTable from "jspdf-autotable";
 import emailjs from '@emailjs/browser';
 const EMAILJS_SERVICE_ID = 'service_ctyqqbc';
 const EMAILJS_TEMPLATE_ID = 'template_vuv4jtd';
+const EMAILJS_CLOSE_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_CLOSE_TEMPLATE_ID || 'template_ticket_closed';
 const EMAILJS_PUBLIC_KEY = 'N9OlDxPyO0uf_IlxJ';
 function getTicketFeedbackLink(ticketId) {
   return typeof window !== "undefined"
@@ -30,23 +31,32 @@ const sendTicketEmail = async (ticket, user) => {
     console.log("Email error:", error);
   }
 };
-const sendTicketCloseEmail = async (ticket, user = {}, closedBy = "Admin") => {
+const sendTicketCloseEmail = async (ticket, user = {}, closedBy = "Admin", closingRemarks = "", comments = []) => {
   const feedbackLink = getTicketFeedbackLink(ticket.id);
+  const latestComment = Array.isArray(comments) && comments.length
+    ? (comments[comments.length - 1]?.text || comments[comments.length - 1]?.remark || "No additional comments.")
+    : "No additional comments.";
+  const finalRemarks = closingRemarks || ticket.closingRemarks || "Issue resolved successfully.";
+  const resolutionMs = ticket.resolutionTime || ((ticket.closedAt || Date.now()) - ticket.createdAt);
+  const issue = ticket.issue || ticket.description || categoryLabel(ticket.category) || "IT Helpdesk Ticket";
   const params = {
     to_email: ticket.email || user?.email,
     user_name: ticket.name || user?.name || "User",
     ticket_id: ticket.id,
-    issue: ticket.issue || ticket.description || categoryLabel(ticket.category) || "IT Helpdesk Ticket",
-    category: categoryLabel(ticket.category),
+    issue,
     status: "Closed",
     closed_by: closedBy,
     closed_at: fmtDate(ticket.closedAt || Date.now()),
-    closing_remarks: ticket.closingRemarks || "Issue resolved successfully.",
+    resolution_time: formatDuration(resolutionMs),
+    closing_remarks: finalRemarks,
+    latest_comment: latestComment,
     feedback_link: feedbackLink,
+    subject: `Your IT Support Ticket Has Been Closed - ${ticket.id}`,
+    message: `Hello ${ticket.name || user?.name || "User"},\n\nYour IT support ticket has been successfully closed.\n\nTicket ID: ${ticket.id}\nIssue: ${issue}\nStatus: Closed\nClosed By: ${closedBy}\nClosed At: ${fmtDate(ticket.closedAt || Date.now())}\nResolution Time: ${formatDuration(resolutionMs)}\n\nClosing Remarks:\n${finalRemarks}\n\nLatest Comment:\n${latestComment}\n\nWe hope your issue has been resolved properly. Please take a moment to share your feedback so we can improve our IT support service.\n\nFeedback Link:\n${feedbackLink}\n\nThanks,\nIT Department Jaipur`,
   };
 
   try {
-    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params, EMAILJS_PUBLIC_KEY);
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_CLOSE_TEMPLATE_ID, params, EMAILJS_PUBLIC_KEY);
     console.log("Close email sent", params);
   } catch (error) {
     console.error("EmailJS close email error:", error);
@@ -740,7 +750,48 @@ button{cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s}
 .pulse{animation:pulse 2s infinite}
 .spin{animation:spin 1s linear infinite}
 .slide-down{animation:slideDown .3s ease forwards}
-`;
+@media (max-width:768px){
+  html,body,#root{width:100%;max-width:100%;overflow-x:hidden}
+  .app-shell{display:block!important;min-height:100vh!important;width:100%!important;overflow-x:hidden!important}
+  .app-main{width:100%!important;min-width:0!important;margin:0!important}
+  .app-sidebar{position:fixed!important;top:0!important;left:0!important;width:min(82vw,300px)!important;max-width:300px!important;height:100dvh!important;z-index:80!important;transform:translateX(-105%)!important;transition:transform .25s ease!important;box-shadow:18px 0 40px rgba(0,0,0,.42)!important;border-right:1px solid rgba(255,255,255,.12)!important}
+  .app-sidebar.mobile-open{transform:translateX(0)!important}
+  .sidebar-overlay{display:block!important;position:fixed!important;inset:0!important;background:rgba(0,0,0,.58)!important;backdrop-filter:blur(3px)!important;z-index:70!important}
+  .app-header{padding:10px 12px!important;gap:10px!important;position:sticky!important;top:0!important;z-index:40!important;width:100%!important;max-width:100vw!important}
+  .header-identity{min-width:0!important;flex:1!important;overflow:hidden!important}
+  .header-identity span{min-width:0!important;max-width:54vw!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;display:block!important}
+  .header-actions{gap:7px!important;flex-shrink:0!important}
+  .header-actions span{font-size:11px!important}
+  .header-actions button{padding:6px 10px!important;max-width:96px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+  .app-content{padding:16px 12px!important;width:100%!important;max-width:100vw!important;overflow-x:hidden!important}
+  .app-content h1,.app-content h2{font-size:20px!important;line-height:1.25!important}
+  .app-content h3{font-size:16px!important}
+  .app-content [style*="grid-template-columns"]{grid-template-columns:1fr!important}
+  .app-content [style*="minmax(280px"],.app-content [style*="minmax(290px"],.app-content [style*="minmax(300px"],.app-content [style*="minmax(320px"]{grid-template-columns:1fr!important}
+  .app-content [style*="display: flex"]{max-width:100%!important}
+  .app-content button,.app-content .glow-btn,.app-content .success-btn,.app-content .danger-btn{max-width:100%;white-space:normal!important}
+  .app-content input,.app-content select,.app-content textarea{min-width:0!important;max-width:100%!important}
+  .glass,.glass2{max-width:100%!important}
+  .modal-overlay{padding:8px!important;align-items:stretch!important;justify-content:center!important}
+  .modal-panel{max-width:100%!important;width:100%!important;max-height:calc(100dvh - 16px)!important;border-radius:12px!important}
+  .modal-header{padding:14px 14px 12px!important;gap:10px!important}
+  .modal-header h2{font-size:16px!important;line-height:1.25!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+  .modal-body{padding:14px!important;overflow-y:auto!important}
+  .staff-profile-menu{position:fixed!important;left:12px!important;right:12px!important;top:58px!important;width:auto!important;min-width:0!important;max-width:none!important;z-index:90!important}
+}
+@media (max-width:480px){
+  .app-sidebar{width:86vw!important}
+  .app-content{padding:12px 10px!important}
+  .app-header{padding:9px 10px!important}
+  .header-identity span{max-width:42vw!important;font-size:12px!important}
+  .header-actions .pulse,.header-actions span{display:none!important}
+  .header-actions button{font-size:12px!important;padding:6px 9px!important}
+  .app-content [style*="padding: 24px"],.app-content [style*="padding:24px"]{padding:16px!important}
+  .app-content [style*="gap: 24px"],.app-content [style*="gap:24px"]{gap:16px!important}
+  .app-content .tag{font-size:11px!important;padding:3px 8px!important}
+  .modal-overlay{padding:0!important}
+  .modal-panel{min-height:100dvh!important;max-height:100dvh!important;border-radius:0!important}
+}`;
 
 // ── TOAST ─────────────────────────────────────────────────────────────────
 function Toast({ toasts, remove }) {
@@ -863,14 +914,14 @@ function PwdInput({
 // ── MODAL ─────────────────────────────────────────────────────────────────
 function Modal({ title, children, onClose, wide=false }) {
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(8px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+    <div className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(8px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
       onClick={e=>e.target===e.currentTarget&&onClose&&onClose()}>
-      <div className="glass fade-up" style={{width:"100%",maxWidth:wide?860:720,maxHeight:"92vh",overflow:"hidden",display:"flex",flexDirection:"column"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 24px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",flexShrink:0}}>
+      <div className="glass fade-up modal-panel" style={{width:"100%",maxWidth:wide?860:720,maxHeight:"92vh",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+        <div className="modal-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 24px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",flexShrink:0}}>
           <h2 style={{fontFamily:"Syne",fontSize:18,fontWeight:700,color:"#e2e8f0"}}>{title}</h2>
           {onClose&&<button onClick={onClose} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",width:32,height:32,borderRadius:8,fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>}
         </div>
-        <div style={{padding:"20px 24px",overflowY:"auto",flex:1}}>{children}</div>
+        <div className="modal-body" style={{padding:"20px 24px",overflowY:"auto",flex:1}}>{children}</div>
       </div>
     </div>
   );
@@ -1035,8 +1086,8 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
 
     if(ticketClosedForEmail){
       try {
-        await sendTicketCloseEmail(ticketClosedForEmail, {name:ticketClosedForEmail.name,email:ticketClosedForEmail.email}, closedByForEmail);
-        toast("Ticket closed! Email notification sent", "success");
+        await sendTicketCloseEmail(ticketClosedForEmail, {name:ticketClosedForEmail.name,email:ticketClosedForEmail.email}, closedByForEmail, ticketClosedForEmail.closingRemarks, ticketClosedForEmail.comments || []);
+        toast("Ticket closed and close email sent to user", "success");
       } catch (error) {
         toast("Ticket closed but email failed to send", "error");
       }
@@ -1072,9 +1123,9 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
 
     if(closedTicketForEmail){
       try {
-        await sendTicketCloseEmail(closedTicketForEmail, {name:closedTicketForEmail.name,email:closedTicketForEmail.email}, closedByForEmail);
+        await sendTicketCloseEmail(closedTicketForEmail, {name:closedTicketForEmail.name,email:closedTicketForEmail.email}, closedByForEmail, remarks, closedTicketForEmail.comments || []);
         setShowClose(false);
-        toast("Ticket closed! Email notification sent", "success");
+        toast("Ticket closed and close email sent to user", "success");
       } catch (error) {
         setShowClose(false);
         toast("Ticket closed but email failed to send", "error");
@@ -1840,8 +1891,8 @@ function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpe
 
   return (
     <>
-      {mobileOpen&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:49}} onClick={()=>setMobileOpen(false)}/>}
-      <aside style={{
+      {mobileOpen&&<div className="sidebar-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:49}} onClick={()=>setMobileOpen(false)}/>}
+      <aside className={`app-sidebar ${mobileOpen ? "mobile-open" : ""}`} style={{
         width:240,flexShrink:0,background:"rgba(10,10,20,0.95)",backdropFilter:"blur(20px)",
         borderRight:"1px solid rgba(255,255,255,0.07)",display:"flex",flexDirection:"column",
         height:"100vh",position:"sticky",top:0,overflowY:"auto",
@@ -2290,7 +2341,7 @@ function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions,s
 function StaffProfileMenu({staff,profiles,statuses,onStatusChange,onOpen,onLogout,onClose}) {
   const status=getStaffStatus(staff.id,statuses);
   return (
-    <div className="glass" style={{position:"absolute",left:0,top:"calc(100% + 12px)",width:"min(320px, calc(100vw - 32px))",padding:12,zIndex:2000,boxShadow:"0 28px 90px rgba(0,0,0,0.48)",background:"rgba(10,10,20,0.96)",border:"1px solid rgba(255,255,255,0.14)",backdropFilter:"blur(24px)"}}>
+    <div className="glass staff-profile-menu" style={{position:"absolute",left:0,top:"calc(100% + 12px)",width:"min(320px, calc(100vw - 32px))",padding:12,zIndex:2000,boxShadow:"0 28px 90px rgba(0,0,0,0.48)",background:"rgba(10,10,20,0.96)",border:"1px solid rgba(255,255,255,0.14)",backdropFilter:"blur(24px)"}}>
       <div style={{display:"flex",gap:12,alignItems:"center",padding:"10px 10px 14px",borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:10}}>
         <StaffAvatar staff={staff} profiles={profiles} statuses={statuses} size={52} showStatus />
         <div style={{minWidth:0}}>
@@ -2756,12 +2807,12 @@ export default function App() {
   return (
     <>
       <style>{CSS}</style>
-      <div style={{display:"flex",minHeight:"100vh"}}>
+      <div className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
         <Sidebar current={page} onChange={setPage} isAdmin={isAdmin} isStaff={isStaff} tickets={tickets} feedback={feedback} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
-        <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
-          <div style={{padding:"14px 24px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(10,10,20,0.9)",backdropFilter:"blur(20px)",position:"sticky",top:0,zIndex:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,position:"relative"}}>
-              <button onClick={() => isStaff ? setStaffMenuOpen(o=>!o) : setMobileOpen(o => !o)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",width:38,height:38,borderRadius:10,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>☰</button>
+        <div className="app-main" style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
+          <div className="app-header" style={{padding:"14px 24px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(10,10,20,0.9)",backdropFilter:"blur(20px)",position:"sticky",top:0,zIndex:10}}>
+            <div className="header-identity" style={{display:"flex",alignItems:"center",gap:12,position:"relative"}}>
+              <button onClick={() => { const isMobile = typeof window !== "undefined" && window.innerWidth <= 768; if (isMobile) setMobileOpen(o => !o); else if (isStaff) setStaffMenuOpen(o=>!o); else setMobileOpen(o => !o); }} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",width:38,height:38,borderRadius:10,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>☰</button>
               {isStaff&&staffMenuOpen&&(
                 <StaffProfileMenu
                   staff={STAFF_BASE.find(s=>s.id===session.staffId)}
@@ -2775,13 +2826,13 @@ export default function App() {
               )}
               {!isStaff&&<span style={{fontSize:13,color:"rgba(226,232,240,0.4)"}}>{isAdmin ? "Admin Portal" : session.email}</span>}
             </div>
-            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+            <div className="header-actions" style={{display:"flex",gap:10,alignItems:"center"}}>
               <div className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#10b981"}} />
               <span style={{fontSize:12,color:"rgba(226,232,240,0.4)"}}>Live</span>
               {!isStaff&&<button onClick={logoutUser} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",padding:"6px 14px",borderRadius:8,fontSize:13}}>Logout</button>}
             </div>
           </div>
-          <div style={{padding:"24px 28px",flex:1,overflowY:"auto"}}>{renderPage()}</div>
+          <div className="app-content" style={{padding:"24px 28px",flex:1,overflowY:"auto"}}>{renderPage()}</div>
         </div>
       </div>
 
@@ -2859,6 +2910,10 @@ export default function App() {
     </>
   );
 }
+
+
+
+
 
 
 
