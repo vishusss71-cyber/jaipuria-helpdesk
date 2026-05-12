@@ -61,6 +61,13 @@ const DEPTS = ["IT Department","Computer Science","Electronics","Administration"
 const PRIORITIES = ["Low","Medium","High","Critical"];
 const STATUSES = ["Open","Assigned","In Progress","Resolved","Closed"];
 const SLA_HOURS = { Low:72, Medium:48, High:24, Critical:4 };
+const FEEDBACK_CATEGORIES = ["Ticket Resolution","Staff Support","Internet/WiFi","Laptop/Desktop Support","Printer Support","Software Support","Overall IT Service"];
+const SATISFACTION_LEVELS = [
+  { id:"Excellent", icon:"😊", color:"#10b981", bg:"rgba(16,185,129,0.16)" },
+  { id:"Good", icon:"🙂", color:"#3b82f6", bg:"rgba(59,130,246,0.16)" },
+  { id:"Average", icon:"😐", color:"#f59e0b", bg:"rgba(245,158,11,0.16)" },
+  { id:"Poor", icon:"🙁", color:"#ef4444", bg:"rgba(239,68,68,0.16)" },
+];
 
 // ── LOCAL STORAGE DB ──────────────────────────────────────────────────────
 const hasStorage = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
@@ -100,6 +107,24 @@ function statusColor(status) { return {Open:"#6366f1",Assigned:"#0ea5e9","In Pro
 function priorityColor(priority) { return {Low:"#64748b",Medium:"#f59e0b",High:"#f97316",Critical:"#ef4444"}[priority] || "#64748b"; }
 function categoryLabel(id) { return CATEGORIES.find(c=>c.id===id)?.label || id || "—"; }
 function staffName(id) { return STAFF_BASE.find(s=>s.id===Number(id))?.name || "Unassigned"; }
+function genFeedbackId() { return "FDB-"+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,5).toUpperCase(); }
+function satisfactionColor(level) { return SATISFACTION_LEVELS.find(s=>s.id===level)?.color || "#64748b"; }
+function cleanFeedbackRow(f) {
+  return {
+    "Feedback ID": f.id || "—",
+    "User Name": f.name || "—",
+    Email: f.email || "—",
+    Department: f.dept || "—",
+    "Service Category": f.category || "—",
+    Rating: f.rating ? `${f.rating}/5` : "—",
+    Satisfaction: f.satisfaction || "—",
+    Recommendation: f.recommend || "—",
+    "Feedback Message": f.message || "—",
+    Suggestions: f.suggestions || "—",
+    "Submitted At": fmtDate(f.createdAt),
+    "Reviewed Status": f.reviewed ? "Reviewed" : "New",
+  };
+}
 function cleanTicketRow(t) {
   return {
     "Ticket ID": t.id || "—",
@@ -559,7 +584,87 @@ function downloadStaffPerformancePDF(staffRows, filename, options = {}) {
 
   addPdfFooter(doc);
   doc.save(filename);
-}// ── GLOBAL CSS ─────────────────────────────────────────────────────────────
+}
+
+function downloadFeedbackPDF(feedbackRows, filename, options = {}) {
+  const items = feedbackRows || [];
+  const rows = items.map(cleanFeedbackRow);
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const generatedAt = new Date().toLocaleString("en-IN", { dateStyle:"medium", timeStyle:"short" });
+  const dateRange = `${options.dateFrom || "—"} to ${options.dateTo || "—"}`;
+  const avgRating = items.length ? (items.reduce((sum,f)=>sum+Number(f.rating||0),0)/items.length).toFixed(1) : "0.0";
+  const recommendYes = items.filter(f=>f.recommend === "Yes").length;
+  const unread = items.filter(f=>!f.reviewed).length;
+
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, pageWidth, 36, "F");
+  doc.setFillColor(99, 102, 241);
+  doc.circle(18, 18, 8, "F");
+  doc.setTextColor(255,255,255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(17);
+  doc.text("Jaipuria Institute of Management", 31, 14);
+  doc.setFontSize(11);
+  doc.text("IT Services Feedback Report", 31, 23);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text(`Date range: ${dateRange}`, pageWidth - 82, 13);
+  doc.text(`Generated: ${generatedAt}`, pageWidth - 82, 21);
+
+  drawSummaryCards(doc, [
+    { label:"Total Feedback", value:items.length, rgb:[99,102,241] },
+    { label:"Average Rating", value:`${avgRating}/5`, rgb:[245,158,11] },
+    { label:"Recommended", value:recommendYes, rgb:[16,185,129] },
+    { label:"Needs Review", value:unread, rgb:[239,68,68] },
+    { label:"Excellent", value:items.filter(f=>f.satisfaction==="Excellent").length, rgb:[14,165,233] },
+  ], 44);
+
+  const ratingRows = [5,4,3,2,1].map(n => ({ label:`${n} Star`, value:items.filter(f=>Number(f.rating)===n).length }));
+  const satisfactionRows = SATISFACTION_LEVELS.map(s => ({ label:s.id, value:items.filter(f=>f.satisfaction===s.id).length }));
+  const deptRows = DEPTS.map(d => ({ label:d, value:items.filter(f=>f.dept===d).length })).filter(r=>r.value).slice(0,7);
+  const categoryRows = FEEDBACK_CATEGORIES.map(c => ({ label:c, value:items.filter(f=>f.category===c).length })).filter(r=>r.value).slice(0,7);
+
+  drawBarSummary(doc, "Rating Distribution", ratingRows, 12, 74, 62, { "5 Star":"#10b981", "4 Star":"#22c55e", "3 Star":"#f59e0b", "2 Star":"#f97316", "1 Star":"#ef4444" });
+  drawBarSummary(doc, "Satisfaction", satisfactionRows, 82, 74, 58, Object.fromEntries(SATISFACTION_LEVELS.map(s=>[s.id,s.color])));
+  drawBarSummary(doc, "Department Summary", deptRows.length ? deptRows : [{label:"No data",value:0}], 147, 74, 64, {0:"#6366f1",1:"#0ea5e9",2:"#10b981",3:"#f59e0b"});
+  drawBarSummary(doc, "Service Category", categoryRows.length ? categoryRows : [{label:"No data",value:0}], 220, 74, 64, {0:"#8b5cf6",1:"#06b6d4",2:"#f97316",3:"#10b981"});
+
+  autoTable(doc, {
+    startY: 126,
+    head: [["Feedback ID", "User", "Email", "Dept", "Service", "Rating", "Satisfaction", "Recommend", "Feedback", "Suggestions", "Submitted", "Status"]],
+    body: rows.map(row => [row["Feedback ID"], row["User Name"], row.Email, row.Department, row["Service Category"], row.Rating, row.Satisfaction, row.Recommendation, row["Feedback Message"], row.Suggestions, row["Submitted At"], row["Reviewed Status"]]),
+    theme: "grid",
+    margin: { left:10, right:10, bottom:16 },
+    styles: { font:"helvetica", fontSize:7, cellPadding:1.7, overflow:"linebreak", valign:"top", lineColor:[226,232,240], lineWidth:0.1, textColor:[30,41,59] },
+    headStyles: { fillColor:[79,70,229], textColor:255, fontStyle:"bold", halign:"center", fontSize:7.3 },
+    alternateRowStyles: { fillColor:[248,250,252] },
+    columnStyles: { 0:{cellWidth:22,fontStyle:"bold"}, 1:{cellWidth:24}, 2:{cellWidth:36}, 3:{cellWidth:24}, 4:{cellWidth:30}, 5:{cellWidth:15,halign:"center"}, 6:{cellWidth:20,halign:"center"}, 7:{cellWidth:18,halign:"center"}, 8:{cellWidth:42}, 9:{cellWidth:38}, 10:{cellWidth:24}, 11:{cellWidth:16,halign:"center"} },
+    didParseCell: data => {
+      if (data.section !== "body") return;
+      if (data.column.index === 6) {
+        const rgb = hexToRgb(satisfactionColor(data.cell.raw));
+        data.cell.styles.textColor = [rgb.r, rgb.g, rgb.b];
+        data.cell.styles.fontStyle = "bold";
+      }
+      if (data.column.index === 11 && data.cell.raw === "New") {
+        data.cell.styles.textColor = [239,68,68];
+        data.cell.styles.fontStyle = "bold";
+      }
+    },
+  });
+
+  if (!rows.length) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(100,116,139);
+    doc.text("No feedback found for the selected filters.", 12, 132);
+  }
+
+  addPdfFooter(doc);
+  doc.save(filename);
+}
+// ── GLOBAL CSS ─────────────────────────────────────────────────────────────
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1448,13 +1553,209 @@ function Analytics({tickets}) {
   );
 }
 
+// ── IT FEEDBACK ───────────────────────────────────────────────────────────
+function MiniBar({label,value,total,color="#6366f1"}) {
+  const pct = total ? Math.round((value / total) * 100) : 0;
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+      <div style={{width:140,fontSize:12,color:"rgba(226,232,240,0.65)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
+      <div style={{flex:1,height:8,background:"rgba(255,255,255,0.07)",borderRadius:8,overflow:"hidden"}}>
+        <div style={{width:`${pct}%`,height:"100%",background:color,borderRadius:8,transition:"width .4s"}} />
+      </div>
+      <div style={{width:42,textAlign:"right",fontSize:12,fontWeight:700,color}}>{value}</div>
+    </div>
+  );
+}
+
+function FeedbackForm({userEmail,onSubmit,toast}) {
+  const empty = {name:"",email:userEmail||"",dept:"",category:"",rating:0,satisfaction:"",message:"",suggestions:"",recommend:"Yes"};
+  const [form,setForm]=useState(empty);
+  const [hoverRating,setHoverRating]=useState(0);
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  useEffect(()=>setForm(f=>({...f,email:userEmail||f.email})),[userEmail]);
+
+  const submit=()=>{
+    if(!form.name.trim()||!form.email.trim()||!form.dept||!form.category||!form.rating||!form.satisfaction||!form.message.trim()){
+      toast("Please complete all required feedback fields","error");
+      return;
+    }
+    if(!isInstitutionEmail(form.email)){
+      toast("Only @jaipuria.ac.in email ID is allowed","error");
+      return;
+    }
+    const entry={...form,name:form.name.trim(),email:form.email.trim(),message:form.message.trim(),suggestions:form.suggestions.trim(),id:genFeedbackId(),createdAt:Date.now(),reviewed:false};
+    onSubmit(entry);
+    setForm({...empty,email:userEmail||""});
+    setHoverRating(0);
+    toast("Thank you for your feedback!","success");
+  };
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:22,maxWidth:1040}}>
+      <div className="glass" style={{padding:"24px",background:"linear-gradient(135deg,rgba(99,102,241,0.16),rgba(20,184,166,0.08)),rgba(255,255,255,0.04)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontSize:13,color:"#38bdf8",fontWeight:700,letterSpacing:".5px",textTransform:"uppercase"}}>IT Feedback</div>
+            <h2 style={{fontFamily:"Syne",fontSize:26,fontWeight:800,color:"#e2e8f0",marginTop:4}}>Help us improve IT support</h2>
+            <p style={{fontSize:14,color:"rgba(226,232,240,0.58)",marginTop:8,maxWidth:620,lineHeight:1.6}}>Share how your IT service experience felt. Your feedback helps the team improve ticket resolution, support quality, and campus technology services.</p>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,minWidth:220}}>
+            {["Fast Help","Clear Updates","Better Service"].map((x,i)=><div key={x} style={{padding:"12px",borderRadius:12,background:["rgba(99,102,241,0.16)","rgba(16,185,129,0.14)","rgba(245,158,11,0.14)"][i],border:"1px solid rgba(255,255,255,0.08)",textAlign:"center",fontSize:12,fontWeight:700,color:"#e2e8f0"}}>{x}</div>)}
+          </div>
+        </div>
+      </div>
+
+      <div className="glass" style={{padding:"24px",display:"flex",flexDirection:"column",gap:18}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:14}}>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>User Name *</label><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Your full name" /></div>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>User Email *</label><input type="email" value={form.email} onChange={e=>set("email",e.target.value)} placeholder="name@jaipuria.ac.in" /></div>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>Department *</label><select value={form.dept} onChange={e=>set("dept",e.target.value)}><option value="">Select Department</option>{DEPTS.map(d=><option key={d}>{d}</option>)}</select></div>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>Service Category *</label><select value={form.category} onChange={e=>set("category",e.target.value)}><option value="">Select Service</option>{FEEDBACK_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16}}>
+          <div className="glass2" style={{padding:"18px"}}>
+            <div style={{fontSize:13,fontWeight:700,color:"rgba(226,232,240,0.75)",marginBottom:12}}>Rate IT Service *</div>
+            <div style={{display:"flex",gap:6,alignItems:"center"}} onMouseLeave={()=>setHoverRating(0)}>
+              {[1,2,3,4,5].map(n=>(
+                <button key={n} type="button" onMouseEnter={()=>setHoverRating(n)} onClick={()=>set("rating",n)} style={{background:"transparent",border:"none",fontSize:34,lineHeight:1,color:n <= (hoverRating||form.rating) ? "#fbbf24" : "rgba(255,255,255,0.18)",filter:n <= (hoverRating||form.rating) ? "drop-shadow(0 0 10px rgba(251,191,36,0.35))" : "none",transform:n <= hoverRating ? "translateY(-2px) scale(1.08)" : "none"}}>★</button>
+              ))}
+              <span style={{marginLeft:8,fontSize:13,color:"rgba(226,232,240,0.5)"}}>{form.rating ? `${form.rating}/5` : "Select rating"}</span>
+            </div>
+          </div>
+
+          <div className="glass2" style={{padding:"18px"}}>
+            <div style={{fontSize:13,fontWeight:700,color:"rgba(226,232,240,0.75)",marginBottom:12}}>Satisfaction Level *</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
+              {SATISFACTION_LEVELS.map(s=>(
+                <button key={s.id} type="button" onClick={()=>set("satisfaction",s.id)} style={{padding:"12px",borderRadius:12,border:`1px solid ${form.satisfaction===s.id?s.color:"rgba(255,255,255,0.08)"}`,background:form.satisfaction===s.id?s.bg:"rgba(255,255,255,0.04)",color:form.satisfaction===s.id?s.color:"rgba(226,232,240,0.72)",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><span style={{fontSize:20}}>{s.icon}</span>{s.id}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14}}>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>Feedback Message *</label><textarea rows={5} value={form.message} onChange={e=>set("message",e.target.value)} placeholder="Tell us what worked well or what did not..." style={{resize:"vertical"}} /></div>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.55)",marginBottom:6,display:"block"}}>Suggestions for Improvement</label><textarea rows={5} value={form.suggestions} onChange={e=>set("suggestions",e.target.value)} placeholder="Any ideas to improve IT support?" style={{resize:"vertical"}} /></div>
+        </div>
+
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:"rgba(226,232,240,0.75)",marginBottom:8}}>Would you recommend IT support?</div>
+            <div style={{display:"flex",gap:10}}>
+              {["Yes","No"].map(v=><button key={v} type="button" onClick={()=>set("recommend",v)} style={{padding:"10px 18px",borderRadius:10,border:`1px solid ${form.recommend===v?(v==="Yes"?"#10b981":"#ef4444"):"rgba(255,255,255,0.1)"}`,background:form.recommend===v?(v==="Yes"?"rgba(16,185,129,0.16)":"rgba(239,68,68,0.16)"):"rgba(255,255,255,0.04)",color:form.recommend===v?(v==="Yes"?"#34d399":"#f87171"):"rgba(226,232,240,0.65)",fontWeight:700}}>{v}</button>)}
+            </div>
+          </div>
+          <button className="glow-btn" onClick={submit} style={{minWidth:190}}>Submit Feedback</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminFeedbackPage({feedback,setFeedback,toast}) {
+  const [dateFrom,setDateFrom]=useState("");
+  const [dateTo,setDateTo]=useState("");
+  const [format,setFormat]=useState("excel");
+  const filtered=feedback.filter(f=>{
+    if(dateFrom && f.createdAt < new Date(dateFrom).getTime()) return false;
+    if(dateTo && f.createdAt > new Date(dateTo).getTime()+86399999) return false;
+    return true;
+  });
+  const total=feedback.length;
+  const avg=filtered.length ? (filtered.reduce((s,f)=>s+Number(f.rating||0),0)/filtered.length).toFixed(1) : "0.0";
+  const satCounts=Object.fromEntries(SATISFACTION_LEVELS.map(s=>[s.id,filtered.filter(f=>f.satisfaction===s.id).length]));
+  const yes=filtered.filter(f=>f.recommend==="Yes").length;
+  const no=filtered.filter(f=>f.recommend==="No").length;
+  const unread=feedback.filter(f=>!f.reviewed).length;
+  const deptRows=DEPTS.map(d=>({label:d,value:filtered.filter(f=>f.dept===d).length})).filter(r=>r.value);
+  const categoryRows=FEEDBACK_CATEGORIES.map(c=>({label:c,value:filtered.filter(f=>f.category===c).length})).filter(r=>r.value);
+
+  const markReviewed=(id)=>{
+    setFeedback(fs=>fs.map(f=>f.id===id?{...f,reviewed:true,reviewedAt:Date.now()}:f));
+    toast("Feedback marked as reviewed","success");
+  };
+
+  const doExport=()=>{
+    if(!dateFrom || !dateTo){ toast("Please select date range","error"); return; }
+    const now=new Date().toISOString().slice(0,10);
+    if(format==="excel") downloadExcel(filtered.map(cleanFeedbackRow), `it_feedback_report_${now}.xlsx`);
+    else downloadFeedbackPDF(filtered, `it_feedback_report_${now}.pdf`, {dateFrom,dateTo});
+    toast(`Feedback report exported (${filtered.length} records)`,"success");
+  };
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:22}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
+        <div><h2 style={{fontFamily:"Syne",fontSize:24,fontWeight:800,color:"#e2e8f0"}}>IT Feedback Dashboard</h2><p style={{fontSize:14,color:"rgba(226,232,240,0.5)",marginTop:4}}>Review user feedback, service quality, ratings, and improvement suggestions.</p></div>
+        {unread>0&&<span className="tag" style={{background:"rgba(239,68,68,0.16)",color:"#f87171",border:"1px solid rgba(239,68,68,0.32)"}}>{unread} new</span>}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:14}}>
+        <StatCard label="Total Feedback" value={total} icon="★" color="#818cf8" />
+        <StatCard label="Average Rating" value={`${avg}/5`} icon="★" color="#fbbf24" />
+        <StatCard label="Excellent" value={satCounts.Excellent||0} icon="✓" color="#34d399" />
+        <StatCard label="Good" value={satCounts.Good||0} icon="+" color="#60a5fa" />
+        <StatCard label="Recommend Yes" value={yes} icon="↑" color="#10b981" />
+        <StatCard label="Recommend No" value={no} icon="↓" color="#f87171" />
+      </div>
+
+      <div className="glass" style={{padding:"18px 20px"}}>
+        <div style={{fontSize:13,fontWeight:700,color:"rgba(226,232,240,0.62)",marginBottom:14}}>FEEDBACK REPORT EXPORT</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14,alignItems:"end"}}>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>From Date</label><input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} /></div>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>To Date</label><input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} /></div>
+          <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Format</label><select value={format} onChange={e=>setFormat(e.target.value)}><option value="excel">Excel (.xlsx)</option><option value="pdf">PDF (.pdf)</option></select></div>
+          <button className="glow-btn" onClick={doExport}>Export Feedback</button>
+        </div>
+        <div style={{fontSize:12,color:"rgba(226,232,240,0.42)",marginTop:10}}>Showing {filtered.length} of {feedback.length} feedback submissions</div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:14}}>
+        <div className="glass" style={{padding:"18px 20px"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"rgba(226,232,240,0.62)",marginBottom:14}}>SATISFACTION DISTRIBUTION</div>
+          {SATISFACTION_LEVELS.map(s=><MiniBar key={s.id} label={s.id} value={satCounts[s.id]||0} total={filtered.length} color={s.color} />)}
+        </div>
+        <div className="glass" style={{padding:"18px 20px"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"rgba(226,232,240,0.62)",marginBottom:14}}>DEPARTMENT SUMMARY</div>
+          {(deptRows.length?deptRows:[{label:"No data",value:0}]).map((r,i)=><MiniBar key={r.label} label={r.label} value={r.value} total={filtered.length} color={["#6366f1","#0ea5e9","#10b981","#f59e0b","#ef4444"][i%5]} />)}
+        </div>
+        <div className="glass" style={{padding:"18px 20px"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"rgba(226,232,240,0.62)",marginBottom:14}}>SERVICE CATEGORY SUMMARY</div>
+          {(categoryRows.length?categoryRows:[{label:"No data",value:0}]).map((r,i)=><MiniBar key={r.label} label={r.label} value={r.value} total={filtered.length} color={["#8b5cf6","#06b6d4","#f97316","#10b981","#ec4899"][i%5]} />)}
+        </div>
+      </div>
+
+      <div className="glass" style={{padding:"18px 20px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:10,flexWrap:"wrap"}}><div style={{fontSize:13,fontWeight:700,color:"rgba(226,232,240,0.62)"}}>RECENT FEEDBACK</div>{unread>0&&<button onClick={()=>{setFeedback(fs=>fs.map(f=>({...f,reviewed:true,reviewedAt:f.reviewedAt||Date.now()})));toast("All feedback marked reviewed","success");}} style={{background:"rgba(16,185,129,0.14)",border:"1px solid rgba(16,185,129,0.28)",color:"#34d399",padding:"8px 12px",borderRadius:8,fontSize:12,fontWeight:700}}>Mark all reviewed</button>}</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
+          {filtered.map(f=>{
+            const sat=SATISFACTION_LEVELS.find(s=>s.id===f.satisfaction);
+            return <div key={f.id} className="glass2" style={{padding:"16px",borderColor:f.reviewed?"rgba(255,255,255,0.1)":"rgba(245,158,11,0.45)",background:f.reviewed?"rgba(255,255,255,0.06)":"rgba(245,158,11,0.08)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"flex-start",marginBottom:10}}><div><div style={{fontSize:13,fontWeight:800,color:"#e2e8f0"}}>{f.id}</div><div style={{fontSize:12,color:"rgba(226,232,240,0.45)",marginTop:2}}>{fmtDate(f.createdAt)}</div></div>{!f.reviewed&&<span className="tag" style={{background:"rgba(245,158,11,0.16)",color:"#fbbf24"}}>New</span>}</div>
+              <div style={{fontSize:14,fontWeight:700,color:"#e2e8f0"}}>{f.name}</div>
+              <div style={{fontSize:12,color:"rgba(226,232,240,0.48)",marginTop:2}}>{f.email} · {f.dept}</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}><span className="tag" style={{background:"rgba(99,102,241,0.14)",color:"#a5b4fc"}}>{f.category}</span><span className="tag" style={{background:"rgba(251,191,36,0.14)",color:"#fbbf24"}}>★ {f.rating}/5</span><span className="tag" style={{background:sat?.bg||"rgba(255,255,255,0.08)",color:sat?.color||"#e2e8f0"}}>{sat?.icon} {f.satisfaction}</span></div>
+              <p style={{fontSize:13,lineHeight:1.6,color:"rgba(226,232,240,0.78)",marginTop:12}}>{f.message}</p>
+              {f.suggestions&&<p style={{fontSize:12,lineHeight:1.5,color:"rgba(226,232,240,0.52)",marginTop:8}}>Suggestion: {f.suggestions}</p>}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginTop:12}}><span style={{fontSize:12,color:f.recommend==="Yes"?"#34d399":"#f87171",fontWeight:700}}>Recommend: {f.recommend}</span>{!f.reviewed&&<button onClick={()=>markReviewed(f.id)} style={{background:"rgba(99,102,241,0.16)",border:"1px solid rgba(99,102,241,0.32)",color:"#a5b4fc",padding:"7px 10px",borderRadius:8,fontSize:12,fontWeight:700}}>Mark reviewed</button>}</div>
+            </div>;
+          })}
+          {filtered.length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:"50px 0",color:"rgba(226,232,240,0.34)"}}>No feedback found</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
 // ── SIDEBAR ───────────────────────────────────────────────────────────────
-function Sidebar({current,onChange,isAdmin,isStaff,tickets,mobileOpen,setMobileOpen}) {
-  const adminNav=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"tickets",icon:"🎫",label:"All Tickets"},{id:"staff",icon:"👥",label:"IT Staff"},{id:"analytics",icon:"📊",label:"Analytics"},{id:"export",icon:"⬇",label:"Export Reports"},{id:"staff-management",icon:"👥",label:"Staff Management"},{id:"emaillog",icon:"📧",label:"Email Log"}];
-  const userNav=[{id:"home",icon:"🏠",label:"Home"},{id:"my-tickets",icon:"🎫",label:"My Tickets"},{id:"new-ticket",icon:"➕",label:"New Ticket"},{id:"track",icon:"🔍",label:"Track Ticket"}];
+function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpen,setMobileOpen}) {
+  const adminNav=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"tickets",icon:"🎫",label:"All Tickets"},{id:"staff",icon:"👥",label:"IT Staff"},{id:"analytics",icon:"📊",label:"Analytics"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"export",icon:"⬇",label:"Export Reports"},{id:"staff-management",icon:"👥",label:"Staff Management"},{id:"emaillog",icon:"📧",label:"Email Log"}];
+  const userNav=[{id:"home",icon:"🏠",label:"Home"},{id:"my-tickets",icon:"🎫",label:"My Tickets"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"new-ticket",icon:"➕",label:"New Ticket"},{id:"track",icon:"🔍",label:"Track Ticket"}];
   const staffNav=[{id:"staff-dash",icon:"🏠",label:"My Dashboard"},{id:"assigned",icon:"📋",label:"Assigned Tickets"}];
   const nav=isAdmin?adminNav:isStaff?staffNav:userNav;
   const open=tickets.filter(t=>t.status==="Open").length;
+  const unreadFeedback=feedback.filter(f=>!f.reviewed).length;
 
   return (
     <>
@@ -1481,6 +1782,7 @@ function Sidebar({current,onChange,isAdmin,isStaff,tickets,mobileOpen,setMobileO
             }}>
               <span style={{fontSize:18}}>{item.icon}</span><span style={{flex:1}}>{item.label}</span>
               {item.id==="tickets"&&open>0&&<span style={{background:"rgba(239,68,68,0.2)",color:"#f87171",fontSize:11,padding:"2px 8px",borderRadius:20,fontWeight:600}}>{open}</span>}
+              {item.id==="feedback"&&isAdmin&&unreadFeedback>0&&<span style={{background:"rgba(245,158,11,0.2)",color:"#fbbf24",fontSize:11,padding:"2px 8px",borderRadius:20,fontWeight:600}}>{unreadFeedback}</span>}
             </button>
           ))}
         </nav>
@@ -2066,6 +2368,7 @@ export default function App() {
   const [session, setSession] = useState(getSavedSession);
   const [page, setPage] = useState(() => getInitialPage(getSavedSession()));
   const [tickets, setTickets] = useState(() => DB.get("tickets", []));
+  const [feedback, setFeedback] = useState(() => DB.get("feedback", []));
   const [viewTicketId, setViewTicketId] = useState(null);
   const [quickAssignTicketId, setQuickAssignTicketId] = useState(null);
   const [formCat, setFormCat] = useState(null);
@@ -2079,6 +2382,7 @@ export default function App() {
   useEffect(() => {
     DB.set("tickets", tickets);
   }, [tickets]);
+  useEffect(() => DB.set("feedback", feedback), [feedback]);
   useEffect(() => DB.set("staff_profiles", staffProfiles), [staffProfiles]);
   useEffect(() => DB.set("staff_statuses", staffStatuses), [staffStatuses]);
   useEffect(() => DB.set("staff_messages", staffMessages), [staffMessages]);
@@ -2126,6 +2430,15 @@ export default function App() {
     }
   };
 
+
+  const handleFeedbackSubmit = (entry) => {
+    setFeedback(fs => [entry, ...fs]);
+    simulateEmail(
+      "admin@jaipuria.ac.in",
+      `New IT feedback submitted by ${entry.name}`,
+      `New IT feedback submitted by ${entry.name}\n\nFeedback ID: ${entry.id}\nEmail: ${entry.email}\nDepartment: ${entry.dept}\nService: ${entry.category}\nRating: ${entry.rating}/5\nSatisfaction: ${entry.satisfaction}\nRecommendation: ${entry.recommend}\nSubmitted: ${fmtDate(entry.createdAt)}\n\nFeedback:\n${entry.message}\n\nSuggestions:\n${entry.suggestions || "—"}`
+    );
+  };
   const handleQuickAssign = (ticketId, assigneeId, remark="") => {
     let assignedTicket = null;
     let newAssignee = null;
@@ -2282,6 +2595,7 @@ export default function App() {
       );
       if (page === "tickets") return <TicketsTable tickets={tickets} onView={setViewTicketId} isAdmin onDelete={handleDeleteTicket} />;
       if (page === "analytics") return <Analytics tickets={tickets} />;
+      if (page === "feedback") return <AdminFeedbackPage feedback={feedback} setFeedback={setFeedback} toast={toast} />;
       if (page === "staff-management") return renderStaffManagement();
       if (page === "export") return <ExportPanel tickets={tickets} toast={toast} />;
       if (page === "emaillog") return <EmailLog />;
@@ -2328,6 +2642,7 @@ export default function App() {
         </div>
       </div>
     );
+    if (page === "feedback") return <FeedbackForm userEmail={session.email} onSubmit={handleFeedbackSubmit} toast={toast} />;
     if (page === "track") return <TrackTicket tickets={tickets} onView={setViewTicketId} />;
     if (page === "new-ticket") return (
       <div>
@@ -2345,7 +2660,7 @@ export default function App() {
     <>
       <style>{CSS}</style>
       <div style={{display:"flex",minHeight:"100vh"}}>
-        <Sidebar current={page} onChange={setPage} isAdmin={isAdmin} isStaff={isStaff} tickets={tickets} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
+        <Sidebar current={page} onChange={setPage} isAdmin={isAdmin} isStaff={isStaff} tickets={tickets} feedback={feedback} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
           <div style={{padding:"14px 24px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(10,10,20,0.9)",backdropFilter:"blur(20px)",position:"sticky",top:0,zIndex:10}}>
             <div style={{display:"flex",alignItems:"center",gap:12,position:"relative"}}>
@@ -2432,6 +2747,12 @@ export default function App() {
     </>
   );
 }
+
+
+
+
+
+
 
 
 
