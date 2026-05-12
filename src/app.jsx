@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+﻿import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -12,7 +12,7 @@ const sendTicketEmail = async (ticket, user) => {
           user_name: user?.name || 'User',
           to_email: user?.email,
           ticket_id: ticket.id,
-          issue: ticket.issue,
+          issue: ticket.issue || ticket.description || ticket.category || "IT Helpdesk Ticket",
       },
       'N9OlDxPyO0uf_IlxJ'
     );
@@ -63,9 +63,13 @@ const STATUSES = ["Open","Assigned","In Progress","Resolved","Closed"];
 const SLA_HOURS = { Low:72, Medium:48, High:24, Critical:4 };
 
 // ── LOCAL STORAGE DB ──────────────────────────────────────────────────────
+const hasStorage = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+const safeJsonParse = (value, fallback = null) => {
+  try { return value ? JSON.parse(value) : fallback; } catch { return fallback; }
+};
 const DB = {
-  get: (k, def) => { try { const v = localStorage.getItem("helpdesk_"+k); return v ? JSON.parse(v) : def; } catch { return def; } },
-  set: (k, v) => { try { localStorage.setItem("helpdesk_"+k, JSON.stringify(v)); } catch {} },
+  get: (k, def) => { try { if (!hasStorage()) return def; const v = localStorage.getItem("helpdesk_"+k); return safeJsonParse(v, def); } catch { return def; } },
+  set: (k, v) => { try { if (hasStorage()) localStorage.setItem("helpdesk_"+k, JSON.stringify(v)); } catch {} },
 };
 
 // ── UTILS ─────────────────────────────────────────────────────────────────
@@ -309,8 +313,8 @@ function PwdInput({
   id={id}
   type={show ? "text" : "password"}
   value={value}
-  name="not-password"
-  autoComplete="off"
+  name={name || "not-password"}
+  autoComplete={autoComplete || "off"}
   data-lpignore="true"
   onChange={e=>onChange(e.target.value)}
   placeholder={placeholder}
@@ -1249,20 +1253,9 @@ function ForgotPassword({onBack,toast}) {
     const hash=await hashPassword(newPwd);
     const staff=STAFF_BASE.find(s=>s.email===email.trim());
     if(staff){
-
-  const defaultStaffPasswords = {
-    "raj.singh@jaipuria.ac.in": "Jaipur@123",
-    "rohit.jangid@jaipuria.ac.in": "Jaipur@123",
-    "vishal.swami@jaipuria.ac.in": "Jaipur@123",
-  };
-
-  `const staffPasswords =
-    DB.get("staff_passwords", defaultStaffPasswords);
-
-  if(staffPasswords[staff.email] !== pwd){
-    toast("Invalid password", "error");
-    return;
-  }`
+      const staffPasswords = DB.get("staff_passwords", {});
+      staffPasswords[staff.id] = hash;
+      DB.set("staff_passwords", staffPasswords);
     } else {
       DB.set("admin_password",hash);
     }
@@ -1590,255 +1583,178 @@ function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions})
 }
 
 // ── MAIN APP ──────────────────────────────────────────────────────────────
+const getSavedSession = () => {
+  if (!hasStorage()) return null;
+  return safeJsonParse(localStorage.getItem("helpdesk_session"), null);
+};
+
+const getInitialPage = (sess) => {
+  if (!sess) return "home";
+  if (sess.type === "admin") return "dashboard";
+  if (sess.type === "staff") return "staff-dash";
+  return "home";
+};
+
 export default function App() {
-  const [session,setSession]=useState(null);
+  const { toasts, toast, remove } = useToast();
+  const [session, setSession] = useState(getSavedSession);
+  const [page, setPage] = useState(() => getInitialPage(getSavedSession()));
+  const [tickets, setTickets] = useState(() => DB.get("tickets", []));
+  const [viewTicketId, setViewTicketId] = useState(null);
+  const [formCat, setFormCat] = useState(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
   useEffect(() => {
+    DB.set("tickets", tickets);
+  }, [tickets]);
 
-  const savedSession =
-    localStorage.getItem(
-      "helpdesk_session"
-    );
-
-  if(savedSession){
-
-    setSession(
-      JSON.parse(savedSession)
-    );
-
-  }
-
-}, []);
-  const [page,setPage]=useState("home");
-  const [tickets,setTickets] =useState(DB.get("tickets", []));
-  const [viewTicketId,setViewTicketId]=useState(null);
-  const [formCat,setFormCat]=useState(null);
-  const [mobileOpen,setMobileOpen]=useState(false);
-  const {toasts,toast,remove}=useToast();
-
-  // Persist tickets
-  useEffect(()=>DB.set("tickets",tickets),[tickets]);
-
-  const handleLogin=(sess)=>{
-    if(sess.type==="staff_firstlogin"){
-      setSession(sess); return; // Will show SetPasswordScreen
+  const handleLogin = (sess) => {
+    if (sess.type === "staff_firstlogin") {
+      setSession(sess);
+      return;
     }
+
     setSession(sess);
-    setPage(sess.type==="admin"?"dashboard":sess.type==="staff"?"staff-dash":"home");
-    toast(`Welcome${sess.name?`, ${sess.name}`:""}! 👋`,"success");
+    if (hasStorage()) localStorage.setItem("helpdesk_session", JSON.stringify(sess));
+    setPage(sess.type === "admin" ? "dashboard" : sess.type === "staff" ? "staff-dash" : "home");
+    toast(`Welcome${sess.name ? `, ${sess.name}` : ""}!`, "success");
+  };
+
+  const logoutUser = () => {
+    if (hasStorage()) localStorage.removeItem("helpdesk_session");
+    setSession(null);
+    setPage("home");
+    setViewTicketId(null);
+  };
+
+  const handleDeleteTicket = (id) => {
+    setTickets(ts => ts.filter(t => t.id !== id));
+    toast("Ticket deleted", "info");
+  };
+
+  const handleNewTicket = async (ticket) => {
+    setTickets(ts => [ticket, ...ts]);
+    setFormCat(null);
+
+    const assignee = STAFF_BASE.find(s => s.id === ticket.assigneeId);
+    await sendTicketEmail(ticket, {
+      name: ticket.name,
+      email: ticket.email,
+    });
+
+    if (assignee) {
+      simulateEmail(
+        assignee.email,
+        `[${ticket.id}] New Ticket Assigned`,
+        `${ticket.name} submitted a ${CATEGORIES.find(c => c.id === ticket.category)?.label || ticket.category} ticket.\n\n${ticket.description}`
+      );
+    }
   };
 
   const handleFirstLoginComplete = (hash) => {
+    const staffPasswords = DB.get("staff_passwords", {});
+    staffPasswords[session.staffId] = hash;
+    DB.set("staff_passwords", staffPasswords);
 
-  const staffPasswords =
-    DB.get("staff_passwords", {});
+    const staff = STAFF_BASE.find(s => s.id === session.staffId);
+    const staffSession = {
+      type: "staff",
+      staffId: staff.id,
+      email: staff.email,
+      name: staff.name,
+      role: staff.role,
+      permissions: staff.permissions,
+    };
 
-  staffPasswords[session.staffId] = hash;
+    setSession(staffSession);
+    if (hasStorage()) localStorage.setItem("helpdesk_session", JSON.stringify(staffSession));
+    setPage("staff-dash");
+  };
 
-  DB.set(
-    "staff_passwords",
-    staffPasswords
-  );
-
-  const staff =
-    STAFF_BASE.find(
-      s => s.id === session.staffId
+  if (!session) {
+    return (
+      <>
+        <style>{CSS}</style>
+        <Landing onLogin={handleLogin} />
+        <Toast toasts={toasts} remove={remove} />
+      </>
     );
+  }
 
-  setSession({
-    type:"staff",
-    staffId:staff.id,
-    email:staff.email,
-    name:staff.name,
-    role:staff.role,
-    permissions:staff.permissions
-  });
+  if (session.type === "staff_firstlogin") {
+    return (
+      <>
+        <style>{CSS}</style>
+        <SetPasswordScreen staff={session.staff} onComplete={handleFirstLoginComplete} toast={toast} />
+        <Toast toasts={toasts} remove={remove} />
+      </>
+    );
+  }
 
-  localStorage.setItem(
-    "helpdesk_session",
-    JSON.stringify({
-      type:"staff",
-      staffId:staff.id,
-      email:staff.email,
-      name:staff.name,
-      role:staff.role,
-      permissions:staff.permissions
-    })
+  const isAdmin = session.type === "admin";
+  const isStaff = session.type === "staff";
+  const myTickets = isAdmin || isStaff ? tickets : tickets.filter(t => t.email === session.email);
+
+  const renderStaffManagement = () => (
+    <div style={{display:"flex",flexDirection:"column",gap:18}}>
+      <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Staff Management</h2>
+      {STAFF_BASE.map(staff => (
+        <div key={staff.id} className="glass" style={{padding:"18px 20px"}}>
+          <div style={{fontSize:18,fontWeight:700,color:"#fff"}}>{staff.name}</div>
+          <div style={{fontSize:13,color:"rgba(226,232,240,0.5)",marginTop:4}}>{staff.email}</div>
+          <button
+            onClick={async () => {
+              const newPwd = prompt("Enter new password");
+              if (!newPwd) return;
+
+              const passwords = DB.get("staff_passwords", {});
+              passwords[staff.id] = await hashPassword(newPwd);
+              DB.set("staff_passwords", passwords);
+              toast("Password updated", "success");
+            }}
+            style={{marginTop:14,padding:"10px 16px",border:"none",borderRadius:10,background:"#2563eb",color:"#fff",cursor:"pointer"}}
+          >
+            Change Password
+          </button>
+        </div>
+      ))}
+    </div>
   );
 
-};
-const handleNewTicket = (ticket) => {
-
-  const updatedTickets = [
-    ticket,
-    ...tickets
-  ];
-
-  setTickets(updatedTickets);
-
-  DB.set("tickets", updatedTickets);
-
-  setPage("my-tickets");
-
-};
-
-const handleDeleteTicket = (id) => {
-  setTickets(ts => ts.filter(t => t.id !== id));
-
-  toast("Ticket deleted", "info");
-};
-  if(!session) return (<><style>{CSS}</style><Landing onLogin={handleLogin}/><Toast toasts={toasts} remove={remove}/></>);
-
-  // First login flow for staff
-  if(session.type==="staff_firstlogin") return (
-    <><style>{CSS}</style>
-    <SetPasswordScreen staff={session.staff} onComplete={handleFirstLoginComplete} toast={toast}/>
-    <Toast toasts={toasts} remove={remove}/></>
-  );
-
-  const isAdmin=session.type==="admin";
-  const isStaff=session.type==="staff";
-  const myTickets=isAdmin||isStaff?tickets:tickets.filter(t=>t.email===session.email);
-
-  const renderPage=()=>{
-    if(isAdmin){
-      if(page==="dashboard") return (
+  const renderPage = () => {
+    if (isAdmin) {
+      if (page === "dashboard") return (
         <div style={{display:"flex",flexDirection:"column",gap:24}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
-            <div><h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Admin Dashboard</h2><p style={{fontSize:14,color:"rgba(226,232,240,0.5)"}}>{new Date().toLocaleDateString("en-IN",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p></div>
-            <button className="glow-btn" onClick={()=>setFormCat("")}>+ New Ticket</button>
+            <div>
+              <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Admin Dashboard</h2>
+              <p style={{fontSize:14,color:"rgba(226,232,240,0.5)"}}>{new Date().toLocaleDateString("en-IN",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p>
+            </div>
+            <button className="glow-btn" onClick={() => setFormCat("")}>+ New Ticket</button>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:14}}>
-            {[["Total",tickets.length,"🎫","#818cf8"],["Open",tickets.filter(t=>t.status==="Open").length,"🔵","#60a5fa"],
-              ["In Progress",tickets.filter(t=>t.status==="In Progress").length,"🟡","#fbbf24"],
-              ["Resolved",(tickets.filter(t=>t.status==="Resolved").length)+(tickets.filter(t=>t.status==="Closed").length),"🟢","#34d399"],
-              ["Critical",tickets.filter(t=>t.priority==="Critical").length,"🔴","#f87171"],
-              ["Closed",tickets.filter(t=>t.status==="Closed").length,"⚫","#6b7280"],
-            ].map(([l,v,i,c])=><StatCard key={l} label={l} value={v} icon={i} color={c}/>)}
+            {[["Total",tickets.length,"🎫","#818cf8"],["Open",tickets.filter(t=>t.status==="Open").length,"🔵","#60a5fa"],["In Progress",tickets.filter(t=>t.status==="In Progress").length,"🟡","#fbbf24"],["Resolved",tickets.filter(t=>t.status==="Resolved"||t.status==="Closed").length,"🟢","#34d399"],["Critical",tickets.filter(t=>t.priority==="Critical").length,"🔴","#f87171"],["Closed",tickets.filter(t=>t.status==="Closed").length,"⚫","#6b7280"]].map(([l,v,i,c]) => <StatCard key={l} label={l} value={v} icon={i} color={c} />)}
           </div>
           <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>Recent Tickets</h3>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
-            {tickets.slice(0,6).map(t=><TicketCard key={t.id} ticket={t} onView={setViewTicketId}/>)}
-            {tickets.length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>🎫</div><div>No tickets yet</div></div>}
+            {tickets.slice(0,6).map(t => <TicketCard key={t.id} ticket={t} onView={setViewTicketId} />)}
+            {tickets.length === 0 && <div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>🎫</div><div>No tickets yet</div></div>}
           </div>
         </div>
       );
-      if(page==="tickets") return <TicketsTable tickets={tickets} onView={setViewTicketId} isAdmin onDelete={handleDeleteTicket}/>;
-      if(page==="analytics") return <Analytics tickets={tickets}/>;
-      {page==="staff-management" && (
-
-  <div
-    style={{
-      display:"flex",
-      flexDirection:"column",
-      gap:18
-    }}
-  >
-
-    <h2
-      style={{
-        fontFamily:"Syne",
-        fontSize:22,
-        fontWeight:700,
-        color:"#e2e8f0"
-      }}
-    >
-      Staff Management
-    </h2>
-
-    {STAFF_BASE.map(staff => (
-
-      <div
-        key={staff.id}
-        className="glass"
-        style={{
-          padding:"18px 20px"
-        }}
-      >
-
-        <div
-          style={{
-            fontSize:18,
-            fontWeight:700,
-            color:"#fff"
-          }}
-        >
-          {staff.name}
-        </div>
-
-        <div
-          style={{
-            fontSize:13,
-            color:"rgba(226,232,240,0.5)",
-            marginTop:4
-          }}
-        >
-          {staff.email}
-        </div>
-
-        <button
-          onClick={() => {
-
-            const newPwd =
-              prompt("Enter new password");
-
-            if(!newPwd) return;
-
-            const defaultStaffPasswords = {
-              "raj.singh@jaipuria.ac.in":"Jaipur@123",
-              "rohit.jangid@jaipuria.ac.in":"Jaipur@123",
-              "vishal.swami@jaipuria.ac.in":"Jaipur@123",
-            };
-
-            const passwords =
-              DB.get(
-                "staff_passwords",
-                defaultStaffPasswords
-              );
-
-            passwords[staff.email] = newPwd;
-
-            DB.set(
-              "staff_passwords",
-              passwords
-            );
-
-            toast(
-              "Password updated",
-              "success"
-            );
-
-          }}
-
-          style={{
-            marginTop:14,
-            padding:"10px 16px",
-            border:"none",
-            borderRadius:10,
-            background:"#2563eb",
-            color:"#fff",
-            cursor:"pointer"
-          }}
-        >
-          Change Password
-        </button>
-
-      </div>
-
-    ))}
-
-  </div>
-
-)}
-      if(page==="export") return <ExportPanel tickets={tickets} toast={toast}/>;
-      if(page==="emaillog") return <EmailLog/>;
-      if(page==="staff") return (
+      if (page === "tickets") return <TicketsTable tickets={tickets} onView={setViewTicketId} isAdmin onDelete={handleDeleteTicket} />;
+      if (page === "analytics") return <Analytics tickets={tickets} />;
+      if (page === "staff-management") return renderStaffManagement();
+      if (page === "export") return <ExportPanel tickets={tickets} toast={toast} />;
+      if (page === "emaillog") return <EmailLog />;
+      if (page === "staff") return (
         <div>
           <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>IT Staff Management</h2>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
-            {STAFF_BASE.map(s=>{
-              const asgn=tickets.filter(t=>t.assigneeId===s.id).length;
-              const res=tickets.filter(t=>t.assigneeId===s.id&&(t.status==="Resolved"||t.status==="Closed")).length;
-              const active=asgn-res;
+            {STAFF_BASE.map(s => {
+              const asgn = tickets.filter(t => t.assigneeId === s.id).length;
+              const res = tickets.filter(t => t.assigneeId === s.id && (t.status === "Resolved" || t.status === "Closed")).length;
+              const active = asgn - res;
               return (
                 <div key={s.id} className="glass" style={{padding:"22px"}}>
                   <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:16}}>
@@ -1846,14 +1762,12 @@ const handleDeleteTicket = (id) => {
                     <div><div style={{fontSize:15,fontWeight:700,color:"#e2e8f0"}}>{s.name}</div><div style={{fontSize:12,color:"rgba(226,232,240,0.5)"}}>{s.role}</div><div style={{fontSize:11,color:"rgba(226,232,240,0.35)"}}>{s.email}</div></div>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
-                    {[["Assigned",asgn,"#818cf8"],["Active",active,"#fbbf24"],["Resolved",res,"#34d399"]].map(([l,v,c])=>(
+                    {[["Assigned",asgn,"#818cf8"],["Active",active,"#fbbf24"],["Resolved",res,"#34d399"]].map(([l,v,c]) => (
                       <div key={l} style={{textAlign:"center",background:`${c}15`,borderRadius:8,padding:"10px 4px"}}><div style={{fontSize:20,fontWeight:800,fontFamily:"Syne",color:c}}>{v}</div><div style={{fontSize:11,color:"rgba(226,232,240,0.5)",marginTop:2}}>{l}</div></div>
                     ))}
                   </div>
                   <div style={{fontSize:12,color:"rgba(226,232,240,0.4)",marginBottom:6}}>Permissions</div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                    {s.permissions.map(p=><span key={p} className="tag" style={{background:"rgba(99,102,241,0.1)",color:"#818cf8",fontSize:10}}>{p}</span>)}
-                  </div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:4}}>{s.permissions.map(p => <span key={p} className="tag" style={{background:"rgba(99,102,241,0.1)",color:"#818cf8",fontSize:10}}>{p}</span>)}</div>
                 </div>
               );
             })}
@@ -1861,68 +1775,79 @@ const handleDeleteTicket = (id) => {
         </div>
       );
     }
-    if(isStaff){
-      if(page==="staff-dash"||page==="assigned") return (
-        <StaffPanel staffId={session.staffId} tickets={tickets} setTickets={setTickets} toast={toast} onViewTicket={setViewTicketId} permissions={session.permissions}/>
-      );
+
+    if (isStaff && (page === "staff-dash" || page === "assigned")) {
+      return <StaffPanel staffId={session.staffId} tickets={tickets} setTickets={setTickets} toast={toast} onViewTicket={setViewTicketId} permissions={session.permissions} />;
     }
-    // User
-    if(page==="home") return <CategoryGrid onSelect={cat=>setFormCat(cat)}/>;
-    if(page==="my-tickets") return (
+
+    if (page === "home") return <CategoryGrid onSelect={cat => setFormCat(cat)} />;
+    if (page === "my-tickets") return (
       <div>
         <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>My Tickets</h2>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
-          {myTickets.map(t=><TicketCard key={t.id} ticket={t} onView={setViewTicketId}/>)}
-          {myTickets.length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>🎫</div><div>No tickets yet</div><button className="glow-btn" style={{marginTop:16}} onClick={()=>setPage("home")}>Raise Ticket</button></div>}
+          {myTickets.map(t => <TicketCard key={t.id} ticket={t} onView={setViewTicketId} />)}
+          {myTickets.length === 0 && <div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>🎫</div><div>No tickets yet</div><button className="glow-btn" style={{marginTop:16}} onClick={() => setPage("home")}>Raise Ticket</button></div>}
         </div>
       </div>
     );
-    if(page==="track") return <TrackTicket tickets={tickets} onView={setViewTicketId}/>;
-    if(page==="new-ticket") return (
+    if (page === "track") return <TrackTicket tickets={tickets} onView={setViewTicketId} />;
+    if (page === "new-ticket") return (
       <div>
         <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>New Ticket</h2>
         <div className="glass" style={{padding:"24px"}}>
-          <TicketForm userEmail={session.email} initialCategory="" onSubmit={t=>{handleNewTicket(t);setPage("my-tickets");}} onCancel={()=>setPage("home")} toast={toast}/>
+          <TicketForm userEmail={session.email} initialCategory="" onSubmit={t => { handleNewTicket(t); setPage("my-tickets"); }} onCancel={() => setPage("home")} toast={toast} />
         </div>
       </div>
     );
+
+    return null;
   };
 
   return (
-    <><style>{CSS}</style>
-    <div style={{display:"flex",minHeight:"100vh"}}>
-      <Sidebar current={page} onChange={setPage} isAdmin={isAdmin} isStaff={isStaff} tickets={tickets} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}/>
-      <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
-        {/* Top bar */}
-        <div style={{padding:"14px 24px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(10,10,20,0.9)",backdropFilter:"blur(20px)",position:"sticky",top:0,zIndex:10}}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <button onClick={()=>setMobileOpen(o=>!o)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",width:36,height:36,borderRadius:8,fontSize:18}}>☰</button>
-            <span style={{fontSize:13,color:"rgba(226,232,240,0.4)"}}>
-              {isAdmin?"🛡️ Admin Portal":isStaff?`🧑‍💼 ${session.name} (${session.role})`:`👤 ${session.email}`}
-            </span>
+    <>
+      <style>{CSS}</style>
+      <div style={{display:"flex",minHeight:"100vh"}}>
+        <Sidebar current={page} onChange={setPage} isAdmin={isAdmin} isStaff={isStaff} tickets={tickets} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
+        <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
+          <div style={{padding:"14px 24px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(10,10,20,0.9)",backdropFilter:"blur(20px)",position:"sticky",top:0,zIndex:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <button onClick={() => setMobileOpen(o => !o)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",width:36,height:36,borderRadius:8,fontSize:18}}>☰</button>
+              <span style={{fontSize:13,color:"rgba(226,232,240,0.4)"}}>{isAdmin ? "Admin Portal" : isStaff ? `${session.name} (${session.role})` : session.email}</span>
+            </div>
+            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              <div className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#10b981"}} />
+              <span style={{fontSize:12,color:"rgba(226,232,240,0.4)"}}>Live</span>
+              <button onClick={logoutUser} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",padding:"6px 14px",borderRadius:8,fontSize:13}}>Logout</button>
+            </div>
           </div>
-          <div style={{display:"flex",gap:10,alignItems:"center"}}>
-            <div className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#10b981"}}/>
-            <span style={{fontSize:12,color:"rgba(226,232,240,0.4)"}}>Live</span>
-            <button onClick={logoutUser} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",padding:"6px 14px",borderRadius:8,fontSize:13}}>Logout</button>
-          </div>
+          <div style={{padding:"24px 28px",flex:1,overflowY:"auto"}}>{renderPage()}</div>
         </div>
-        <div style={{padding:"24px 28px",flex:1,overflowY:"auto"}}>{renderPage()}</div>
       </div>
-    </div>
-    {/* New ticket form */}
-    {formCat!==null&&(
-      <Modal title="Raise IT Support Ticket" onClose={()=>setFormCat(null)}>
-        <TicketForm userEmail={session?.email} initialCategory={formCat} onSubmit={handleNewTicket} onCancel={()=>setFormCat(null)} toast={toast}/>
-      </Modal>
-    )}
-    {/* Ticket detail */}
-    {viewTicketId&&(
-      <Modal title={`Ticket — ${viewTicketId}`} onClose={()=>setViewTicketId(null)} wide>
-        <TicketDetail ticketId={viewTicketId} tickets={tickets} setTickets={setTickets} onClose={()=>setViewTicketId(null)} isAdmin={isAdmin} isStaff={isStaff} staffId={session?.staffId} staffName={session?.name||"Admin"} toast={toast}/>
-      </Modal>
-    )}
-    <Toast toasts={toasts} remove={remove}/>
+
+      {formCat !== null && (
+        <Modal title="Raise IT Support Ticket" onClose={() => setFormCat(null)}>
+          <TicketForm userEmail={session?.email} initialCategory={formCat} onSubmit={handleNewTicket} onCancel={() => setFormCat(null)} toast={toast} />
+        </Modal>
+      )}
+
+      {viewTicketId && (
+        <Modal title={`Ticket - ${viewTicketId}`} onClose={() => setViewTicketId(null)}>
+          <TicketDetail
+            ticketId={viewTicketId}
+            tickets={tickets}
+            setTickets={setTickets}
+            isAdmin={isAdmin}
+            isStaff={isStaff}
+            staffId={session.staffId}
+            staffName={session.name}
+            toast={toast}
+          />
+        </Modal>
+      )}
+
+      <Toast toasts={toasts} remove={remove} />
     </>
   );
 }
+
+
