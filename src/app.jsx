@@ -1771,7 +1771,6 @@ function Landing({onLogin}) {
 
           <div style={{display:"flex",justifyContent:mode==="admin"?"space-between":"flex-end",alignItems:"center",gap:12,marginTop:14,flexWrap:"wrap"}}>
             {mode!=="user"&&<button type="button" onClick={()=>setShowForgot(true)} style={{background:"none",border:"none",color:"rgba(129,140,248,0.92)",fontSize:13,textDecoration:"underline"}}>Forgot Password?</button>}
-            {mode==="admin"&&<div style={{fontSize:12,color:"rgba(226,232,240,0.34)"}}>Default: Admin / Admin@123</div>}
           </div>
         </form>
 
@@ -2440,6 +2439,7 @@ export default function App() {
     </>
   );
 }
+
 
 
 
