@@ -14,8 +14,9 @@ const FIREBASE_PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID || "";
 const FIREBASE_API_KEY = import.meta.env.VITE_FIREBASE_API_KEY || "";
 const FIRESTORE_DATABASE_ID = import.meta.env.VITE_FIRESTORE_DATABASE_ID || "(default)";
 const ONLINE_TICKETS_ENABLED = Boolean(FIREBASE_PROJECT_ID && FIREBASE_API_KEY);
+const FIRESTORE_DATABASE_PATH = FIRESTORE_DATABASE_ID || "(default)";
 const FIRESTORE_BASE_URL = ONLINE_TICKETS_ENABLED
-  ? `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${encodeURIComponent(FIRESTORE_DATABASE_ID)}/documents`
+  ? `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${FIRESTORE_DATABASE_PATH}/documents`
   : "";
 
 function toFirestoreValue(value) {
@@ -23,7 +24,7 @@ function toFirestoreValue(value) {
   if (typeof value === "string") return { stringValue: value };
   if (typeof value === "boolean") return { booleanValue: value };
   if (typeof value === "number") return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
-  if (Array.isArray(value)) return { arrayValue: { values: value.map(toFirestoreValue) } };
+  if (Array.isArray(value)) return value.length ? { arrayValue: { values: value.map(toFirestoreValue) } } : { arrayValue: {} };
   if (typeof value === "object") return { mapValue: { fields: toFirestoreFields(value) } };
   return { stringValue: String(value) };
 }
@@ -75,17 +76,34 @@ async function fetchTickets() {
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
+function getFirestoreErrorMessage(status, body) {
+  try {
+    const parsed = JSON.parse(body);
+    return parsed?.error?.message || body;
+  } catch {
+    return body;
+  }
+}
+
 async function saveTicket(ticket) {
   if (!ONLINE_TICKETS_ENABLED) {
-    throw new Error("Firestore ticket storage is not configured. Check VITE_FIREBASE_PROJECT_ID and VITE_FIREBASE_API_KEY.");
+    throw new Error("Firestore is not configured. Check Vercel env vars and redeploy.");
   }
   const cleanTicket = normalizeTicket(ticket);
-  const res = await fetch(`${FIRESTORE_BASE_URL}/tickets/${encodeURIComponent(cleanTicket.id)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`, {
+  const url = `${FIRESTORE_BASE_URL}/tickets/${encodeURIComponent(cleanTicket.id)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`;
+  const body = JSON.stringify({ fields: toFirestoreFields(cleanTicket) });
+  console.log("Firestore save URL:", url);
+  const res = await fetch(url, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: toFirestoreFields(cleanTicket) }),
+    body,
   });
-  if (!res.ok) throw new Error(`Ticket save failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const errorBody = await res.text();
+    const message = getFirestoreErrorMessage(res.status, errorBody);
+    console.error("Firestore save response:", res.status, errorBody);
+    throw new Error(`Firestore ${res.status}: ${message}`);
+  }
 }
 
 async function updateTicket(ticket) {
@@ -2663,8 +2681,7 @@ export default function App() {
       toast("Ticket created successfully", "success");
     } catch (error) {
       console.error("Ticket create/save failed:", error);
-      toast("Ticket save failed", "error");
-      throw error;
+      toast(`Ticket save failed: ${error?.message || "Firestore error"}`, "error");
     }
   };
 
@@ -3005,6 +3022,7 @@ export default function App() {
     </>
   );
 }
+
 
 
 
