@@ -9,6 +9,100 @@ const EMAIL_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || 'N9OlDxPyO0u
 const EMAILJS_SERVICE_ID = EMAIL_SERVICE_ID;
 const EMAILJS_TEMPLATE_ID = EMAIL_CREATE_TEMPLATE_ID;
 const EMAILJS_PUBLIC_KEY = EMAIL_PUBLIC_KEY;
+// -- ONLINE SHARED TICKET STORAGE (Firebase Firestore REST) -----------------
+const FIREBASE_PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID || "";
+const FIREBASE_API_KEY = import.meta.env.VITE_FIREBASE_API_KEY || "";
+const FIRESTORE_DATABASE_ID = import.meta.env.VITE_FIRESTORE_DATABASE_ID || "(default)";
+const ONLINE_TICKETS_ENABLED = Boolean(FIREBASE_PROJECT_ID && FIREBASE_API_KEY);
+const FIRESTORE_BASE_URL = ONLINE_TICKETS_ENABLED
+  ? `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${encodeURIComponent(FIRESTORE_DATABASE_ID)}/documents`
+  : "";
+
+function toFirestoreValue(value) {
+  if (value === undefined || value === null) return { nullValue: null };
+  if (typeof value === "string") return { stringValue: value };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+  if (Array.isArray(value)) return { arrayValue: { values: value.map(toFirestoreValue) } };
+  if (typeof value === "object") return { mapValue: { fields: toFirestoreFields(value) } };
+  return { stringValue: String(value) };
+}
+
+function toFirestoreFields(obj = {}) {
+  return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined).map(([key, value]) => [key, toFirestoreValue(value)]));
+}
+
+function fromFirestoreValue(value) {
+  if (!value) return null;
+  if ("stringValue" in value) return value.stringValue;
+  if ("integerValue" in value) return Number(value.integerValue);
+  if ("doubleValue" in value) return Number(value.doubleValue);
+  if ("booleanValue" in value) return value.booleanValue;
+  if ("nullValue" in value) return null;
+  if ("arrayValue" in value) return (value.arrayValue.values || []).map(fromFirestoreValue);
+  if ("mapValue" in value) return fromFirestoreFields(value.mapValue.fields || {});
+  return null;
+}
+
+function fromFirestoreFields(fields = {}) {
+  return Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, fromFirestoreValue(value)]));
+}
+
+function normalizeTicket(ticket = {}) {
+  return {
+    ...ticket,
+    status: ticket.status || "Assigned",
+    priority: ticket.priority || "Medium",
+    assigneeId: Number(ticket.assigneeId || STAFF_BASE[0]?.id || 1),
+    comments: Array.isArray(ticket.comments) ? ticket.comments : [],
+    timeline: Array.isArray(ticket.timeline) ? ticket.timeline : [],
+    feedbackSubmitted: Boolean(ticket.feedbackSubmitted),
+    closedAt: ticket.closedAt ?? null,
+    closingRemarks: ticket.closingRemarks || "",
+  };
+}
+
+async function fetchTickets() {
+  if (!ONLINE_TICKETS_ENABLED) {
+    console.warn("Firestore ticket storage is not configured. Set VITE_FIREBASE_PROJECT_ID and VITE_FIREBASE_API_KEY.");
+    return [];
+  }
+  const res = await fetch(`${FIRESTORE_BASE_URL}/tickets?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
+  if (!res.ok) throw new Error(`Ticket fetch failed: ${res.status} ${await res.text()}`);
+  const data = await res.json();
+  return (data.documents || [])
+    .map(doc => normalizeTicket({ id: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+async function saveTicket(ticket) {
+  if (!ONLINE_TICKETS_ENABLED) {
+    console.warn("Firestore ticket storage is not configured; ticket was not saved online.", ticket);
+    return;
+  }
+  const cleanTicket = normalizeTicket(ticket);
+  const res = await fetch(`${FIRESTORE_BASE_URL}/tickets/${encodeURIComponent(cleanTicket.id)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: toFirestoreFields(cleanTicket) }),
+  });
+  if (!res.ok) throw new Error(`Ticket save failed: ${res.status} ${await res.text()}`);
+}
+
+async function updateTicket(ticket) {
+  return saveTicket(ticket);
+}
+
+async function saveTickets(tickets) {
+  if (!ONLINE_TICKETS_ENABLED) return;
+  await Promise.all((tickets || []).map(ticket => saveTicket(ticket)));
+}
+
+async function deleteTicket(id) {
+  if (!ONLINE_TICKETS_ENABLED || !id) return;
+  const res = await fetch(`${FIRESTORE_BASE_URL}/tickets/${encodeURIComponent(id)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) throw new Error(`Ticket delete failed: ${res.status} ${await res.text()}`);
+}
 function getTicketFeedbackLink(ticketId) {
   return typeof window !== "undefined"
     ? `${window.location.origin}/?feedbackTicket=${encodeURIComponent(ticketId)}`
@@ -2417,7 +2511,8 @@ export default function App() {
   const { toasts, toast, remove } = useToast();
   const [session, setSession] = useState(getSavedSession);
   const [page, setPage] = useState(() => getInitialPage(getSavedSession()));
-  const [tickets, setTickets] = useState(() => DB.get("tickets", []));
+  const [tickets, setTickets] = useState([]);
+  const [ticketsLoaded, setTicketsLoaded] = useState(false);
   const [feedback, setFeedback] = useState(() => DB.get("feedback", []));
   const [feedbackTicketId, setFeedbackTicketId] = useState("");
   const [dismissedFeedbackTickets, setDismissedFeedbackTickets] = useState([]);
@@ -2432,8 +2527,28 @@ export default function App() {
   const [staffMenuOpen, setStaffMenuOpen] = useState(false);
 
   useEffect(() => {
-    DB.set("tickets", tickets);
-  }, [tickets]);
+    let alive = true;
+    const loadTickets = async () => {
+      try {
+        const onlineTickets = await fetchTickets();
+        if (alive) {
+          setTickets(onlineTickets);
+          setTicketsLoaded(true);
+        }
+      } catch (error) {
+        console.error("Online ticket load failed:", error);
+        if (alive) setTicketsLoaded(true);
+      }
+    };
+    loadTickets();
+    const interval = setInterval(loadTickets, 15000);
+    return () => { alive = false; clearInterval(interval); };
+  }, []);
+
+  useEffect(() => {
+    if (!ticketsLoaded || !ONLINE_TICKETS_ENABLED) return;
+    saveTickets(tickets).catch(error => console.error("Online ticket sync failed:", error));
+  }, [tickets, ticketsLoaded]);
   useEffect(() => DB.set("feedback", feedback), [feedback]);
   useEffect(() => DB.set("staff_profiles", staffProfiles), [staffProfiles]);
   useEffect(() => DB.set("staff_statuses", staffStatuses), [staffStatuses]);
@@ -2466,9 +2581,28 @@ export default function App() {
     setViewTicketId(null);
   };
 
-  const handleDeleteTicket = (id) => {
-    setTickets(ts => ts.filter(t => t.id !== id));
-    toast("Ticket deleted", "info");
+  const reloadTickets = useCallback(async () => {
+    try {
+      const onlineTickets = await fetchTickets();
+      setTickets(onlineTickets);
+      setTicketsLoaded(true);
+      return onlineTickets;
+    } catch (error) {
+      console.error("Online ticket refresh failed:", error);
+      return tickets;
+    }
+  }, [tickets]);
+
+  const handleDeleteTicket = async (id) => {
+    try {
+      await deleteTicket(id);
+      setTickets(ts => ts.filter(t => t.id !== id));
+      await reloadTickets();
+      toast("Ticket deleted", "info");
+    } catch (error) {
+      console.error("Online ticket delete failed:", error);
+      toast("Ticket delete failed", "error");
+    }
   };
 
   const handleNewTicket = async (form) => {
@@ -2509,13 +2643,15 @@ export default function App() {
 
     console.log("NEW TICKET:", newTicket);
 
+    await saveTicket(newTicket);
     setTickets(prev => {
-      const updated = [newTicket, ...prev];
-      DB.set("tickets", updated);
+      const updated = [newTicket, ...prev.filter(t => t.id !== newTicket.id)];
       console.log("SAVED TICKETS:", updated);
       return updated;
     });
     setFormCat(null);
+    if (session?.type === "user") setPage("my-tickets");
+    reloadTickets().catch(error => console.error("Post-create ticket refresh failed:", error));
 
     await sendTicketEmail(newTicket, {
       name: newTicket.name,
@@ -2869,6 +3005,11 @@ export default function App() {
     </>
   );
 }
+
+
+
+
+
 
 
 
