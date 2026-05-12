@@ -1281,7 +1281,7 @@ function TicketForm({userEmail,initialCategory,onSubmit,onCancel,toast}) {
           <input type={type} placeholder={label} value={form[k]} onChange={e=>set(k,e.target.value)}/></div>
         ))}
         <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Department *</label>
-          <select value={form.dept} onChange={e=>set("dept",e.target.value)} disabled={!!ticket}><option value="">Select Department</option>{DEPTS.map(d=><option key={d}>{d}</option>)}</select></div>
+          <select value={form.dept} onChange={e=>set("dept",e.target.value)}><option value="">Select Department</option>{DEPTS.map(d=><option key={d}>{d}</option>)}</select></div>
         <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Category *</label>
           <select value={form.category} onChange={e=>set("category",e.target.value)}><option value="">Select Category</option>{CATEGORIES.map(c=><option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}</select></div>
         <div><label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Priority</label>
@@ -2802,6 +2802,7 @@ export default function App() {
     </>
   );
 }
+
 
 
 
