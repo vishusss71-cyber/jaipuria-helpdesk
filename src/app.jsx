@@ -162,30 +162,66 @@ Jaipuria Institute of Management IT Support Team
   `.trim());
 }
 
-function emailTicketClosed(ticket, assignee) {
+function emailTicketClosed(ticket, assignee, closedBy="Admin") {
   const duration = formatDuration(ticket.closedAt - ticket.createdAt);
-  simulateEmail(ticket.email, `[${ticket.id}] Ticket Resolved & Closed`, `
+  const category = categoryLabel(ticket.category);
+  const body = `
 Dear ${ticket.name},
 
-Your IT support ticket has been resolved and closed.
+Your IT support ticket has been closed.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-RESOLUTION SUMMARY
+TICKET CLOSURE DETAILS
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-Ticket ID         : ${ticket.id}
-Status            : ✅ Closed
-Resolved By       : ${assignee?.name} (${assignee?.role})
-Opened At         : ${fmtDate(ticket.createdAt)}
-Closed At         : ${fmtDate(ticket.closedAt)}
-Total Duration    : ${duration}
-Closing Remarks   : ${ticket.closingRemarks || "Issue resolved successfully."}
+Ticket ID           : ${ticket.id}
+Category            : ${category}
+Priority            : ${ticket.priority}
+Final Status        : Closed
+Closed By           : ${closedBy}
+Closed Date/Time    : ${fmtDate(ticket.closedAt)}
+Resolution Duration : ${duration}
+Closing Remarks     : ${ticket.closingRemarks || "Issue resolved successfully."}
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Thank you for using Jaipuria Institute of Management IT Support Portal.
 
 Regards,
 Jaipuria Institute of Management IT Support Team
-  `.trim());
+  `.trim();
+
+  simulateEmail(ticket.email, `[${ticket.id}] Ticket Closed`, body);
+
+  if (assignee?.email) {
+    simulateEmail(assignee.email, `[${ticket.id}] Assigned Ticket Closed`, `${body}\n\nStaff copy: this ticket was assigned to you.`);
+  }
+
+  simulateEmail("admin@jaipuria.ac.in", `[${ticket.id}] Ticket Closed Notification`, `${body}\n\nAdmin copy: ticket closure has been recorded.`);
+}
+
+function emailTicketAssigned(ticket, newAssignee, previousAssignee, assignedBy="Admin", remark="") {
+  const category = categoryLabel(ticket.category);
+  const base = `
+Ticket ID    : ${ticket.id}
+Category     : ${category}
+Priority     : ${ticket.priority}
+Status       : ${ticket.status}
+Assigned To  : ${newAssignee?.name || "Unassigned"}
+Assigned By  : ${assignedBy}
+Updated At   : ${fmtDate(Date.now())}
+${remark ? `Remark       : ${remark}` : ""}
+  `.trim();
+
+  simulateEmail(ticket.email, `[${ticket.id}] Ticket Assignment Updated`, `Dear ${ticket.name},\n\nYour IT support ticket assignment has been updated.\n\n${base}\n\nRegards,\nJaipuria Institute of Management IT Support Team`);
+
+  if (newAssignee?.email) {
+    simulateEmail(newAssignee.email, `[${ticket.id}] Ticket Assigned To You`, `A ticket has been assigned to you.\n\n${base}`);
+  }
+
+  if (previousAssignee?.email && previousAssignee.email !== newAssignee?.email) {
+    simulateEmail(previousAssignee.email, `[${ticket.id}] Ticket Reassigned`, `This ticket has been reassigned from you.\n\n${base}`);
+  }
+
+  simulateEmail("admin@jaipuria.ac.in", `[${ticket.id}] Assignment Updated`, `Admin notification:\n\n${base}`);
 }
 
 // ── CSV / EXPORT HELPERS ──────────────────────────────────────────────────
@@ -688,8 +724,20 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
   updateTicket=(changes,auditAction,remark="")=>{
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
-      const tl=[...(t.timeline||[]),{action:auditAction,remark,at:Date.now(),by:isAdmin?"Admin":staffName||"User"}];
-      return {...t,...changes,updatedAt:Date.now(),timeline:tl};
+      const actor=isAdmin?"Admin":staffName||"User";
+      const tl=[...(t.timeline||[]),{action:auditAction,remark,at:Date.now(),by:actor}];
+      const closingNow=changes.status==="Closed"&&t.status!=="Closed";
+      const updated={...t,...changes,updatedAt:Date.now(),timeline:tl};
+      if(closingNow){
+        updated.closedAt=Date.now();
+        updated.closingRemarks=remark||"Closed from ticket controls.";
+        updated.resolutionTime=updated.closedAt-t.createdAt;
+        emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===updated.assigneeId),actor);
+      }
+      if(changes.assigneeId&&Number(changes.assigneeId)!==Number(t.assigneeId)){
+        emailTicketAssigned(updated,STAFF_BASE.find(s=>s.id===Number(changes.assigneeId)),STAFF_BASE.find(s=>s.id===t.assigneeId),actor,remark);
+      }
+      return updated;
     }));
     toast(auditAction,"success");
   };
@@ -710,9 +758,10 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     const closedAt=Date.now();
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
+      const closedBy = staffName || (isAdmin ? "Admin" : "User");
       const updated={...t,status:"Closed",closedAt,closingRemarks:remarks,resolutionTime:closedAt-t.createdAt,updatedAt:closedAt,
-        timeline:[...(t.timeline||[]),{action:"Closed",remark:remarks,at:closedAt,by:staffName||"Admin"}]};
-      emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===t.assigneeId));
+        timeline:[...(t.timeline||[]),{action:"Closed",remark:remarks,at:closedAt,by:closedBy}]};
+      emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===t.assigneeId),closedBy);
       return updated;
     }));
     setShowClose(false);
@@ -794,43 +843,12 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
 
     <div
       style={{
-        display:"flex",
-        justifyContent:"space-between",
-        alignItems:"center",
+        fontSize:12,
+        color:"rgba(226,232,240,0.5)",
         marginBottom:16
       }}
     >
-
-      <div
-        style={{
-          fontSize:12,
-          color:"rgba(226,232,240,0.5)"
-        }}
-      >
-        CONTROLS
-      </div>
-
-      <button
-        onClick={() => {
-  toast(
-    "Use sidebar → Staff Management",
-    "info"
-  );
-}}
-        style={{
-          padding:"8px 14px",
-          border:"none",
-          borderRadius:8,
-          background:"#2563eb",
-          color:"#fff",
-          cursor:"pointer",
-          fontSize:13,
-          fontWeight:600
-        }}
-      >
-        👥 Staff Management
-      </button>
-
+      CONTROLS
     </div>
 
     <div
@@ -1716,6 +1734,47 @@ function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions})
   );
 }
 
+// ── QUICK ASSIGN DIALOG ───────────────────────────────────────────────────
+function QuickAssignDialog({ticket,onClose,onSave}) {
+  const [assigneeId,setAssigneeId]=useState(ticket?.assigneeId || STAFF_BASE[0]?.id || "");
+  const [remark,setRemark]=useState("");
+  const currentAssignee=STAFF_BASE.find(s=>s.id===ticket?.assigneeId);
+
+  if(!ticket) return null;
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div className="glass" style={{padding:"14px 16px"}}>
+        <div style={{fontSize:12,color:"rgba(226,232,240,0.45)",marginBottom:8}}>TICKET</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div><div style={{fontSize:11,color:"rgba(226,232,240,0.4)"}}>Ticket ID</div><div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginTop:2}}>{ticket.id}</div></div>
+          <div><div style={{fontSize:11,color:"rgba(226,232,240,0.4)"}}>Current Assignee</div><div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginTop:2}}>{currentAssignee?.name || "Unassigned"}</div></div>
+          <div><div style={{fontSize:11,color:"rgba(226,232,240,0.4)"}}>Category</div><div style={{fontSize:13,fontWeight:600,color:"#e2e8f0",marginTop:2}}>{categoryLabel(ticket.category)}</div></div>
+          <div><div style={{fontSize:11,color:"rgba(226,232,240,0.4)"}}>Priority</div><div style={{fontSize:13,fontWeight:600,color:priorityColor(ticket.priority),marginTop:2}}>{ticket.priority}</div></div>
+        </div>
+      </div>
+
+      <div>
+        <label style={{fontSize:12,color:"rgba(226,232,240,0.65)",marginBottom:6,display:"block",fontWeight:600}}>Assign To</label>
+        <select value={assigneeId} onChange={e=>setAssigneeId(Number(e.target.value))}>
+          {STAFF_BASE.map(staff=>(
+            <option key={staff.id} value={staff.id}>{staff.name} ({staff.role})</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label style={{fontSize:12,color:"rgba(226,232,240,0.65)",marginBottom:6,display:"block",fontWeight:600}}>Optional Remark</label>
+        <textarea rows={4} value={remark} onChange={e=>setRemark(e.target.value)} placeholder="Add assignment context for audit trail and notifications..." style={{resize:"vertical"}} />
+      </div>
+
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+        <button onClick={onClose} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",padding:"10px 18px",borderRadius:10,fontSize:14}}>Cancel</button>
+        <button className="glow-btn" style={{padding:"10px 20px",fontSize:14}} onClick={()=>onSave(ticket.id,Number(assigneeId),remark)}>Save Assignment</button>
+      </div>
+    </div>
+  );
+}
 // ── MAIN APP ──────────────────────────────────────────────────────────────
 const getSavedSession = () => {
   if (!hasStorage()) return null;
@@ -1735,6 +1794,7 @@ export default function App() {
   const [page, setPage] = useState(() => getInitialPage(getSavedSession()));
   const [tickets, setTickets] = useState(() => DB.get("tickets", []));
   const [viewTicketId, setViewTicketId] = useState(null);
+  const [quickAssignTicketId, setQuickAssignTicketId] = useState(null);
   const [formCat, setFormCat] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -1785,6 +1845,43 @@ export default function App() {
     }
   };
 
+  const handleQuickAssign = (ticketId, assigneeId, remark="") => {
+    let assignedTicket = null;
+    let newAssignee = null;
+    let previousAssignee = null;
+
+    setTickets(ts => ts.map(t => {
+      if (t.id !== ticketId) return t;
+      newAssignee = STAFF_BASE.find(s => s.id === assigneeId);
+      previousAssignee = STAFF_BASE.find(s => s.id === t.assigneeId);
+      const cleanRemark = remark.trim();
+      const timelineEntry = {
+        action: `Quick assigned to ${newAssignee?.name || "Unassigned"}`,
+        remark: cleanRemark,
+        at: Date.now(),
+        by: "Admin",
+      };
+      const comments = cleanRemark
+        ? [...(t.comments || []), { text: cleanRemark, at: Date.now(), by: "Admin" }]
+        : (t.comments || []);
+      assignedTicket = {
+        ...t,
+        assigneeId,
+        status: t.status === "Open" ? "Assigned" : t.status,
+        updatedAt: Date.now(),
+        comments,
+        timeline: [...(t.timeline || []), timelineEntry],
+      };
+      return assignedTicket;
+    }));
+
+    if (assignedTicket) {
+      emailTicketAssigned(assignedTicket, newAssignee, previousAssignee, "Admin", remark.trim());
+      toast(`Ticket assigned to ${newAssignee?.name || "staff"}`,"success");
+    }
+    setQuickAssignTicketId(null);
+  };
+
   const handleFirstLoginComplete = (hash) => {
     const staffPasswords = DB.get("staff_passwords", {});
     staffPasswords[session.staffId] = hash;
@@ -1828,6 +1925,7 @@ export default function App() {
   const isAdmin = session.type === "admin";
   const isStaff = session.type === "staff";
   const myTickets = isAdmin || isStaff ? tickets : tickets.filter(t => t.email === session.email);
+  const quickAssignTicket = tickets.find(t => t.id === quickAssignTicketId);
 
   const renderStaffManagement = () => (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
@@ -1871,7 +1969,17 @@ export default function App() {
           </div>
           <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>Recent Tickets</h3>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
-            {tickets.slice(0,6).map(t => <TicketCard key={t.id} ticket={t} onView={setViewTicketId} />)}
+            {tickets.slice(0,6).map(t => (
+              <div key={t.id} style={{position:"relative"}}>
+                <TicketCard ticket={t} onView={setViewTicketId} />
+                <button
+                  onClick={e=>{e.stopPropagation();setQuickAssignTicketId(t.id);}}
+                  style={{position:"absolute",right:12,bottom:12,background:"rgba(99,102,241,0.92)",border:"1px solid rgba(255,255,255,0.18)",color:"#fff",padding:"7px 12px",borderRadius:8,fontSize:12,fontWeight:700,boxShadow:"0 10px 24px rgba(99,102,241,0.25)"}}
+                >
+                  Assign
+                </button>
+              </div>
+            ))}
             {tickets.length === 0 && <div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>🎫</div><div>No tickets yet</div></div>}
           </div>
         </div>
@@ -1964,6 +2072,16 @@ export default function App() {
         </Modal>
       )}
 
+      {quickAssignTicket && (
+        <Modal title={`Assign Ticket - ${quickAssignTicket.id}`} onClose={() => setQuickAssignTicketId(null)}>
+          <QuickAssignDialog
+            ticket={quickAssignTicket}
+            onClose={() => setQuickAssignTicketId(null)}
+            onSave={handleQuickAssign}
+          />
+        </Modal>
+      )}
+
       {viewTicketId && (
         <Modal title={`Ticket - ${viewTicketId}`} onClose={() => setViewTicketId(null)}>
           <TicketDetail
@@ -1983,6 +2101,14 @@ export default function App() {
     </>
   );
 }
+
+
+
+
+
+
+
+
 
 
 
