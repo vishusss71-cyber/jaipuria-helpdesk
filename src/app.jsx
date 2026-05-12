@@ -1904,36 +1904,28 @@ function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions,s
 }
 
 // ── STAFF PROFILE / PERFORMANCE / CHAT ───────────────────────────────────
-function StaffProfileMenu({staff,profiles,statuses,onStatusChange,onOpen,onLogout}) {
-  const [open,setOpen]=useState(false);
+function StaffProfileMenu({staff,profiles,statuses,onStatusChange,onOpen,onLogout,onClose}) {
   const status=getStaffStatus(staff.id,statuses);
   return (
-    <div style={{position:"relative"}}>
-      <button onClick={()=>setOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",borderRadius:14,padding:"7px 10px"}}>
-        <StaffAvatar staff={staff} profiles={profiles} statuses={statuses} size={38} showStatus />
-        <div style={{textAlign:"left",lineHeight:1.2}}>
-          <div style={{fontSize:13,fontWeight:800}}>{staff.name}</div>
-          <div style={{fontSize:11,color:"rgba(226,232,240,0.48)"}}>{staff.role}</div>
+    <div className="glass" style={{position:"absolute",left:0,top:"calc(100% + 12px)",width:"min(320px, calc(100vw - 32px))",padding:12,zIndex:2000,boxShadow:"0 28px 90px rgba(0,0,0,0.48)",background:"rgba(10,10,20,0.96)",border:"1px solid rgba(255,255,255,0.14)",backdropFilter:"blur(24px)"}}>
+      <div style={{display:"flex",gap:12,alignItems:"center",padding:"10px 10px 14px",borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:10}}>
+        <StaffAvatar staff={staff} profiles={profiles} statuses={statuses} size={52} showStatus />
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:15,fontWeight:800,color:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{staff.name}</div>
+          <div style={{fontSize:12,color:"rgba(226,232,240,0.52)",marginTop:2}}>{staff.role}</div>
+          <div style={{marginTop:4}}><StatusDot status={status}/></div>
         </div>
-      </button>
-      {open&&(
-        <div className="glass" style={{position:"absolute",right:0,top:"calc(100% + 10px)",width:250,padding:10,zIndex:50,boxShadow:"0 24px 70px rgba(0,0,0,0.38)"}}>
-          <div style={{display:"flex",gap:10,alignItems:"center",padding:"10px 10px 12px",borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:8}}>
-            <StaffAvatar staff={staff} profiles={profiles} statuses={statuses} size={46} showStatus />
-            <div><div style={{fontSize:14,fontWeight:800,color:"#fff"}}>{staff.name}</div><StatusDot status={status}/></div>
-          </div>
-          <div style={{padding:"6px 8px"}}>
-            <label style={{fontSize:11,color:"rgba(226,232,240,0.45)",display:"block",marginBottom:5}}>Live Status</label>
-            <select value={status} onChange={e=>onStatusChange(e.target.value)} style={{fontSize:12,padding:"8px 10px"}}>
-              {Object.keys(STAFF_STATUS).map(s=><option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          {[['profile','My Profile'],['password','Change Password'],['performance','My Performance'],['chat','Staff Chat']].map(([id,label])=>(
-            <button key={id} onClick={()=>{setOpen(false);onOpen(id);}} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"rgba(226,232,240,0.78)",padding:"10px 12px",borderRadius:9,fontSize:13,fontWeight:600}}>{label}</button>
-          ))}
-          <button onClick={onLogout} style={{width:"100%",textAlign:"left",background:"rgba(239,68,68,0.12)",border:"1px solid rgba(239,68,68,0.22)",color:"#f87171",padding:"10px 12px",borderRadius:9,fontSize:13,fontWeight:700,marginTop:6}}>Logout</button>
-        </div>
-      )}
+      </div>
+      <div style={{padding:"6px 8px 10px"}}>
+        <label style={{fontSize:11,color:"rgba(226,232,240,0.45)",display:"block",marginBottom:6,fontWeight:700}}>Live Status</label>
+        <select value={status} onChange={e=>onStatusChange(e.target.value)} style={{fontSize:12,padding:"8px 10px"}}>
+          {Object.keys(STAFF_STATUS).map(s=><option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+      {[['profile','My Profile'],['password','Change Password'],['performance','My Performance'],['chat','Staff Chat']].map(([id,label])=>(
+        <button key={id} onClick={()=>{onClose&&onClose();onOpen(id);}} style={{width:"100%",textAlign:"left",background:"transparent",border:"none",color:"rgba(226,232,240,0.82)",padding:"11px 12px",borderRadius:10,fontSize:13,fontWeight:700}}>{label}</button>
+      ))}
+      <button onClick={onLogout} style={{width:"100%",textAlign:"left",background:"rgba(239,68,68,0.13)",border:"1px solid rgba(239,68,68,0.26)",color:"#f87171",padding:"11px 12px",borderRadius:10,fontSize:13,fontWeight:800,marginTop:8}}>Logout</button>
     </div>
   );
 }
@@ -2082,6 +2074,7 @@ export default function App() {
   const [staffStatuses, setStaffStatuses] = useState(() => DB.get("staff_statuses", {}));
   const [staffMessages, setStaffMessages] = useState(() => DB.get("staff_messages", []));
   const [staffPanel, setStaffPanel] = useState(null);
+  const [staffMenuOpen, setStaffMenuOpen] = useState(false);
 
   useEffect(() => {
     DB.set("tickets", tickets);
@@ -2355,9 +2348,9 @@ export default function App() {
         <Sidebar current={page} onChange={setPage} isAdmin={isAdmin} isStaff={isStaff} tickets={tickets} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
           <div style={{padding:"14px 24px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(10,10,20,0.9)",backdropFilter:"blur(20px)",position:"sticky",top:0,zIndex:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <button onClick={() => setMobileOpen(o => !o)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",width:36,height:36,borderRadius:8,fontSize:18}}>☰</button>
-              {isStaff ? (
+            <div style={{display:"flex",alignItems:"center",gap:12,position:"relative"}}>
+              <button onClick={() => isStaff ? setStaffMenuOpen(o=>!o) : setMobileOpen(o => !o)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",width:38,height:38,borderRadius:10,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>☰</button>
+              {isStaff&&staffMenuOpen&&(
                 <StaffProfileMenu
                   staff={STAFF_BASE.find(s=>s.id===session.staffId)}
                   profiles={staffProfiles}
@@ -2365,10 +2358,10 @@ export default function App() {
                   onStatusChange={updateOwnStatus}
                   onOpen={setStaffPanel}
                   onLogout={logoutUser}
+                  onClose={()=>setStaffMenuOpen(false)}
                 />
-              ) : (
-                <span style={{fontSize:13,color:"rgba(226,232,240,0.4)"}}>{isAdmin ? "Admin Portal" : session.email}</span>
               )}
+              {!isStaff&&<span style={{fontSize:13,color:"rgba(226,232,240,0.4)"}}>{isAdmin ? "Admin Portal" : session.email}</span>}
             </div>
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
               <div className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#10b981"}} />
@@ -2439,6 +2432,7 @@ export default function App() {
     </>
   );
 }
+
 
 
 
