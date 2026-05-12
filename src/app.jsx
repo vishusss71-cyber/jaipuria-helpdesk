@@ -1075,13 +1075,15 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
 
   const updateTicket = async (changes, auditAction, remark = "") => {
     let ticketClosedForEmail = null;
+    let oldStatusForEmail = null;
     let closedByForEmail = "Admin";
 
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
       const actor=isAdmin?"Admin":staffName||"User";
       const tl=[...(t.timeline||[]),{action:auditAction,remark,at:Date.now(),by:actor}];
-      const closingNow=changes.status==="Closed"&&t.status!=="Closed";
+      const oldStatus=t.status;
+      const closingNow=changes.status==="Closed"&&oldStatus!=="Closed";
       const updated={...t,...changes,updatedAt:Date.now(),timeline:tl};
       if(closingNow){
         updated.closedAt=Date.now();
@@ -1089,8 +1091,9 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         updated.resolutionTime=updated.closedAt-t.createdAt;
         updated.feedbackSubmitted=false;
         closedByForEmail=actor;
+        oldStatusForEmail=oldStatus;
         ticketClosedForEmail=updated;
-        console.log("Closing ticket:", updated);
+        console.log("CLOSE EMAIL ONLY:", updated);
         emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===updated.assigneeId),actor);
       }
       if(changes.assigneeId&&Number(changes.assigneeId)!==Number(t.assigneeId)){
@@ -1100,11 +1103,15 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     }));
 
     if(ticketClosedForEmail){
+      const oldStatus = oldStatusForEmail;
+      const updated = ticketClosedForEmail;
+      if (oldStatus !== "Closed" && updated.status === "Closed" && updated.closedAt) {
       try {
-        await sendTicketCloseEmail(ticketClosedForEmail, closedByForEmail, ticketClosedForEmail.closingRemarks, ticketClosedForEmail.comments || [], {name:ticketClosedForEmail.name,email:ticketClosedForEmail.email});
+        await sendTicketCloseEmail(updated, closedByForEmail, updated.closingRemarks, updated.comments || [], {name:updated.name,email:updated.email});
         toast("Ticket closed and close email sent to user", "success");
       } catch (error) {
         toast("Ticket closed but email failed to send", "error");
+      }
       }
       return;
     }
@@ -1133,7 +1140,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
       const updated={...t,status:"Closed",closedAt,closingRemarks:remarks,resolutionTime:closedAt-t.createdAt,updatedAt:closedAt,feedbackSubmitted:false,
         timeline:[...(t.timeline||[]),{action:"Closed",remark:remarks,at:closedAt,by:closedByForEmail}]};
       closedTicketForEmail = updated;
-      console.log("Closing ticket:", updated);
+      console.log("CLOSE EMAIL ONLY:", updated);
       emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===t.assigneeId),closedByForEmail);
       return updated;
     }));
@@ -1389,10 +1396,9 @@ function TicketForm({userEmail,initialCategory,onSubmit,onCancel,toast}) {
     if(!/\S+@\S+\.\S+/.test(form.email)){toast("Invalid email format","error");return;}
     setLoading(true);
     await new Promise(r=>setTimeout(r,700));
-    const ticket={...form,id:genId(),status:"Assigned",closedAt:null,closingRemarks:"",feedbackSubmitted:false,createdAt:Date.now(),updatedAt:Date.now(),comments:[],timeline:[]};
     try {
-      await Promise.resolve(onSubmit(ticket));
-      toast(`Ticket created! Confirmation sent to ${ticket.email} 📧`,"email");
+      await Promise.resolve(onSubmit({...form}));
+      toast(`Ticket created! Confirmation sent to ${form.email} 📧`,"email");
     } finally {
       setLoading(false);
     }
@@ -2570,35 +2576,33 @@ export default function App() {
     toast("Ticket deleted", "info");
   };
 
-  const handleNewTicket = async (ticket) => {
-    const assignee = STAFF_BASE.find(s => s.id === Number(ticket.assigneeId)) || getActiveStaffForAssignment() || STAFF_BASE[0];
+  const handleNewTicket = async (form) => {
+    const assignee = getActiveStaffForAssignment() || STAFF_BASE[0];
     const now = Date.now();
     const newTicket = {
-      ...ticket,
-      id: ticket.id || genId(),
+      ...form,
+      id: genId(),
       status: "Assigned",
       assigneeId: assignee.id,
-      createdAt: ticket.createdAt || now,
+      createdAt: now,
       updatedAt: now,
       closedAt: null,
       closingRemarks: "",
-      resolutionTime: null,
       feedbackSubmitted: false,
-      feedbackId: null,
-      comments: Array.isArray(ticket.comments) ? ticket.comments : [],
+      comments: [],
       timeline: [
-        {action:"Created",at:now,by:"User"},
-        {action:`Assigned to ${assignee.name}`,at:now,by:"System (Auto)"},
-      ],
+        { action: "Created", at: now, by: "User" },
+        { action: `Assigned to ${assignee.name}`, at: now, by: "System (Auto)" }
+      ]
     };
 
-    console.log("Ticket created:", newTicket);
+    console.log("CREATE EMAIL ONLY - do not close:", newTicket);
     console.log("Ticket assigned to:", assignee);
 
-    setTickets(ts => {
-      const next = [newTicket, ...ts.filter(t => t.id !== newTicket.id)];
-      DB.set("tickets", next);
-      return next;
+    setTickets(prev => {
+      const updated = [newTicket, ...prev];
+      DB.set("tickets", updated);
+      return updated;
     });
     setFormCat(null);
 
@@ -2840,7 +2844,7 @@ export default function App() {
       <div>
         <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>New Ticket</h2>
         <div className="glass" style={{padding:"24px"}}>
-          <TicketForm userEmail={session.email} initialCategory="" onSubmit={t => { handleNewTicket(t); setPage("my-tickets"); }} onCancel={() => setPage("home")} toast={toast} />
+          <TicketForm userEmail={session.email} initialCategory="" onSubmit={async t => { await handleNewTicket(t); setPage("my-tickets"); }} onCancel={() => setPage("home")} toast={toast} />
         </div>
       </div>
     );
@@ -2954,6 +2958,10 @@ export default function App() {
     </>
   );
 }
+
+
+
+
 
 
 
