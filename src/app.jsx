@@ -1592,8 +1592,24 @@ function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions})
 // ── MAIN APP ──────────────────────────────────────────────────────────────
 export default function App() {
   const [session,setSession]=useState(null);
+  useEffect(() => {
+
+  const savedSession =
+    localStorage.getItem(
+      "helpdesk_session"
+    );
+
+  if(savedSession){
+
+    setSession(
+      JSON.parse(savedSession)
+    );
+
+  }
+
+}, []);
   const [page,setPage]=useState("home");
-  const [tickets,setTickets]=useState(()=>DB.get("tickets",[]));
+  const [tickets,setTickets] =useState(DB.get("tickets", []));
   const [viewTicketId,setViewTicketId]=useState(null);
   const [formCat,setFormCat]=useState(null);
   const [mobileOpen,setMobileOpen]=useState(false);
@@ -1611,30 +1627,58 @@ export default function App() {
     toast(`Welcome${sess.name?`, ${sess.name}`:""}! 👋`,"success");
   };
 
-  const handleFirstLoginComplete=(hash)=>{
-    const staffPasswords=DB.get("staff_passwords",{});
-    staffPasswords[session.staffId]=hash;
-    DB.set("staff_passwords",staffPasswords);
-    const staff=STAFF_BASE.find(s=>s.id===session.staffId);
-    setSession({type:"staff",staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,permissions:staff.permissions});
-    setPage("staff-dash");
-  };
-const logoutUser = () => {
-  setSession(null);
-  setPage("home");
-  setViewTicketId(null);
+  const handleFirstLoginComplete = (hash) => {
+
+  const staffPasswords =
+    DB.get("staff_passwords", {});
+
+  staffPasswords[session.staffId] = hash;
+
+  DB.set(
+    "staff_passwords",
+    staffPasswords
+  );
+
+  const staff =
+    STAFF_BASE.find(
+      s => s.id === session.staffId
+    );
+
+  setSession({
+    type:"staff",
+    staffId:staff.id,
+    email:staff.email,
+    name:staff.name,
+    role:staff.role,
+    permissions:staff.permissions
+  });
+
+  localStorage.setItem(
+    "helpdesk_session",
+    JSON.stringify({
+      type:"staff",
+      staffId:staff.id,
+      email:staff.email,
+      name:staff.name,
+      role:staff.role,
+      permissions:staff.permissions
+    })
+  );
+
 };
-
 const handleNewTicket = (ticket) => {
-  setTickets(ts => [ticket, ...ts]);
 
-  sendTicketEmail(ticket, session).catch(console.error);
+  const updatedTickets = [
+    ticket,
+    ...tickets
+  ];
 
-  setFormCat(null);
+  setTickets(updatedTickets);
 
-  setViewTicketId(ticket.id);
+  DB.set("tickets", updatedTickets);
 
-  toast(`Ticket ${ticket.id} created!`, "success");
+  setPage("my-tickets");
+
 };
 
 const handleDeleteTicket = (id) => {
