@@ -1090,6 +1090,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         updated.feedbackSubmitted=false;
         closedByForEmail=actor;
         ticketClosedForEmail=updated;
+        console.log("Closing ticket:", updated);
         emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===updated.assigneeId),actor);
       }
       if(changes.assigneeId&&Number(changes.assigneeId)!==Number(t.assigneeId)){
@@ -1103,7 +1104,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         await sendTicketCloseEmail(ticketClosedForEmail, closedByForEmail, ticketClosedForEmail.closingRemarks, ticketClosedForEmail.comments || [], {name:ticketClosedForEmail.name,email:ticketClosedForEmail.email});
         toast("Ticket closed and close email sent to user", "success");
       } catch (error) {
-        toast(`Ticket closed but email failed to send: ${error?.text || error?.message || "Unknown EmailJS error"}`, "error");
+        toast("Ticket closed but email failed to send", "error");
       }
       return;
     }
@@ -1128,9 +1129,11 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     let closedByForEmail = staffName || (isAdmin ? "Admin" : "User");
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
+      if(t.status==="Closed") return t;
       const updated={...t,status:"Closed",closedAt,closingRemarks:remarks,resolutionTime:closedAt-t.createdAt,updatedAt:closedAt,feedbackSubmitted:false,
         timeline:[...(t.timeline||[]),{action:"Closed",remark:remarks,at:closedAt,by:closedByForEmail}]};
       closedTicketForEmail = updated;
+      console.log("Closing ticket:", updated);
       emailTicketClosed(updated,STAFF_BASE.find(s=>s.id===t.assigneeId),closedByForEmail);
       return updated;
     }));
@@ -1142,7 +1145,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         toast("Ticket closed and close email sent to user", "success");
       } catch (error) {
         setShowClose(false);
-        toast(`Ticket closed but email failed to send: ${error?.text || error?.message || "Unknown EmailJS error"}`, "error");
+        toast("Ticket closed but email failed to send", "error");
       }
     }
   };
@@ -1386,15 +1389,13 @@ function TicketForm({userEmail,initialCategory,onSubmit,onCancel,toast}) {
     if(!/\S+@\S+\.\S+/.test(form.email)){toast("Invalid email format","error");return;}
     setLoading(true);
     await new Promise(r=>setTimeout(r,700));
-    const assignee=getActiveStaffForAssignment();
-    const ticket={...form,id:genId(),status:"Assigned",assigneeId:assignee.id,createdAt:Date.now(),updatedAt:Date.now(),comments:[],
-      timeline:[{action:"Created",at:Date.now(),by:"User"},{action:`Assigned to ${assignee.name}`,at:Date.now(),by:"System (Auto)"}]};
-    console.log("Created ticket:", ticket);
-    console.log("Assigned staff:", assignee);
-    emailTicketCreated(ticket,assignee);
-    await Promise.resolve(onSubmit(ticket));
-    setLoading(false);
-    toast(`Ticket created! Confirmation sent to ${ticket.email} 📧`,"email");
+    const ticket={...form,id:genId(),status:"Assigned",closedAt:null,closingRemarks:"",feedbackSubmitted:false,createdAt:Date.now(),updatedAt:Date.now(),comments:[],timeline:[]};
+    try {
+      await Promise.resolve(onSubmit(ticket));
+      toast(`Ticket created! Confirmation sent to ${ticket.email} 📧`,"email");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -2570,11 +2571,8 @@ export default function App() {
   };
 
   const handleNewTicket = async (ticket) => {
-    const assignee = STAFF_BASE.find(s => s.id === Number(ticket.assigneeId)) || getActiveStaffForAssignment();
+    const assignee = STAFF_BASE.find(s => s.id === Number(ticket.assigneeId)) || getActiveStaffForAssignment() || STAFF_BASE[0];
     const now = Date.now();
-    const existingTimeline = Array.isArray(ticket.timeline) ? ticket.timeline : [];
-    const hasCreated = existingTimeline.some(ev => String(ev.action || "").startsWith("Created"));
-    const hasAssigned = existingTimeline.some(ev => String(ev.action || "").includes("Assigned to"));
     const newTicket = {
       ...ticket,
       id: ticket.id || genId(),
@@ -2582,29 +2580,41 @@ export default function App() {
       assigneeId: assignee.id,
       createdAt: ticket.createdAt || now,
       updatedAt: now,
+      closedAt: null,
+      closingRemarks: "",
+      resolutionTime: null,
+      feedbackSubmitted: false,
+      feedbackId: null,
       comments: Array.isArray(ticket.comments) ? ticket.comments : [],
       timeline: [
-        ...(hasCreated ? [] : [{action:"Created",at:now,by:"User"}]),
-        ...existingTimeline,
-        ...(hasAssigned ? [] : [{action:`Assigned to ${assignee.name}`,at:now,by:"System (Auto)"}]),
+        {action:"Created",at:now,by:"User"},
+        {action:`Assigned to ${assignee.name}`,at:now,by:"System (Auto)"},
       ],
     };
 
-    console.log("Created ticket:", newTicket);
-    console.log("Assigned staff:", assignee);
-    setTickets(ts => [newTicket, ...ts]);
+    console.log("Ticket created:", newTicket);
+    console.log("Ticket assigned to:", assignee);
+
+    setTickets(ts => {
+      const next = [newTicket, ...ts.filter(t => t.id !== newTicket.id)];
+      DB.set("tickets", next);
+      return next;
+    });
     setFormCat(null);
 
     await sendTicketEmail(newTicket, {
       name: newTicket.name,
       email: newTicket.email,
     });
+    emailTicketCreated(newTicket, assignee);
 
-    simulateEmail(
-      assignee.email,
-      `[${newTicket.id}] New Ticket Assigned`,
-      `${newTicket.name} submitted a ${CATEGORIES.find(c => c.id === newTicket.category)?.label || newTicket.category} ticket.\n\n${newTicket.description}`
-    );
+    if (assignee?.email) {
+      simulateEmail(
+        assignee.email,
+        `[${newTicket.id}] New Ticket Assigned`,
+        `${newTicket.name} submitted a ${categoryLabel(newTicket.category)} ticket.\n\n${newTicket.description}`
+      );
+    }
   };
 
   const handleFeedbackSubmit = (entry) => {
@@ -2944,6 +2954,8 @@ export default function App() {
     </>
   );
 }
+
+
 
 
 
