@@ -4,6 +4,8 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import emailjs from '@emailjs/browser';
 import { motion, AnimatePresence } from 'framer-motion';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, query, where, orderBy } from 'firebase/firestore';
 const EMAIL_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || 'service_ctyqqbc';
 const EMAIL_CREATE_TEMPLATE_ID = "template_a30g4md";
 const EMAIL_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || 'N9OlDxPyO0uf_IlxJ';
@@ -22,6 +24,18 @@ const FIRESTORE_DATABASE_PATH = FIRESTORE_DATABASE_ID || "(default)";
 const FIRESTORE_BASE_URL = ONLINE_TICKETS_ENABLED
   ? `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${FIRESTORE_DATABASE_PATH}/documents`
   : "";
+
+// Initialize Firebase
+let firebaseApp = null;
+let firestoreDb = null;
+if (ONLINE_TICKETS_ENABLED) {
+  firebaseApp = initializeApp({
+    apiKey: FIREBASE_API_KEY,
+    projectId: FIREBASE_PROJECT_ID,
+    databaseURL: FIRESTORE_DATABASE_ID !== "(default)" ? `https://${FIREBASE_PROJECT_ID}-default-rtdb.firebaseio.com` : undefined,
+  });
+  firestoreDb = getFirestore(firebaseApp);
+}
 
 function toFirestoreValue(value) {
   if (value === undefined || value === null) return { nullValue: null };
@@ -176,6 +190,47 @@ async function saveFeedback(entry) {
 async function updateFeedback(entry) {
   return saveFeedback(entry);
 }
+
+// ── MESSAGES (CHAT) ───────────────────────────────────────────────────────
+function normalizeMessage(msg = {}) {
+  return {
+    ...msg,
+    id: msg.id || genToken(),
+    thread: msg.thread || "",
+    from: Number(msg.from) || 0,
+    to: Number(msg.to) || 0,
+    text: msg.text || "",
+    at: msg.at || Date.now(),
+    read: Boolean(msg.read),
+  };
+}
+
+async function fetchMessages(thread = "") {
+  if (!ONLINE_TICKETS_ENABLED || !thread) return [];
+  const res = await fetch(`${FIRESTORE_BASE_URL}/messages?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
+  if (!res.ok) throw new Error(`Firestore messages ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
+  const data = await res.json();
+  return (data.documents || [])
+    .map(doc => normalizeMessage({ id: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
+    .filter(msg => msg.thread === thread)
+    .sort((a, b) => (a.at || 0) - (b.at || 0));
+}
+
+async function saveStaffProfile(staffId, profile) {
+  if (!ONLINE_TICKETS_ENABLED || !firestoreDb) return;
+  await setDoc(doc(firestoreDb, 'staff_profiles', staffId.toString()), profile, { merge: true });
+}
+
+async function fetchStaffProfiles() {
+  if (!ONLINE_TICKETS_ENABLED || !firestoreDb) return {};
+  const snapshot = await getDocs(collection(firestoreDb, 'staff_profiles'));
+  const profiles = {};
+  snapshot.forEach(doc => {
+    profiles[doc.id] = doc.data();
+  });
+  return profiles;
+}
+
 function getTicketFeedbackLink(ticketId) {
   return typeof window !== "undefined"
     ? `${window.location.origin}/?feedbackTicket=${encodeURIComponent(ticketId)}`
@@ -212,9 +267,9 @@ async function verifyPassword(pwd, hash) { return (await hashPassword(pwd)) === 
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────
 const STAFF_BASE = [
-  { id: 1, name: "Raj Parkash Singh", role: "Manager", email: "raj.singh@jaipuria.ac.in", avatar: "RPS", color: "#6366f1", permissions: ["view_all","assign","close","export","manage_users"] },
-  { id: 2, name: "Rohit Jangid", role: "Executive", email: "rohit.jangid@jaipuria.ac.in", avatar: "RJ", color: "#0ea5e9", permissions: ["view_assigned","close","comment"] },
-  { id: 3, name: "Vishal Swami", role: "Asst. Manager", email: "vishal.swami@jaipuria.ac.in", avatar: "VS", color: "#10b981", permissions: ["view_assigned","assign","close","comment"] },
+  { id: 1, name: "Raj Parkash Singh", role: "Senior IT Support Executive", email: "raj.parkash@jaipuria.ac.in", avatar: "RPS", color: "#6366f1", permissions: ["view_all","assign","close","export","manage_users"] },
+  { id: 2, name: "Rohit Jangid", role: "IT Support Executive", email: "rohit.jangid@jaipuria.ac.in", avatar: "RJ", color: "#0ea5e9", permissions: ["view_assigned","close","comment"] },
+  { id: 3, name: "Vishal Swami", role: "IT Executive", email: "vishal.swami@jaipuria.ac.in", avatar: "VS", color: "#10b981", permissions: ["view_assigned","assign","close","comment"] },
 ];
 
 const CATEGORIES = [
@@ -2251,7 +2306,7 @@ function AdminFeedbackPage({feedback,setFeedback,toast}) {
 // ── SIDEBAR ───────────────────────────────────────────────────────────────
 function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpen,setMobileOpen}) {
   const adminNav=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"tickets",icon:"🎫",label:"All Tickets"},{id:"staff",icon:"👥",label:"IT Staff"},{id:"analytics",icon:"📊",label:"Analytics"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"export",icon:"⬇",label:"Export Reports"},{id:"staff-management",icon:"👥",label:"Staff Management"},{id:"emaillog",icon:"📧",label:"Email Log"}];
-  const userNav=[{id:"home",icon:"🏠",label:"Home"},{id:"my-tickets",icon:"🎫",label:"My Tickets"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"new-ticket",icon:"➕",label:"New Ticket"},{id:"track",icon:"🔍",label:"Track Ticket"}];
+  const userNav=[{id:"home",icon:"🏠",label:"Home"},{id:"my-tickets",icon:"🎫",label:"My Tickets"},{id:"know-staff",icon:"👥",label:"Know Your IT Staff"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"new-ticket",icon:"➕",label:"New Ticket"},{id:"track",icon:"🔍",label:"Track Ticket"}];
   const staffNav=[{id:"staff-dash",icon:"🏠",label:"My Dashboard"},{id:"assigned",icon:"📋",label:"Assigned Tickets"}];
   const nav=isAdmin?adminNav:isStaff?staffNav:userNav;
   const open=tickets.filter(t=>t.status==="Open").length;
@@ -2536,12 +2591,12 @@ function Landing({onLogin,tickets=[]}) {
         <form onSubmit={e=>{e.preventDefault();handleLogin();}} style={{padding:"clamp(26px,5vw,54px)",display:"flex",flexDirection:"column",justifyContent:"center",minHeight:560}}>
           <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:30}}>
             <div style={{background:"rgba(255,255,255,0.96)",border:"1px solid rgba(255,255,255,0.35)",borderRadius:16,padding:"8px 12px",boxShadow:"0 14px 34px rgba(0,0,0,0.24)",display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <img src="/jaipuria-logo.png" alt="Jaipuria Institute of Management" style={{width:"clamp(150px,20vw,210px)",height:"auto",display:"block",objectFit:"contain"}} />
+              <img src="/jaipuria-logo.png" alt="Jaipuria Institute of Management" style={{width:"clamp(210px,25vw,260px)",height:"auto",display:"block",objectFit:"contain"}} />
             </div>
           </div>
 
           <div style={{marginBottom:24}}>
-            <div style={{fontFamily:"Syne",fontWeight:800,fontSize:"clamp(25px,3.3vw,36px)",lineHeight:1.12,color:"#f8fafc",letterSpacing:0}}>Login With Jaipuria Email ID</div>
+            <div style={{fontFamily:"Syne",fontWeight:800,fontSize:"clamp(20px,2.5vw,28px)",lineHeight:1.12,color:"#f8fafc",letterSpacing:0,whiteSpace:"nowrap"}}>Login With Jaipuria Email ID</div>
             <div style={{fontSize:14,color:"rgba(226,232,240,0.62)",marginTop:10}}>Secure access for users, IT staff, and administrators.</div>
           </div>
 
@@ -2804,16 +2859,226 @@ function StaffPerformanceModal({staff,tickets}) {
   </div>;
 }
 
-function StaffChatModal({staff,profiles,statuses,messages,setMessages}) {
+function KnowYourITStaff({staffProfiles}) {
+  const staffData = [
+    {
+      id: 1,
+      name: "Raj Parkash Singh",
+      post: "Senior IT Support Executive",
+      email: "raj.parkash@jaipuria.ac.in",
+      contact: "9887283825",
+      whatsapp: "9887283825"
+    },
+    {
+      id: 2,
+      name: "Rohit Jangid",
+      post: "IT Support Executive",
+      email: "rohit.jangid@jaipuria.ac.in",
+      contact: "8005978632",
+      whatsapp: "8005978632"
+    },
+    {
+      id: 3,
+      name: "Vishal Swami",
+      post: "IT Executive",
+      email: "vishal.swami@jaipuria.ac.in",
+      contact: "8233771101",
+      whatsapp: "8233771101"
+    }
+  ];
+
+  return (
+    <div>
+      <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>Know Your IT Staff</h2>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:20}}>
+        {staffData.map(staff => {
+          const profile = staffProfiles[staff.id] || {};
+          return (
+            <div key={staff.id} className="glass" style={{
+              background: "linear-gradient(135deg, rgba(99,102,241,0.15), rgba(6,182,212,0.08), rgba(16,185,129,0.06))",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 16,
+              padding: 24,
+              position: "relative",
+              overflow: "hidden"
+            }}>
+              <div style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: "radial-gradient(circle at 20% 20%, rgba(168,85,247,0.1), transparent 50%), radial-gradient(circle at 80% 80%, rgba(6,182,212,0.08), transparent 50%)",
+                pointerEvents: "none"
+              }} />
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",position:"relative",zIndex:1}}>
+                <StaffAvatar staff={{...staff, avatar: staff.name.split(' ').map(n=>n[0]).join(''), color: ["#6366f1", "#0ea5e9", "#10b981"][staff.id-1]}} profiles={{[staff.id]: profile}} statuses={{}} size={80} showStatus={false} />
+                <h3 style={{fontFamily:"Syne",fontSize:20,fontWeight:800,color:"#e2e8f0",margin:"16px 0 4px"}}>{staff.name}</h3>
+                <div style={{fontSize:14,color:"rgba(6,182,212,0.9)",fontWeight:600,marginBottom:20}}>{staff.post}</div>
+                <div style={{display:"flex",flexDirection:"column",gap:12,width:"100%"}}>
+                  <div style={{display:"flex",gap:10}}>
+                    <button
+                      onClick={() => window.open(`mailto:${staff.email}`, '_blank', 'noopener,noreferrer')}
+                      style={{
+                        flex:1,
+                        background:"rgba(99,102,241,0.2)",
+                        border:"1px solid rgba(99,102,241,0.4)",
+                        color:"#dbeafe",
+                        padding:"10px 14px",
+                        borderRadius:10,
+                        fontSize:13,
+                        fontWeight:600,
+                        cursor:"pointer",
+                        transition:"all 0.2s",
+                        display:"flex",
+                        alignItems:"center",
+                        justifyContent:"center",
+                        gap:8
+                      }}
+                      onMouseOver={e => e.target.style.background = "rgba(99,102,241,0.3)"}
+                      onMouseOut={e => e.target.style.background = "rgba(99,102,241,0.2)"}
+                    >
+                      📧 Email
+                    </button>
+                    <button
+                      onClick={() => window.open(`tel:${staff.contact}`, '_blank', 'noopener,noreferrer')}
+                      style={{
+                        flex:1,
+                        background:"rgba(16,185,129,0.2)",
+                        border:"1px solid rgba(16,185,129,0.4)",
+                        color:"#d1fae5",
+                        padding:"10px 14px",
+                        borderRadius:10,
+                        fontSize:13,
+                        fontWeight:600,
+                        cursor:"pointer",
+                        transition:"all 0.2s",
+                        display:"flex",
+                        alignItems:"center",
+                        justifyContent:"center",
+                        gap:8
+                      }}
+                      onMouseOver={e => e.target.style.background = "rgba(16,185,129,0.3)"}
+                      onMouseOut={e => e.target.style.background = "rgba(16,185,129,0.2)"}
+                    >
+                      📞 Call
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => window.open(`https://wa.me/91${staff.whatsapp}`, '_blank', 'noopener,noreferrer')}
+                    style={{
+                      width:"100%",
+                      background:"linear-gradient(135deg, rgba(34,197,94,0.2), rgba(22,163,74,0.3))",
+                      border:"1px solid rgba(34,197,94,0.5)",
+                      color:"#d1fae5",
+                      padding:"12px 16px",
+                      borderRadius:12,
+                      fontSize:14,
+                      fontWeight:700,
+                      cursor:"pointer",
+                      transition:"all 0.3s",
+                      display:"flex",
+                      alignItems:"center",
+                      justifyContent:"center",
+                      gap:10,
+                      boxShadow:"0 8px 24px rgba(34,197,94,0.2)"
+                    }}
+                    onMouseOver={e => {
+                      e.target.style.transform = "translateY(-2px)";
+                      e.target.style.boxShadow = "0 12px 32px rgba(34,197,94,0.3)";
+                    }}
+                    onMouseOut={e => {
+                      e.target.style.transform = "translateY(0)";
+                      e.target.style.boxShadow = "0 8px 24px rgba(34,197,94,0.2)";
+                    }}
+                  >
+                    💬 Chat on WhatsApp
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function StaffChatModal({staff,profiles,statuses}) {
   const [selected,setSelected]=useState(STAFF_BASE.find(s=>s.id!==staff.id)?.id || STAFF_BASE[0].id);
   const [text,setText]=useState('');
+  const [messages,setMessages]=useState([]);
+  const [unreadCounts,setUnreadCounts]=useState({});
   const peer=STAFF_BASE.find(s=>s.id===selected);
   const thread=[staff.id,selected].sort((a,b)=>a-b).join('-');
-  const visible=messages.filter(m=>m.thread===thread);
-  const send=()=>{if(!text.trim())return;setMessages(ms=>[...ms,{id:genToken(),thread,from:staff.id,to:selected,text:text.trim(),at:Date.now(),read:false}]);setText('');};
+
+  useEffect(() => {
+    if (!firestoreDb || !thread) return;
+    const q = query(collection(firestoreDb, 'messages'), where('thread', '==', thread), orderBy('at', 'asc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setMessages(msgs);
+      // Mark messages as read when viewing
+      msgs.filter(m => m.to === staff.id && !m.read).forEach(async (m) => {
+        await setDoc(doc(firestoreDb, 'messages', m.id), { ...m, read: true }, { merge: true });
+      });
+    });
+    return unsubscribe;
+  }, [thread, staff.id]);
+
+  useEffect(() => {
+    if (!firestoreDb) return;
+    const allThreads = STAFF_BASE.filter(s => s.id !== staff.id).map(s => [staff.id, s.id].sort((a,b)=>a-b).join('-'));
+    const unsubscribes = allThreads.map(thread => {
+      const q = query(collection(firestoreDb, 'messages'), where('thread', '==', thread), where('to', '==', staff.id), where('read', '==', false));
+      return onSnapshot(q, (snapshot) => {
+        setUnreadCounts(prev => ({ ...prev, [thread]: snapshot.size }));
+      });
+    });
+    return () => unsubscribes.forEach(unsub => unsub());
+  }, [staff.id]);
+
+  const send=async()=>{
+    if(!text.trim() || !firestoreDb) return;
+    const msg = {thread,from:staff.id,to:selected,text:text.trim(),at:Date.now(),read:false};
+    await setDoc(doc(collection(firestoreDb, 'messages')), msg);
+    setText('');
+  };
+
   return <div style={{display:'grid',gridTemplateColumns:'220px 1fr',gap:14,minHeight:430}}>
-    <div className="glass" style={{padding:10,overflowY:'auto'}}>{STAFF_BASE.filter(s=>s.id!==staff.id).map(s=>{const unread=messages.filter(m=>m.thread===[staff.id,s.id].sort((a,b)=>a-b).join('-')&&m.to===staff.id&&!m.read).length;return <button key={s.id} onClick={()=>setSelected(s.id)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,background:selected===s.id?'rgba(99,102,241,0.18)':'transparent',border:'none',borderRadius:10,padding:10,color:'#e2e8f0',textAlign:'left',marginBottom:6}}><StaffAvatar staff={s} profiles={profiles} statuses={statuses} size={34} showStatus/><div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>{s.name}</div><StatusDot status={getStaffStatus(s.id,statuses)}/></div>{unread>0&&<span style={{background:'#ef4444',color:'#fff',borderRadius:999,padding:'2px 7px',fontSize:11}}>{unread}</span>}</button>})}</div>
-    <div className="glass" style={{display:'flex',flexDirection:'column',overflow:'hidden'}}><div style={{padding:14,borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10,alignItems:'center'}}><StaffAvatar staff={peer} profiles={profiles} statuses={statuses} size={38} showStatus/><div><div style={{fontSize:14,fontWeight:800,color:'#fff'}}>{peer?.name}</div><StatusDot status={getStaffStatus(peer?.id,statuses)}/></div></div><div style={{flex:1,padding:14,overflowY:'auto'}}>{visible.map(m=>{const mine=m.from===staff.id;return <div key={m.id} style={{display:'flex',justifyContent:mine?'flex-end':'flex-start',marginBottom:10}}><div style={{maxWidth:'72%',background:mine?'rgba(99,102,241,0.28)':'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:14,padding:'9px 12px'}}><div style={{fontSize:12,color:'rgba(226,232,240,0.45)',marginBottom:3}}>{STAFF_BASE.find(s=>s.id===m.from)?.name} · {timeAgo(m.at)}</div><div style={{fontSize:13,color:'#e2e8f0',lineHeight:1.4}}>{m.text}</div></div></div>})}{visible.length===0&&<div style={{textAlign:'center',color:'rgba(226,232,240,0.35)',paddingTop:80}}>No messages yet</div>}</div><div style={{padding:12,borderTop:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10}}><input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Type a message..."/><button className="glow-btn" style={{padding:'10px 18px'}} onClick={send}>Send</button></div></div>
+    <div className="glass" style={{padding:10,overflowY:'auto'}}>
+      {STAFF_BASE.filter(s=>s.id!==staff.id).map(s=>{
+        const threadKey = [staff.id,s.id].sort((a,b)=>a-b).join('-');
+        const unread = unreadCounts[threadKey] || 0;
+        return <button key={s.id} onClick={()=>setSelected(s.id)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,background:selected===s.id?'rgba(99,102,241,0.18)':'transparent',border:'none',borderRadius:10,padding:10,color:'#e2e8f0',textAlign:'left',marginBottom:6}}>
+          <StaffAvatar staff={s} profiles={profiles} statuses={statuses} size={34} showStatus/>
+          <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>{s.name}</div><StatusDot status={getStaffStatus(s.id,statuses)}/></div>
+          {unread>0&&<span style={{background:'#ef4444',color:'#fff',borderRadius:999,padding:'2px 7px',fontSize:11}}>{unread}</span>}
+        </button>
+      })}
+    </div>
+    <div className="glass" style={{display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{padding:14,borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10,alignItems:'center'}}>
+        <StaffAvatar staff={peer} profiles={profiles} statuses={statuses} size={38} showStatus/>
+        <div><div style={{fontSize:14,fontWeight:800,color:'#fff'}}>{peer?.name}</div><StatusDot status={getStaffStatus(peer?.id,statuses)}/></div>
+      </div>
+      <div style={{flex:1,padding:14,overflowY:'auto'}}>
+        {messages.map(m=>{
+          const mine=m.from===staff.id;
+          return <div key={m.id} style={{display:'flex',justifyContent:mine?'flex-end':'flex-start',marginBottom:10}}>
+            <div style={{maxWidth:'72%',background:mine?'rgba(99,102,241,0.28)':'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:14,padding:'9px 12px'}}>
+              <div style={{fontSize:12,color:'rgba(226,232,240,0.45)',marginBottom:3}}>{STAFF_BASE.find(s=>s.id===m.from)?.name} · {timeAgo(m.at)}</div>
+              <div style={{fontSize:13,color:'#e2e8f0',lineHeight:1.4}}>{m.text}</div>
+            </div>
+          </div>
+        })}
+        {messages.length===0&&<div style={{textAlign:'center',color:'rgba(226,232,240,0.35)',paddingTop:80}}>No messages yet</div>}
+      </div>
+      <div style={{padding:12,borderTop:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10}}>
+        <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Type a message..."/>
+        <button className="glow-btn" style={{padding:'10px 18px'}} onClick={send}>Send</button>
+      </div>
+    </div>
   </div>;
 }
 // ── QUICK ASSIGN DIALOG ───────────────────────────────────────────────────
@@ -2886,7 +3151,6 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [staffProfiles, setStaffProfiles] = useState(() => DB.get("staff_profiles", {}));
   const [staffStatuses, setStaffStatuses] = useState(() => DB.get("staff_statuses", {}));
-  const [staffMessages, setStaffMessages] = useState(() => DB.get("staff_messages", []));
   const [staffPanel, setStaffPanel] = useState(null);
   const [staffMenuOpen, setStaffMenuOpen] = useState(false);
   useEffect(() => {
@@ -2927,12 +3191,28 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let alive = true;
+    const loadStaffProfiles = async () => {
+      try {
+        const onlineProfiles = await fetchStaffProfiles();
+        if (alive) {
+          setStaffProfiles(onlineProfiles);
+        }
+      } catch (error) {
+        console.error("Online staff profiles load failed:", error);
+      }
+    };
+    if (ONLINE_TICKETS_ENABLED) {
+      loadStaffProfiles();
+    }
+  }, []);
+
+  useEffect(() => {
     if (!ticketsLoaded || !ONLINE_TICKETS_ENABLED) return;
     saveTickets(tickets).catch(error => console.error("Online ticket sync failed:", error));
   }, [tickets, ticketsLoaded]);
   useEffect(() => DB.set("staff_profiles", staffProfiles), [staffProfiles]);
   useEffect(() => DB.set("staff_statuses", staffStatuses), [staffStatuses]);
-  useEffect(() => DB.set("staff_messages", staffMessages), [staffMessages]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const ticketId = new URLSearchParams(window.location.search).get("feedbackTicket");
@@ -3151,8 +3431,11 @@ const handleNewTicket = async (form) => {
     setQuickAssignTicketId(null);
   };
 
-  const updateStaffProfile = (staffId, changes) => {
+  const updateStaffProfile = async (staffId, changes) => {
     setStaffProfiles(p => ({...p, [staffId]: {...(p[staffId] || {}), ...changes}}));
+    if (ONLINE_TICKETS_ENABLED) {
+      await saveStaffProfile(staffId, {...(staffProfiles[staffId] || {}), ...changes});
+    }
   };
 
   const updateOwnStatus = (status) => {
@@ -3319,6 +3602,7 @@ const handleNewTicket = async (form) => {
         </div>
       </div>
     );
+    if (page === "know-staff") return <KnowYourITStaff staffProfiles={staffProfiles} />;
     if (page === "feedback") return <FeedbackForm userEmail={session.email} onSubmit={handleFeedbackSubmit} toast={toast} ticket={linkedFeedbackTicket || null} />;
     if (page === "track") return <TrackTicket tickets={tickets} onView={setViewTicketId} />;
     if (page === "new-ticket") return (
@@ -3431,7 +3715,7 @@ const handleNewTicket = async (form) => {
       )}
       {isStaff&&staffPanel==="chat"&&(
         <Modal title="Staff Chat" onClose={()=>setStaffPanel(null)} wide>
-          <StaffChatModal staff={STAFF_BASE.find(s=>s.id===session.staffId)} profiles={staffProfiles} statuses={staffStatuses} messages={staffMessages} setMessages={setStaffMessages}/>
+          <StaffChatModal staff={STAFF_BASE.find(s=>s.id===session.staffId)} profiles={staffProfiles} statuses={staffStatuses} />
         </Modal>
       )}
 
