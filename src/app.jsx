@@ -874,6 +874,34 @@ button:hover{filter:saturate(1.08)}
 .pulse{animation:pulse 2s infinite}
 .spin{animation:spin 1s linear infinite}
 .slide-down{animation:slideDown .3s ease forwards}
+/* Premium colorful dark theme overrides */
+body{background:radial-gradient(circle at 9% 10%,rgba(168,85,247,.46),transparent 34%),radial-gradient(circle at 88% 8%,rgba(14,165,233,.38),transparent 34%),radial-gradient(circle at 78% 78%,rgba(16,185,129,.3),transparent 36%),radial-gradient(circle at 18% 96%,rgba(59,130,246,.28),transparent 32%),linear-gradient(135deg,#081126 0%,#0b1740 34%,#171553 63%,#08243a 100%)!important;color:#edf5ff!important}
+body::before{opacity:1!important;filter:blur(22px)!important;background:radial-gradient(circle at 12% 20%,rgba(168,85,247,.48),transparent 18%),radial-gradient(circle at 82% 18%,rgba(34,211,238,.4),transparent 19%),radial-gradient(circle at 64% 72%,rgba(34,197,94,.28),transparent 18%),radial-gradient(circle at 34% 84%,rgba(37,99,235,.36),transparent 19%)!important;animation:bgDrift 13s ease-in-out infinite alternate}
+body::after{opacity:.75!important;background:linear-gradient(rgba(125,211,252,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(168,85,247,.035) 1px,transparent 1px)!important;background-size:42px 42px!important}
+.app-content{background:radial-gradient(circle at 13% 2%,rgba(168,85,247,.2),transparent 28%),radial-gradient(circle at 88% 14%,rgba(34,211,238,.17),transparent 30%),radial-gradient(circle at 70% 100%,rgba(16,185,129,.14),transparent 34%)!important}
+.glass{background:linear-gradient(145deg,rgba(42,52,126,.86),rgba(24,34,82,.76) 42%,rgba(9,79,104,.66))!important;border:1px solid rgba(125,211,252,.43)!important;box-shadow:0 26px 76px rgba(0,0,0,.36),0 0 0 1px rgba(168,85,247,.26),0 0 52px rgba(6,182,212,.17),inset 0 1px 0 rgba(255,255,255,.16)!important;transition:transform .24s ease,border-color .24s ease,box-shadow .24s ease,background .24s ease!important}
+.glass::before{background:linear-gradient(135deg,rgba(168,85,247,.36),rgba(37,99,235,.1) 34%,rgba(6,182,212,.27) 64%,rgba(16,185,129,.2))!important;opacity:1!important}
+.glass::after{content:"";position:absolute;left:0;right:0;top:0;height:1px;background:linear-gradient(90deg,transparent,rgba(216,180,254,.92),rgba(34,211,238,1),rgba(52,211,153,.9),transparent);pointer-events:none;z-index:2}
+.glass2{background:linear-gradient(145deg,rgba(50,58,135,.8),rgba(22,33,79,.74) 45%,rgba(10,91,116,.62))!important;border:1px solid rgba(148,163,184,.34)!important;box-shadow:0 20px 54px rgba(0,0,0,.3),0 0 42px rgba(99,102,241,.15),inset 0 1px 0 rgba(255,255,255,.14)!important;transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease!important}
+.glass2::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(140deg,rgba(139,92,246,.22),transparent 40%,rgba(34,211,238,.18),rgba(16,185,129,.08));opacity:1}
+.glass2>*{position:relative;z-index:1}
+.glass:hover,.glass2:hover{transform:translateY(-3px);border-color:rgba(34,211,238,.72)!important;box-shadow:0 34px 92px rgba(0,0,0,.42),0 0 0 1px rgba(168,85,247,.34),0 0 68px rgba(34,211,238,.26),0 0 36px rgba(16,185,129,.1),inset 0 1px 0 rgba(255,255,255,.2)!important}
+.app-sidebar{background:radial-gradient(circle at 18% 8%,rgba(168,85,247,.4),transparent 33%),radial-gradient(circle at 100% 34%,rgba(6,182,212,.28),transparent 34%),radial-gradient(circle at 45% 96%,rgba(16,185,129,.14),transparent 34%),linear-gradient(180deg,#0b1230 0%,#151758 48%,#08283c 100%)!important;border-right:1px solid rgba(34,211,238,.48)!important;box-shadow:20px 0 62px rgba(0,0,0,.46),inset -1px 0 0 rgba(255,255,255,.1)!important}
+.app-sidebar nav button{border:1px solid transparent!important;margin-bottom:3px!important;color:rgba(226,239,255,.74)!important}
+.app-sidebar nav button:hover{background:linear-gradient(90deg,rgba(168,85,247,.34),rgba(6,182,212,.22))!important;border-color:rgba(125,211,252,.36)!important;color:#fff!important;box-shadow:0 12px 28px rgba(6,182,212,.16)!important;transform:translateX(3px)!important}
+.app-sidebar nav button[style*="rgba(99,102,241,0.2)"],.app-sidebar nav button[style*="#6366f1"]{background:linear-gradient(100deg,#8b5cf6 0%,#2563eb 44%,#06b6d4 82%,#10b981 120%)!important;color:#fff!important;border-color:rgba(255,255,255,.28)!important;box-shadow:0 16px 38px rgba(37,99,235,.38),0 0 32px rgba(6,182,212,.28),inset 0 1px 0 rgba(255,255,255,.2)!important}
+.app-header{background:linear-gradient(90deg,rgba(13,23,56,.94),rgba(34,34,105,.86) 40%,rgba(9,87,117,.78))!important;border-bottom:1px solid rgba(34,211,238,.5)!important;box-shadow:0 18px 48px rgba(0,0,0,.34),0 0 42px rgba(99,102,241,.18)!important}
+.modal-panel{background:linear-gradient(145deg,rgba(30,35,93,.96),rgba(9,72,97,.86))!important;border-color:rgba(34,211,238,.48)!important;box-shadow:0 38px 118px rgba(0,0,0,.62),0 0 82px rgba(99,102,241,.24),0 0 38px rgba(6,182,212,.15)!important}
+.modal-header{background:linear-gradient(90deg,rgba(139,92,246,.3),rgba(37,99,235,.22),rgba(6,182,212,.18))!important;border-bottom-color:rgba(34,211,238,.38)!important}
+.glow-btn{background:linear-gradient(135deg,#9333ea 0%,#4f46e5 30%,#2563eb 55%,#06b6d4 82%,#10b981 115%)!important;color:#fff!important;box-shadow:0 18px 48px rgba(37,99,235,.42),0 0 34px rgba(6,182,212,.3),inset 0 1px 0 rgba(255,255,255,.28)!important;text-shadow:0 1px 12px rgba(0,0,0,.28)}
+.glow-btn:hover{transform:translateY(-3px)!important;box-shadow:0 26px 64px rgba(147,51,234,.38),0 14px 44px rgba(6,182,212,.36),0 0 24px rgba(16,185,129,.16)!important}
+.success-btn{background:linear-gradient(135deg,#059669,#10b981,#06b6d4)!important;box-shadow:0 18px 44px rgba(16,185,129,.38),0 0 24px rgba(6,182,212,.16)!important}
+.danger-btn{background:linear-gradient(135deg,#ef4444,#f97316,#f59e0b)!important;box-shadow:0 18px 44px rgba(239,68,68,.38)!important}
+input,select,textarea{background:linear-gradient(180deg,rgba(18,31,74,.86),rgba(11,55,82,.68))!important;border-color:rgba(125,211,252,.34)!important;color:#f3f8ff!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.11),0 12px 34px rgba(0,0,0,.18)!important}
+input:hover,select:hover,textarea:hover{border-color:rgba(34,211,238,.56)!important;background:linear-gradient(180deg,rgba(25,43,96,.88),rgba(13,71,101,.72))!important}
+input:focus,select:focus,textarea:focus{border-color:rgba(34,211,238,1)!important;background:linear-gradient(180deg,rgba(10,83,112,.78),rgba(43,48,126,.7))!important;box-shadow:0 0 0 3px rgba(34,211,238,.24),0 0 0 7px rgba(168,85,247,.12),0 20px 52px rgba(6,182,212,.22)!important}
+.tag{background:linear-gradient(135deg,rgba(139,92,246,.24),rgba(6,182,212,.18))!important;border-color:rgba(125,211,252,.3)!important;color:#eef6ff!important}
+@media (max-width:768px){body{background:radial-gradient(circle at 20% 8%,rgba(168,85,247,.38),transparent 38%),radial-gradient(circle at 82% 18%,rgba(34,211,238,.3),transparent 36%),linear-gradient(145deg,#081126,#10194a 54%,#08283c)!important}.glass,.glass2{box-shadow:0 18px 50px rgba(0,0,0,.34),0 0 34px rgba(6,182,212,.14),inset 0 1px 0 rgba(255,255,255,.14)!important}.app-sidebar{background:radial-gradient(circle at 25% 6%,rgba(168,85,247,.44),transparent 34%),linear-gradient(180deg,#0b1230,#17175b 55%,#08283c)!important}.glow-btn{box-shadow:0 16px 38px rgba(37,99,235,.38),0 0 26px rgba(6,182,212,.26)!important}}
 @media (max-width:768px){
   html,body,#root{width:100%;max-width:100%;overflow-x:hidden}
   body::before{inset:-45%;filter:blur(28px);opacity:.68}
@@ -916,11 +944,112 @@ button:hover{filter:saturate(1.08)}
   .app-content .tag{font-size:11px!important;padding:3px 8px!important}
   .modal-overlay{padding:0!important}
   .modal-panel{min-height:100dvh!important;max-height:100dvh!important;border-radius:0!important}
-}`;
+/* ===== FORCE PREMIUM OVERRIDE ===== */
+
+body{
+  background:
+    radial-gradient(circle at top left, rgba(99,102,241,.35), transparent 35%),
+    radial-gradient(circle at top right, rgba(6,182,212,.28), transparent 32%),
+    radial-gradient(circle at bottom left, rgba(16,185,129,.20), transparent 38%),
+    #050816 !important;
+}
+
+.glass,
+.glass2,
+.ticket-card,
+.stat-card,
+.dashboard-card{
+  background:
+    linear-gradient(135deg,
+      rgba(15,23,42,.92),
+      rgba(30,41,59,.72)
+    ) !important;
+
+  border:1px solid rgba(34,211,238,.35)!important;
+
+  box-shadow:
+    0 0 0 1px rgba(99,102,241,.15),
+    0 20px 60px rgba(0,0,0,.45),
+    0 0 40px rgba(6,182,212,.12)!important;
+
+  backdrop-filter:blur(20px)!important;
+}
+
+.glass:hover,
+.glass2:hover,
+.ticket-card:hover,
+.stat-card:hover,
+.dashboard-card:hover{
+  transform:translateY(-4px);
+  border-color:rgba(34,211,238,.65)!important;
+
+  box-shadow:
+    0 0 0 1px rgba(99,102,241,.22),
+    0 24px 80px rgba(0,0,0,.55),
+    0 0 55px rgba(6,182,212,.22)!important;
+}
+
+.glow-btn,
+button{
+  background:
+    linear-gradient(
+      135deg,
+      #8b5cf6 0%,
+      #3b82f6 50%,
+      #06b6d4 100%
+    ) !important;
+
+  color:white!important;
+}
+
+.app-sidebar{
+  background:
+    linear-gradient(
+      180deg,
+      rgba(23, 2, 5, 0.98),
+      rgba(15,23,42,.96),
+      rgba(30,41,59,.92)
+    ) !important;
+
+  border-right:1px solid rgba(34,211,238,.28)!important;
+}
+
+.app-header{
+  background:
+    linear-gradient(
+      135deg,
+      rgba(160, 182, 233, 0.92),
+      rgba(30,41,59,.70)
+    ) !important;
+
+  border-bottom:1px solid rgba(34,211,238,.25)!important;
+
+  backdrop-filter:blur(18px)!important;
+}
+
+input,
+select,
+textarea{
+  background:rgba(2,6,23,.72)!important;
+
+  border:1px solid rgba(148,163,184,.28)!important;
+}
+
+input:focus,
+select:focus,
+textarea:focus{
+  border-color:#06b6d4!important;
+
+  box-shadow:
+    0 0 0 3px rgba(6,182,212,.18),
+    0 0 30px rgba(99,102,241,.22)!important;
+}
+  }`;
 
 // ── TOAST ─────────────────────────────────────────────────────────────────
 function Toast({ toasts, remove }) {
   return (
+    
     <div style={{position:"fixed",top:20,right:20,zIndex:9999,display:"flex",flexDirection:"column",gap:10,maxWidth:340}}>
       {toasts.map(t=>(
         <div key={t.id} className="fade-up" style={{
@@ -2136,10 +2265,9 @@ function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpe
         borderRight:"1px solid rgba(255,255,255,0.07)",display:"flex",flexDirection:"column",
         height:"100vh",position:"sticky",top:0,overflowY:"auto",
       }}>
-        <div style={{padding:"24px 20px 16px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🛡️</div>
-            <div><div style={{fontFamily:"Syne",fontWeight:800,fontSize:14,color:"#e2e8f0",letterSpacing:".5px"}}>JAIPURIA</div><div style={{fontSize:10,color:"rgba(226,232,240,0.4)",letterSpacing:"1px"}}>IT HELPDESK v2</div></div>
+        <div style={{padding:"18px 16px 14px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+          <div style={{background:"rgba(255,255,255,0.95)",borderRadius:14,padding:"8px 10px",boxShadow:"0 12px 28px rgba(0,0,0,0.24)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <img src="/jaipuria-logo.png" alt="Jaipuria Institute of Management" style={{width:"100%",maxWidth:178,height:"auto",display:"block",objectFit:"contain"}} />
           </div>
         </div>
         <nav style={{flex:1,padding:"12px",display:"flex",flexDirection:"column",gap:3}}>
@@ -2309,7 +2437,7 @@ function ForgotPassword({onBack,toast}) {
 }
 
 // ── LANDING / LOGIN ────────────────────────────────────────────────────────
-function Landing({onLogin}) {
+function Landing({onLogin,tickets=[]}) {
   const [mode,setMode]=useState("user");
   const [email,setEmail]=useState("");
   const [pwd,setPwd]=useState("");
@@ -2395,22 +2523,26 @@ function Landing({onLogin}) {
     admin:{title:"Admin Login",emailLabel:"Username / Email",placeholder:"Admin or admin@jaipuria.ac.in",needsPassword:true},
   }[mode];
 
+  const liveTickets = [...tickets]
+    .sort((a,b)=>(b.updatedAt||b.createdAt||0)-(a.updatedAt||a.createdAt||0))
+    .slice(0,3);
+  const activeTickets = tickets.filter(t=>!["Closed","Resolved"].includes(t.status));
+  const criticalTickets = tickets.filter(t=>t.priority==="Critical");
+
   return (
     <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#111436 0%,#211552 52%,#071827 100%)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px",position:"relative",overflow:"hidden"}}>
       <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 15% 20%,rgba(99,102,241,0.28),transparent 32%),radial-gradient(circle at 85% 18%,rgba(14,165,233,0.20),transparent 30%),radial-gradient(circle at 72% 86%,rgba(16,185,129,0.16),transparent 28%)",pointerEvents:"none"}} />
       <div className="fade-up" style={{width:"100%",maxWidth:1040,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,360px),1fr))",background:"rgba(8,12,34,0.82)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:26,boxShadow:"0 34px 110px rgba(0,0,0,0.42)",overflow:"hidden",position:"relative",backdropFilter:"blur(22px)"}}>
         <form onSubmit={e=>{e.preventDefault();handleLogin();}} style={{padding:"clamp(26px,5vw,54px)",display:"flex",flexDirection:"column",justifyContent:"center",minHeight:560}}>
-          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:32}}>
-            <div style={{width:44,height:44,borderRadius:14,background:"linear-gradient(135deg,#6366f1,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>J</div>
-            <div>
-              <div style={{fontFamily:"Syne",fontWeight:800,fontSize:15,color:"#fff",letterSpacing:0}}>JAIPURIA</div>
-              <div style={{fontSize:11,color:"rgba(226,232,240,0.54)"}}>IT Helpdesk Portal</div>
+          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:30}}>
+            <div style={{background:"rgba(255,255,255,0.96)",border:"1px solid rgba(255,255,255,0.35)",borderRadius:16,padding:"8px 12px",boxShadow:"0 14px 34px rgba(0,0,0,0.24)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <img src="/jaipuria-logo.png" alt="Jaipuria Institute of Management" style={{width:"clamp(150px,20vw,210px)",height:"auto",display:"block",objectFit:"contain"}} />
             </div>
           </div>
 
           <div style={{marginBottom:24}}>
-            <div style={{fontFamily:"Syne",fontWeight:800,fontSize:"clamp(30px,4vw,44px)",lineHeight:1,color:"#f8fafc",letterSpacing:0}}>WELCOME BACK</div>
-            <div style={{fontSize:16,color:"rgba(226,232,240,0.62)",marginTop:10}}>Login With Jaipuria Helpdesk</div>
+            <div style={{fontFamily:"Syne",fontWeight:800,fontSize:"clamp(25px,3.3vw,36px)",lineHeight:1.12,color:"#f8fafc",letterSpacing:0}}>Login With Jaipuria Email ID</div>
+            <div style={{fontSize:14,color:"rgba(226,232,240,0.62)",marginTop:10}}>Secure access for users, IT staff, and administrators.</div>
           </div>
 
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.09)",borderRadius:14,padding:5,marginBottom:22,gap:4}}>
@@ -2458,25 +2590,29 @@ function Landing({onLogin}) {
                 <div style={{width:50,height:50,borderRadius:16,background:"linear-gradient(135deg,#10b981,#0ea5e9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>✓</div>
               </div>
 
-              {[
-                ["Laptop Issue","Assigned","#6366f1","Raj Parkash"],
-                ["Network Problem","In Progress","#f59e0b","Vishal Swami"],
-                ["Printer Issue","Closed","#10b981","Rohit Jangid"],
-              ].map(([title,status,color,staff],idx)=>(
-                <div key={title} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 15px",marginBottom:12,display:"flex",alignItems:"center",gap:12}}>
-                  <div style={{width:10,height:44,borderRadius:999,background:color}} />
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:14,fontWeight:800,color:"#e2e8f0"}}>{title}</div>
-                    <div style={{fontSize:12,color:"rgba(226,232,240,0.45)",marginTop:3}}>Assigned to {staff}</div>
+              {liveTickets.length > 0 ? liveTickets.map(ticket=>{
+                const color=statusColor(ticket.status);
+                const assignee=staffName(ticket.assigneeId);
+                return (
+                  <div key={ticket.id} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 15px",marginBottom:12,display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{width:10,height:44,borderRadius:999,background:color,boxShadow:`0 0 18px ${color}88`}} />
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:14,fontWeight:800,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{categoryLabel(ticket.category)}</div>
+                      <div style={{fontSize:12,color:"rgba(226,232,240,0.45)",marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ticket.id} · Assigned to {assignee}</div>
+                    </div>
+                    <span style={{fontSize:11,fontWeight:800,color,background:`${color}20`,border:`1px solid ${color}55`,borderRadius:999,padding:"5px 8px",whiteSpace:"nowrap"}}>{ticket.status}</span>
                   </div>
-                  <span style={{fontSize:11,fontWeight:800,color,background:`${color}20`,border:`1px solid ${color}55`,borderRadius:999,padding:"5px 8px"}}>{status}</span>
+                );
+              }) : (
+                <div style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"26px 16px",textAlign:"center",color:"rgba(226,232,240,0.58)"}}>
+                  No live tickets yet
                 </div>
-              ))}
+              )}
 
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:18}}>
-                {[["99%","SLA"],["24/7","Support"],["PDF","Reports"]].map(([v,l])=>(
-                  <div key={l} style={{textAlign:"center",background:"rgba(15,23,42,0.5)",borderRadius:14,padding:"14px 8px"}}>
-                    <div style={{fontFamily:"Syne",fontSize:20,fontWeight:800,color:"#818cf8"}}>{v}</div>
+                {[[tickets.length,"Total"],[activeTickets.length,"Active"],[criticalTickets.length,"Critical"]].map(([v,l])=>(
+                  <div key={l} style={{textAlign:"center",background:"rgba(15,23,42,0.5)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 8px"}}>
+                    <div style={{fontFamily:"Syne",fontSize:20,fontWeight:800,color:l==="Critical"?"#f87171":l==="Active"?"#38bdf8":"#818cf8"}}>{v}</div>
                     <div style={{fontSize:11,color:"rgba(226,232,240,0.42)",marginTop:2}}>{l}</div>
                   </div>
                 ))}
@@ -3045,14 +3181,14 @@ const handleNewTicket = async (form) => {
   };
 
   if (!session) {
-    return (
-      <>
-        <style>{CSS}</style>
-        <Landing onLogin={handleLogin} />
-        <Toast toasts={toasts} remove={remove} />
-      </>
-    );
-  }
+  return (
+    <>
+      <style>{CSS}</style>
+      <Landing onLogin={handleLogin} tickets={tickets} />
+      <Toast toasts={toasts} remove={remove} />
+    </>
+  );
+}
 
   if (session.type === "staff_firstlogin") {
     return (
@@ -3303,6 +3439,11 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
+
+
+
+
+
 
 
 
