@@ -2588,7 +2588,7 @@ function Landing({onLogin,tickets=[]}) {
     <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#111436 0%,#211552 52%,#071827 100%)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px",position:"relative",overflow:"hidden"}}>
       <div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 15% 20%,rgba(99,102,241,0.28),transparent 32%),radial-gradient(circle at 85% 18%,rgba(14,165,233,0.20),transparent 30%),radial-gradient(circle at 72% 86%,rgba(16,185,129,0.16),transparent 28%)",pointerEvents:"none"}} />
       <div className="fade-up" style={{width:"100%",maxWidth:1040,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,360px),1fr))",background:"rgba(8,12,34,0.82)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:26,boxShadow:"0 34px 110px rgba(0,0,0,0.42)",overflow:"hidden",position:"relative",backdropFilter:"blur(22px)"}}>
-        <form onSubmit={e=>{e.preventDefault();handleLogin();}} style={{padding:"clamp(26px,5vw,54px)",display:"flex",flexDirection:"column",justifyContent:"center",minHeight:560}}>
+        <form onSubmit={e=>{e.preventDefault();handleLogin();}} style={{padding:"clamp(26px,5vw,54px)",display:"flex",flexDirection:"column",justifyContent:"center",minHeight:560,overflow:"hidden"}}>
           <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:30}}>
             <div style={{background:"rgba(255,255,255,0.96)",border:"1px solid rgba(255,255,255,0.35)",borderRadius:16,padding:"8px 12px",boxShadow:"0 14px 34px rgba(0,0,0,0.24)",display:"flex",alignItems:"center",justifyContent:"center"}}>
               <img src="/jaipuria-logo.png" alt="Jaipuria Institute of Management" style={{width:"clamp(210px,25vw,260px)",height:"auto",display:"block",objectFit:"contain"}} />
@@ -2596,7 +2596,7 @@ function Landing({onLogin,tickets=[]}) {
           </div>
 
           <div style={{marginBottom:24}}>
-            <div style={{fontFamily:"Syne",fontWeight:800,fontSize:"clamp(20px,2.5vw,28px)",lineHeight:1.12,color:"#f8fafc",letterSpacing:0,whiteSpace:"nowrap"}}>Login With Jaipuria Email ID</div>
+            <div style={{fontFamily:"Syne",fontWeight:800,fontSize:"clamp(22px,3vw,34px)",lineHeight:1.15,color:"#f8fafc",letterSpacing:0,whiteSpace:"normal",textWrap:"balance",maxWidth:"100%",overflowWrap:"break-word",wordBreak:"normal"}}>Login With Jaipuria Email ID</div>
             <div style={{fontSize:14,color:"rgba(226,232,240,0.62)",marginTop:10}}>Secure access for users, IT staff, and administrators.</div>
           </div>
 
