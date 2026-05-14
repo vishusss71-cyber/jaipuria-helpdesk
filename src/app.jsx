@@ -238,6 +238,16 @@ async function fetchStaffProfile(staffId) {
   return profiles[String(staffId)] || null;
 }
 
+function staffPasswordExists(profile) {
+  return Boolean(profile && (profile.passwordSet === true || profile.passwordHash || profile.password));
+}
+
+function clearStaffPasswordSetupStorage() {
+  if (!hasStorage()) return;
+  ["helpdesk_firstLogin", "helpdesk_requiresPasswordSetup", "helpdesk_passwordSetup", "firstLogin", "requiresPasswordSetup", "passwordSetup"].forEach(key => {
+    try { localStorage.removeItem(key); sessionStorage.removeItem(key); } catch {}
+  });
+}
 function getTicketFeedbackLink(ticketId) {
   return typeof window !== "undefined"
     ? `${window.location.origin}/?feedbackTicket=${encodeURIComponent(ticketId)}`
@@ -2366,11 +2376,14 @@ function SetPasswordScreen({staff,onComplete,toast}) {
     if(s<2){toast("Password too weak — add uppercase, numbers & symbols","error");return;}
     if(pwd!==confirm){toast("Passwords do not match","error");return;}
     setLoading(true);
-    const hash=await hashPassword(pwd);
-    await new Promise(r=>setTimeout(r,600));
     try {
+      const hash=await hashPassword(pwd);
+      await new Promise(r=>setTimeout(r,600));
       await Promise.resolve(onComplete(hash));
-      toast("Password set successfully! 🎉","success");
+      toast("Password set successfully!","success");
+    } catch (error) {
+      console.error("Staff password setup failed:", error);
+      toast(error?.message || "Password setup failed. Please try again.", "error");
     } finally {
       setLoading(false);
     }
@@ -2576,25 +2589,38 @@ function Landing({onLogin,tickets=[]}) {
       if(!staff){toast("Staff email not found","error");return;}
       setLoading(true);
       await new Promise(r=>setTimeout(r,500));
-      const staffPasswords=DB.get("staff_passwords",{});
-      const profile=await fetchStaffProfile(staff.id).catch(error=>{console.error("Staff profile lookup failed:",error);return null;});
-      const firestoreHash=profile?.passwordHash || profile?.password || "";
-      const storedHash=firestoreHash || staffPasswords[staff.id] || "";
-      const hasPassword=Boolean(profile?.passwordSet || firestoreHash || storedHash);
-      if(!hasPassword){
+      let profile=null;
+      try {
+        profile=await fetchStaffProfile(staff.id);
+      } catch (error) {
+        console.error("Staff profile lookup failed:",error);
+        toast("Unable to verify staff password. Please try again.","error");
         setLoading(false);
-        onLogin({type:"staff_firstlogin",staffId:staff.id,staff});
+        return;
+      }
+      const firestoreHash=profile?.passwordHash || profile?.password || "";
+      const needsPasswordSetup=!staffPasswordExists(profile);
+      if(needsPasswordSetup){
+        setLoading(false);
+        onLogin({type:"staff_firstlogin",staffId:staff.id,staff,requiresPasswordSetup:true,passwordSet:false});
         return;
       }
       if(!pwd){toast("Enter your password","error");setLoading(false);return;}
-      const valid=storedHash ? await verifyPassword(pwd,storedHash) : false;
+      const staffPasswords=DB.get("staff_passwords",{});
+      const storedHash=firestoreHash || staffPasswords[staff.id] || "";
+      if(!storedHash){toast("Password record is missing. Please contact admin.","error");setLoading(false);return;}
+      const valid=await verifyPassword(pwd,storedHash);
       setLoading(false);
       if(valid){
         if(firestoreHash && staffPasswords[staff.id]!==firestoreHash){
           staffPasswords[staff.id]=firestoreHash;
           DB.set("staff_passwords",staffPasswords);
         }
-        onLogin({type:"staff",staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,permissions:staff.permissions});
+        if(profile && profile.passwordSet !== true && firestoreHash){
+          saveStaffProfile(staff.id,{...profile,passwordSet:true,updatedAt:Date.now()}).catch(error=>console.error("Staff passwordSet sync failed:",error));
+        }
+        clearStaffPasswordSetupStorage();
+        onLogin({type:"staff",staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,permissions:staff.permissions,passwordSet:true,requiresPasswordSetup:false});
       }
       else{toast("Incorrect password","error");}
     }
@@ -3483,35 +3509,56 @@ const handleNewTicket = async (form) => {
 
   const handleFirstLoginComplete = async (hash) => {
     const staff = STAFF_BASE.find(s => s.id === session.staffId);
-    if (!staff) return;
+    if (!staff) throw new Error("Staff profile not found");
+    if (!ONLINE_TICKETS_ENABLED || !firestoreDb) throw new Error("Firestore is not configured. Please contact admin.");
 
-    const existingProfile = await fetchStaffProfile(staff.id).catch(error => {
-      console.error("Staff first-login profile lookup failed:", error);
-      return null;
-    });
-
+    const existingProfile = await fetchStaffProfile(staff.id);
     const existingHash = existingProfile?.passwordHash || existingProfile?.password || "";
     const finalHash = existingHash || hash;
 
-    if (!existingHash) {
-      await saveStaffProfile(staff.id, {
-        ...(existingProfile || {}),
-        id: String(staff.id),
+    if (staffPasswordExists(existingProfile)) {
+      const staffSession = {
+        type: "staff",
         staffId: staff.id,
         email: staff.email,
         name: staff.name,
         role: staff.role,
         permissions: staff.permissions,
-        passwordHash: hash,
         passwordSet: true,
-        passwordUpdatedAt: Date.now(),
-      });
-      setStaffProfiles(p => ({...p, [staff.id]: {...(p[staff.id] || {}), passwordHash: hash, passwordSet: true}}));
+        requiresPasswordSetup: false,
+      };
+      const staffPasswords = DB.get("staff_passwords", {});
+      if (finalHash) staffPasswords[staff.id] = finalHash;
+      DB.set("staff_passwords", staffPasswords);
+      clearStaffPasswordSetupStorage();
+      setSession(staffSession);
+      if (hasStorage()) localStorage.setItem("helpdesk_session", JSON.stringify(staffSession));
+      setPage("staff-dash");
+      return;
     }
 
+    const profileToSave = {
+      ...(existingProfile || {}),
+      id: String(staff.id),
+      staffId: staff.id,
+      email: staff.email,
+      name: staff.name,
+      role: staff.role,
+      permissions: staff.permissions,
+      passwordHash: hash,
+      passwordSet: true,
+      requiresPasswordSetup: false,
+      passwordUpdatedAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    await saveStaffProfile(staff.id, profileToSave);
+    setStaffProfiles(p => ({...p, [staff.id]: {...(p[staff.id] || {}), ...profileToSave}}));
+
     const staffPasswords = DB.get("staff_passwords", {});
-    staffPasswords[staff.id] = finalHash;
+    staffPasswords[staff.id] = hash;
     DB.set("staff_passwords", staffPasswords);
+    clearStaffPasswordSetupStorage();
 
     const staffSession = {
       type: "staff",
@@ -3520,6 +3567,8 @@ const handleNewTicket = async (form) => {
       name: staff.name,
       role: staff.role,
       permissions: staff.permissions,
+      passwordSet: true,
+      requiresPasswordSetup: false,
     };
 
     setSession(staffSession);
@@ -3804,6 +3853,7 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
+
 
 
 
