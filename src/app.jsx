@@ -239,7 +239,11 @@ async function fetchStaffProfile(staffId) {
 }
 
 function staffPasswordExists(profile) {
-  return Boolean(profile && (profile.passwordSet === true || profile.passwordHash || profile.password));
+  if (!profile) return false;
+  if (profile.requiresPasswordSetup === true) return false;
+  if (profile.passwordSet === true) return true;
+  if (profile.passwordHash || profile.password) return true;
+  return false;
 }
 
 function clearStaffPasswordSetupStorage() {
@@ -2599,16 +2603,32 @@ function Landing({onLogin,tickets=[]}) {
         return;
       }
       const firestoreHash=profile?.passwordHash || profile?.password || "";
-      const needsPasswordSetup=!staffPasswordExists(profile);
-      if(needsPasswordSetup){
+      const passwordFlagSet = profile?.passwordSet === true;
+      const hasPasswordField = Boolean(profile?.passwordHash || profile?.password);
+      const requiresSetup = profile?.requiresPasswordSetup === true;
+      const needsPasswordSetup = requiresSetup || (!passwordFlagSet && !hasPasswordField);
+      const staffPasswords=DB.get("staff_passwords",{});
+      const storedHash=firestoreHash || staffPasswords[staff.id] || "";
+      const hasAnyPasswordRecord = Boolean(storedHash);
+
+      if(needsPasswordSetup && !hasAnyPasswordRecord){
         setLoading(false);
         onLogin({type:"staff_firstlogin",staffId:staff.id,staff,requiresPasswordSetup:true,passwordSet:false});
         return;
       }
+
+      if(!storedHash){
+        setLoading(false);
+        if(passwordFlagSet){
+          clearStaffPasswordSetupStorage();
+          onLogin({type:"staff",staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,permissions:staff.permissions,passwordSet:true,requiresPasswordSetup:false});
+          return;
+        }
+        onLogin({type:"staff_firstlogin",staffId:staff.id,staff,requiresPasswordSetup:true,passwordSet:false});
+        return;
+      }
+
       if(!pwd){toast("Enter your password","error");setLoading(false);return;}
-      const staffPasswords=DB.get("staff_passwords",{});
-      const storedHash=firestoreHash || staffPasswords[staff.id] || "";
-      if(!storedHash){toast("Password record is missing. Please contact admin.","error");setLoading(false);return;}
       const valid=await verifyPassword(pwd,storedHash);
       setLoading(false);
       if(valid){
