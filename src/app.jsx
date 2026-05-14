@@ -2593,16 +2593,14 @@ function Landing({onLogin,tickets=[]}) {
       if(!staff){toast("Staff email not found","error");return;}
       setLoading(true);
       await new Promise(r=>setTimeout(r,500));
-      let profile=null;
+      let profile = null;
       try {
-        profile=await fetchStaffProfile(staff.id);
+        profile = await fetchStaffProfile(staff.id);
       } catch (error) {
-        console.error("Staff profile lookup failed:",error);
-        toast("Unable to verify staff password. Please try again.","error");
-        setLoading(false);
-        return;
+        console.error("Staff profile lookup failed:", error);
+        // If Firestore is unavailable, continue with local cached staff password data.
       }
-      const firestoreHash=profile?.passwordHash || profile?.password || "";
+      const firestoreHash = profile?.passwordHash || profile?.password || "";
       const passwordFlagSet = profile?.passwordSet === true;
       const hasPasswordField = Boolean(profile?.passwordHash || profile?.password);
       const requiresSetup = profile?.requiresPasswordSetup === true;
