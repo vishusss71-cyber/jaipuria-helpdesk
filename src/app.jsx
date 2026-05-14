@@ -231,6 +231,13 @@ async function fetchStaffProfiles() {
   return profiles;
 }
 
+async function fetchStaffProfile(staffId) {
+  if (!staffId) return null;
+  if (!ONLINE_TICKETS_ENABLED || !firestoreDb) return null;
+  const profiles = await fetchStaffProfiles();
+  return profiles[String(staffId)] || null;
+}
+
 function getTicketFeedbackLink(ticketId) {
   return typeof window !== "undefined"
     ? `${window.location.origin}/?feedbackTicket=${encodeURIComponent(ticketId)}`
@@ -962,9 +969,9 @@ input:focus,select:focus,textarea:focus{border-color:rgba(34,211,238,1)!importan
   body::before{inset:-45%;filter:blur(28px);opacity:.68}
   .app-shell{display:block!important;min-height:100vh!important;width:100%!important;overflow-x:hidden!important}
   .app-main{width:100%!important;min-width:0!important;margin:0!important}
-  .app-sidebar{position:fixed!important;top:0!important;left:0!important;width:min(82vw,300px)!important;max-width:300px!important;height:100dvh!important;z-index:80!important;transform:translateX(-105%)!important;transition:transform .25s ease!important;box-shadow:18px 0 44px rgba(0,0,0,.5)!important;border-right:1px solid rgba(125,211,252,.18)!important}
+  .app-sidebar{position:fixed!important;top:0!important;left:0!important;width:min(82vw,300px)!important;max-width:300px!important;height:100dvh!important;z-index:120!important;transform:translateX(-105%)!important;transition:transform .25s ease!important;box-shadow:18px 0 44px rgba(0,0,0,.5)!important;border-right:1px solid rgba(125,211,252,.18)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}
   .app-sidebar.mobile-open{transform:translateX(0)!important}
-  .sidebar-overlay{display:block!important;position:fixed!important;inset:0!important;background:rgba(0,0,0,.6)!important;backdrop-filter:blur(5px)!important;z-index:70!important}
+  .sidebar-overlay{display:block!important;position:fixed!important;inset:0!important;background:rgba(0,0,0,.6)!important;backdrop-filter:blur(5px)!important;z-index:110!important}
   .app-header{padding:10px 12px!important;gap:10px!important;position:sticky!important;top:0!important;z-index:40!important;width:100%!important;max-width:100vw!important}
   .header-identity{min-width:0!important;flex:1!important;overflow:hidden!important}
   .header-identity span{min-width:0!important;max-width:54vw!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;display:block!important}
@@ -985,7 +992,7 @@ input:focus,select:focus,textarea:focus{border-color:rgba(34,211,238,1)!importan
   .modal-header{padding:14px 14px 12px!important;gap:10px!important}
   .modal-header h2{font-size:16px!important;line-height:1.25!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
   .modal-body{padding:14px!important;overflow-y:auto!important}
-  .staff-profile-menu{position:fixed!important;left:12px!important;right:12px!important;top:58px!important;width:auto!important;min-width:0!important;max-width:none!important;z-index:90!important}
+  .staff-profile-menu{position:fixed!important;left:12px!important;right:12px!important;top:58px!important;width:auto!important;min-width:0!important;max-width:none!important;z-index:95!important}
 }
 @media (max-width:480px){
   .app-sidebar{width:86vw!important}
@@ -2304,10 +2311,10 @@ function AdminFeedbackPage({feedback,setFeedback,toast}) {
   );
 }
 // ── SIDEBAR ───────────────────────────────────────────────────────────────
-function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpen,setMobileOpen}) {
+function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpen,setMobileOpen,onStaffAction}) {
   const adminNav=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"tickets",icon:"🎫",label:"All Tickets"},{id:"staff",icon:"👥",label:"IT Staff"},{id:"analytics",icon:"📊",label:"Analytics"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"export",icon:"⬇",label:"Export Reports"},{id:"staff-management",icon:"👥",label:"Staff Management"},{id:"emaillog",icon:"📧",label:"Email Log"}];
   const userNav=[{id:"home",icon:"🏠",label:"Home"},{id:"my-tickets",icon:"🎫",label:"My Tickets"},{id:"know-staff",icon:"👥",label:"Know Your IT Staff"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"new-ticket",icon:"➕",label:"New Ticket"},{id:"track",icon:"🔍",label:"Track Ticket"}];
-  const staffNav=[{id:"staff-dash",icon:"🏠",label:"My Dashboard"},{id:"assigned",icon:"📋",label:"Assigned Tickets"}];
+  const staffNav=[{id:"staff-dash",icon:"🏠",label:"My Dashboard"},{id:"assigned",icon:"📋",label:"Assigned Tickets"},{id:"chat",icon:"💬",label:"Staff Chat",staffAction:true},{id:"know-staff",icon:"👥",label:"Know Your IT Staff"},{id:"profile",icon:"👤",label:"My Profile",staffAction:true},{id:"password",icon:"🔐",label:"Change Password",staffAction:true},{id:"logout",icon:"↩",label:"Logout",staffAction:true}];
   const nav=isAdmin?adminNav:isStaff?staffNav:userNav;
   const open=tickets.filter(t=>t.status==="Open").length;
   const unreadFeedback=feedback.filter(f=>!f.reviewed).length;
@@ -2327,7 +2334,7 @@ function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpe
         </div>
         <nav style={{flex:1,padding:"12px",display:"flex",flexDirection:"column",gap:3}}>
           {nav.map(item=>(
-            <button key={item.id} onClick={()=>{onChange(item.id);setMobileOpen(false);}} style={{
+            <button key={item.id} onClick={()=>{if(isStaff&&item.staffAction&&onStaffAction){onStaffAction(item.id);}else{onChange(item.id);}setMobileOpen(false);}} style={{
               display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:10,border:"none",textAlign:"left",width:"100%",fontSize:14,
               background:current===item.id?"rgba(99,102,241,0.2)":"transparent",
               color:current===item.id?"#818cf8":"rgba(226,232,240,0.6)",
@@ -2361,9 +2368,12 @@ function SetPasswordScreen({staff,onComplete,toast}) {
     setLoading(true);
     const hash=await hashPassword(pwd);
     await new Promise(r=>setTimeout(r,600));
-    onComplete(hash);
-    setLoading(false);
-    toast("Password set successfully! 🎉","success");
+    try {
+      await Promise.resolve(onComplete(hash));
+      toast("Password set successfully! 🎉","success");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -2434,6 +2444,22 @@ function ForgotPassword({onBack,toast}) {
     const hash=await hashPassword(newPwd);
     const staff=STAFF_BASE.find(s=>s.email.toLowerCase()===email.trim().toLowerCase());
     if(staff){
+      const existingProfile = await fetchStaffProfile(staff.id).catch(error => {
+        console.error("Staff reset profile lookup failed:", error);
+        return null;
+      });
+      await saveStaffProfile(staff.id, {
+        ...(existingProfile || {}),
+        id: String(staff.id),
+        staffId: staff.id,
+        email: staff.email,
+        name: staff.name,
+        role: staff.role,
+        permissions: staff.permissions,
+        passwordHash: hash,
+        passwordSet: true,
+        passwordUpdatedAt: Date.now(),
+      });
       const staffPasswords = DB.get("staff_passwords", {});
       staffPasswords[staff.id] = hash;
       DB.set("staff_passwords", staffPasswords);
@@ -2551,16 +2577,25 @@ function Landing({onLogin,tickets=[]}) {
       setLoading(true);
       await new Promise(r=>setTimeout(r,500));
       const staffPasswords=DB.get("staff_passwords",{});
-      const storedHash=staffPasswords[staff.id];
-      if(!storedHash){
+      const profile=await fetchStaffProfile(staff.id).catch(error=>{console.error("Staff profile lookup failed:",error);return null;});
+      const firestoreHash=profile?.passwordHash || profile?.password || "";
+      const storedHash=firestoreHash || staffPasswords[staff.id] || "";
+      const hasPassword=Boolean(profile?.passwordSet || firestoreHash || storedHash);
+      if(!hasPassword){
         setLoading(false);
         onLogin({type:"staff_firstlogin",staffId:staff.id,staff});
         return;
       }
       if(!pwd){toast("Enter your password","error");setLoading(false);return;}
-      const valid=await verifyPassword(pwd,storedHash);
+      const valid=storedHash ? await verifyPassword(pwd,storedHash) : false;
       setLoading(false);
-      if(valid){onLogin({type:"staff",staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,permissions:staff.permissions});}
+      if(valid){
+        if(firestoreHash && staffPasswords[staff.id]!==firestoreHash){
+          staffPasswords[staff.id]=firestoreHash;
+          DB.set("staff_passwords",staffPasswords);
+        }
+        onLogin({type:"staff",staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,permissions:staff.permissions});
+      }
       else{toast("Incorrect password","error");}
     }
   };
@@ -2824,12 +2859,15 @@ function StaffChangePasswordModal({staff,toast}) {
   const [confirm,setConfirm]=useState('');
   const save=async()=>{
     const passwords=DB.get('staff_passwords',{});
-    const current=passwords[staff.id];
+    const profile=await fetchStaffProfile(staff.id).catch(error=>{console.error('Staff password profile lookup failed:',error);return null;});
+    const current=profile?.passwordHash || passwords[staff.id];
     if(!current){toast('No password set yet. Please complete first login.','error');return;}
     if(!(await verifyPassword(oldPwd,current))){toast('Old password is incorrect','error');return;}
     if(pwdStrength(newPwd)<3){toast('New password is too weak','error');return;}
     if(newPwd!==confirm){toast('Passwords do not match','error');return;}
-    passwords[staff.id]=await hashPassword(newPwd);
+    const nextHash=await hashPassword(newPwd);
+    await saveStaffProfile(staff.id, {...(profile||{}),id:String(staff.id),staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,passwordHash:nextHash,passwordSet:true,passwordUpdatedAt:Date.now()});
+    passwords[staff.id]=nextHash;
     DB.set('staff_passwords',passwords);
     setOldPwd('');setNewPwd('');setConfirm('');
     toast('Password changed successfully','success');
@@ -3443,12 +3481,38 @@ const handleNewTicket = async (form) => {
     setStaffStatuses(s => ({...s, [session.staffId]: status}));
   };
 
-  const handleFirstLoginComplete = (hash) => {
+  const handleFirstLoginComplete = async (hash) => {
+    const staff = STAFF_BASE.find(s => s.id === session.staffId);
+    if (!staff) return;
+
+    const existingProfile = await fetchStaffProfile(staff.id).catch(error => {
+      console.error("Staff first-login profile lookup failed:", error);
+      return null;
+    });
+
+    const existingHash = existingProfile?.passwordHash || existingProfile?.password || "";
+    const finalHash = existingHash || hash;
+
+    if (!existingHash) {
+      await saveStaffProfile(staff.id, {
+        ...(existingProfile || {}),
+        id: String(staff.id),
+        staffId: staff.id,
+        email: staff.email,
+        name: staff.name,
+        role: staff.role,
+        permissions: staff.permissions,
+        passwordHash: hash,
+        passwordSet: true,
+        passwordUpdatedAt: Date.now(),
+      });
+      setStaffProfiles(p => ({...p, [staff.id]: {...(p[staff.id] || {}), passwordHash: hash, passwordSet: true}}));
+    }
+
     const staffPasswords = DB.get("staff_passwords", {});
-    staffPasswords[session.staffId] = hash;
+    staffPasswords[staff.id] = finalHash;
     DB.set("staff_passwords", staffPasswords);
 
-    const staff = STAFF_BASE.find(s => s.id === session.staffId);
     const staffSession = {
       type: "staff",
       staffId: staff.id,
@@ -3490,6 +3554,20 @@ const handleNewTicket = async (form) => {
   const linkedFeedbackTicket = tickets.find(t => t.id === feedbackTicketId);
   const pendingFeedbackTicket = !isAdmin && !isStaff ? tickets.find(t => t.email === session.email && t.status === "Closed" && !t.feedbackSubmitted && !feedback.some(f => f.ticketId === t.id && f.email === session.email) && !dismissedFeedbackTickets.includes(t.id)) : null;
 
+  const handleStaffMenuAction = (id) => {
+    setStaffMenuOpen(false);
+    setMobileOpen(false);
+    if (id === "logout") {
+      logoutUser();
+      return;
+    }
+    if (id === "know-staff") {
+      setPage("know-staff");
+      return;
+    }
+    setStaffPanel(id);
+  };
+
   const renderStaffManagement = () => (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
       <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Staff Management</h2>
@@ -3508,8 +3586,11 @@ const handleNewTicket = async (form) => {
               const newPwd = prompt("Enter new password");
               if (!newPwd) return;
 
+              const nextHash = await hashPassword(newPwd);
+              const existingProfile = await fetchStaffProfile(staff.id).catch(error => { console.error("Admin staff password profile lookup failed:", error); return null; });
+              await saveStaffProfile(staff.id, {...(existingProfile||{}),id:String(staff.id),staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,passwordHash:nextHash,passwordSet:true,passwordUpdatedAt:Date.now()});
               const passwords = DB.get("staff_passwords", {});
-              passwords[staff.id] = await hashPassword(newPwd);
+              passwords[staff.id] = nextHash;
               DB.set("staff_passwords", passwords);
               toast("Password updated", "success");
             }}
@@ -3621,11 +3702,11 @@ const handleNewTicket = async (form) => {
     <>
       <style>{CSS}</style>
       <div className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
-        <Sidebar current={page} onChange={setPage} isAdmin={isAdmin} isStaff={isStaff} tickets={tickets} feedback={feedback} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
+        <Sidebar current={page} onChange={setPage} isAdmin={isAdmin} isStaff={isStaff} tickets={tickets} feedback={feedback} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onStaffAction={handleStaffMenuAction} />
         <div className="app-main" style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
           <div className="app-header" style={{padding:"14px 24px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(10,10,20,0.9)",backdropFilter:"blur(20px)",position:"sticky",top:0,zIndex:10}}>
             <div className="header-identity" style={{display:"flex",alignItems:"center",gap:12,position:"relative"}}>
-              <button onClick={() => { const isMobile = typeof window !== "undefined" && window.innerWidth <= 768; if (isMobile) setMobileOpen(o => !o); else if (isStaff) setStaffMenuOpen(o=>!o); else setMobileOpen(o => !o); }} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",width:38,height:38,borderRadius:10,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>☰</button>
+              <button onClick={() => { const isMobile = typeof window !== "undefined" && window.innerWidth <= 768; if (isMobile) { setStaffMenuOpen(false); setMobileOpen(o => !o); } else if (isStaff) { setMobileOpen(false); setStaffMenuOpen(o=>!o); } else { setStaffMenuOpen(false); setMobileOpen(o => !o); } }} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",width:38,height:38,borderRadius:10,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>☰</button>
               {isStaff&&staffMenuOpen&&(
                 <StaffProfileMenu
                   staff={STAFF_BASE.find(s=>s.id===session.staffId)}
@@ -3723,6 +3804,14 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
+
+
+
+
+
+
+
+
 
 
 
