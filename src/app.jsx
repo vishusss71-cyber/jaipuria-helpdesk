@@ -252,6 +252,7 @@ function clearStaffPasswordSetupStorage() {
     try { localStorage.removeItem(key); sessionStorage.removeItem(key); } catch {}
   });
 }
+
 function getTicketFeedbackLink(ticketId) {
   return typeof window !== "undefined"
     ? `${window.location.origin}/?feedbackTicket=${encodeURIComponent(ticketId)}`
@@ -1119,6 +1120,84 @@ textarea:focus{
   box-shadow:
     0 0 0 3px rgba(6,182,212,.18),
     0 0 30px rgba(99,102,241,.22)!important;
+}
+
+/* ═══ FIRST LOGIN PASSWORD SETUP - MOBILE RESPONSIVE ═══ */
+@media (max-width:768px){
+  div[style*="minHeight"*="100dvh"][style*="background"*="radial-gradient"]{
+    min-height:100dvh!important;
+    height:auto!important;
+    padding-top:max(16px,env(safe-area-inset-top,0px))!important;
+    padding-bottom:max(16px,env(safe-area-inset-bottom,0px))!important;
+  }
+}
+
+@media (max-width:480px){
+  /* Ensure full viewport coverage on small screens */
+  div[style*="minHeight"*="100dvh"][style*="background"*="radial-gradient"]{
+    min-height:100dvh!important;
+    padding:max(12px,env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-right,0px)) max(12px,env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px))!important;
+    gap:clamp(12px,3vw,16px)!important;
+  }
+
+  div[style*="minHeight"*="100dvh"][style*="background"*="radial-gradient"] > div[style*="width"*="100%"]{
+    width:100%!important;
+    max-width:100%!important;
+    padding:0!important;
+  }
+
+  div[style*="minHeight"*="100dvh"][style*="background"*="radial-gradient"] h1{
+    font-size:clamp(18px,5vw,24px)!important;
+    line-height:1.2!important;
+    margin-bottom:8px!important;
+  }
+
+  div[style*="minHeight"*="100dvh"][style*="background"*="radial-gradient"] p{
+    font-size:clamp(11px,3vw,13px)!important;
+    line-height:1.4!important;
+  }
+
+  .fade-up{
+    animation:fadeUp .4s ease forwards;
+  }
+
+  div[style*="minHeight"*="100dvh"][style*="background"*="radial-gradient"] .glass{
+    padding:clamp(14px,4vw,20px)!important;
+    gap:clamp(10px,3vw,14px)!important;
+    max-width:100%!important;
+    width:100%!important;
+    border-radius:12px!important;
+  }
+
+  div[style*="minHeight"*="100dvh"][style*="background"*="radial-gradient"] .glass > div:first-child{
+    font-size:clamp(10px,2.5vw,12px)!important;
+    padding:10px 12px!important;
+  }
+
+  div[style*="minHeight"*="100dvh"][style*="background"*="radial-gradient"] label{
+    font-size:clamp(10px,2.5vw,11px)!important;
+    margin-bottom:4px!important;
+  }
+
+  div[style*="minHeight"*="100dvh"][style*="background"*="radial-gradient"] input,
+  div[style*="minHeight"*="100dvh"][style*="background"*="radial-gradient"] .pwd-input-wrap input{
+    padding:10px 12px!important;
+    font-size:14px!important;
+    min-height:42px!important;
+  }
+
+  div[style*="minHeight"*="100dvh"][style*="background"*="radial-gradient"] .glow-btn{
+    width:100%!important;
+    min-height:44px!important;
+    font-size:clamp(13px,3vw,15px)!important;
+    padding:12px 20px!important;
+    margin-top:4px!important;
+  }
+
+  div[style*="minHeight"*="100dvh"][style*="background"*="radial-gradient"] .pwd-toggle{
+    right:10px!important;
+    top:50%!important;
+  }
 }
   }`;
 
@@ -2380,41 +2459,38 @@ function SetPasswordScreen({staff,onComplete,toast}) {
     if(s<2){toast("Password too weak — add uppercase, numbers & symbols","error");return;}
     if(pwd!==confirm){toast("Passwords do not match","error");return;}
     setLoading(true);
+    const hash=await hashPassword(pwd);
+    await new Promise(r=>setTimeout(r,600));
     try {
-      const hash=await hashPassword(pwd);
-      await new Promise(r=>setTimeout(r,600));
       await Promise.resolve(onComplete(hash));
-      toast("Password set successfully!","success");
-    } catch (error) {
-      console.error("Staff password setup failed:", error);
-      toast(error?.message || "Password setup failed. Please try again.", "error");
+      toast("Password set successfully! 🎉","success");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{minHeight:"100vh",background:"radial-gradient(ellipse at 30% 40%,rgba(99,102,241,0.18) 0%,transparent 60%),#0a0a0f",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{minHeight:"100dvh",background:"radial-gradient(ellipse at 30% 40%,rgba(99,102,241,0.18) 0%,transparent 60%),#0a0a0f",display:"flex",alignItems:"center",justifyContent:"center",padding:"max(20px, clamp(12px, 4vw, 32px))",overflowY:"auto",overflowX:"hidden"}}>
       <div style={{width:"100%",maxWidth:420}} className="fade-up">
-        <div style={{textAlign:"center",marginBottom:32}}>
+        <div style={{textAlign:"center",marginBottom:"clamp(20px, 6vw, 32px)"}}>
           <div style={{width:64,height:64,borderRadius:18,background:`${staff.color}33`,border:`2px solid ${staff.color}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:800,color:staff.color,margin:"0 auto 16px"}}>{staff.avatar}</div>
-          <h1 style={{fontFamily:"Syne",fontSize:24,fontWeight:800,color:"#e2e8f0",marginBottom:6}}>Welcome, {staff.name.split(" ")[0]}!</h1>
-          <p style={{fontSize:14,color:"rgba(226,232,240,0.5)"}}>First login detected. Please create your secure password.</p>
+          <h1 style={{fontFamily:"Syne",fontSize:"clamp(20px, 5.5vw, 28px)",fontWeight:800,color:"#e2e8f0",marginBottom:6,lineHeight:1.2}}>Welcome, {staff.name.split(" ")[0]}!</h1>
+          <p style={{fontSize:"clamp(12px, 3.5vw, 14px)",color:"rgba(226,232,240,0.5)",lineHeight:1.4}}>First login detected. Please create your secure password.</p>
         </div>
-        <div className="glass" style={{padding:"28px 24px",display:"flex",flexDirection:"column",gap:18}}>
-          <div style={{background:"rgba(245,158,11,0.1)",border:"1px solid rgba(245,158,11,0.3)",borderRadius:10,padding:"12px 14px",fontSize:13,color:"#fbbf24"}}>
+        <div className="glass" style={{padding:"clamp(16px, 5vw, 28px)",display:"flex",flexDirection:"column",gap:"clamp(12px, 3vw, 18px)",flexShrink:0}}>
+          <div style={{background:"rgba(245,158,11,0.1)",border:"1px solid rgba(245,158,11,0.3)",borderRadius:10,padding:"12px 14px",fontSize:"clamp(11px, 2.5vw, 13px)",color:"#fbbf24",lineHeight:1.4}}>
             🔐 Your password is encrypted and stored securely. It cannot be recovered — keep it safe.
           </div>
           <div>
-            <label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Create Password</label>
+            <label style={{fontSize:"clamp(10px, 2.5vw, 12px)",color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Create Password</label>
             <PwdInput value={pwd} onChange={setPwd} placeholder="Minimum 8 characters" showStrength />
           </div>
           <div>
-            <label style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Confirm Password</label>
+            <label style={{fontSize:"clamp(10px, 2.5vw, 12px)",color:"rgba(226,232,240,0.5)",marginBottom:6,display:"block"}}>Confirm Password</label>
             <PwdInput value={confirm} onChange={setConfirm} placeholder="Repeat your password"/>
-            {confirm&&pwd!==confirm&&<div style={{fontSize:12,color:"#f87171",marginTop:4}}>Passwords do not match</div>}
+            {confirm&&pwd!==confirm&&<div style={{fontSize:"clamp(10px, 2.5vw, 12px)",color:"#f87171",marginTop:4}}>Passwords do not match</div>}
           </div>
-          <button className="glow-btn" style={{width:"100%"}} onClick={submit} disabled={loading||s<2||pwd!==confirm}>
+          <button className="glow-btn" style={{width:"100%",padding:"clamp(10px, 2.5vw, 12px) 28px"}} onClick={submit} disabled={loading||s<2||pwd!==confirm}>
             {loading?"⏳ Securing...":"🔐 Set Password & Continue"}
           </button>
         </div>
@@ -2593,52 +2669,33 @@ function Landing({onLogin,tickets=[]}) {
       if(!staff){toast("Staff email not found","error");return;}
       setLoading(true);
       await new Promise(r=>setTimeout(r,500));
-      let profile = null;
-      try {
-        profile = await fetchStaffProfile(staff.id);
-      } catch (error) {
+      const staffPasswords = DB.get("staff_passwords", {});
+      const profile = await fetchStaffProfile(staff.id).catch(error => {
         console.error("Staff profile lookup failed:", error);
-        // If Firestore is unavailable, continue with local cached staff password data.
-      }
+        return null;
+      });
+
       const firestoreHash = profile?.passwordHash || profile?.password || "";
-      const passwordFlagSet = profile?.passwordSet === true;
-      const hasPasswordField = Boolean(profile?.passwordHash || profile?.password);
-      const requiresSetup = profile?.requiresPasswordSetup === true;
-      const needsPasswordSetup = requiresSetup || (!passwordFlagSet && !hasPasswordField);
-      const staffPasswords=DB.get("staff_passwords",{});
-      const storedHash=firestoreHash || staffPasswords[staff.id] || "";
-      const hasAnyPasswordRecord = Boolean(storedHash);
+      const storedHash = firestoreHash || staffPasswords[staff.id] || "";
+      const hasPassword = Boolean(profile?.passwordSet || firestoreHash || storedHash);
 
-      if(needsPasswordSetup && !hasAnyPasswordRecord){
+      if (!hasPassword) {
         setLoading(false);
-        onLogin({type:"staff_firstlogin",staffId:staff.id,staff,requiresPasswordSetup:true,passwordSet:false});
-        return;
-      }
-
-      if(!storedHash){
-        setLoading(false);
-        if(passwordFlagSet){
-          clearStaffPasswordSetupStorage();
-          onLogin({type:"staff",staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,permissions:staff.permissions,passwordSet:true,requiresPasswordSetup:false});
-          return;
-        }
-        onLogin({type:"staff_firstlogin",staffId:staff.id,staff,requiresPasswordSetup:true,passwordSet:false});
+        setSetupStaff(staff);
+        setSetupPassword("");
+        setSetupConfirm("");
         return;
       }
 
       if(!pwd){toast("Enter your password","error");setLoading(false);return;}
-      const valid=await verifyPassword(pwd,storedHash);
+      const valid=storedHash ? await verifyPassword(pwd,storedHash) : false;
       setLoading(false);
       if(valid){
         if(firestoreHash && staffPasswords[staff.id]!==firestoreHash){
           staffPasswords[staff.id]=firestoreHash;
           DB.set("staff_passwords",staffPasswords);
         }
-        if(profile && profile.passwordSet !== true && firestoreHash){
-          saveStaffProfile(staff.id,{...profile,passwordSet:true,updatedAt:Date.now()}).catch(error=>console.error("Staff passwordSet sync failed:",error));
-        }
-        clearStaffPasswordSetupStorage();
-        onLogin({type:"staff",staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,permissions:staff.permissions,passwordSet:true,requiresPasswordSetup:false});
+        onLogin({type:"staff",staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,permissions:staff.permissions});
       }
       else{toast("Incorrect password","error");}
     }
@@ -3527,56 +3584,35 @@ const handleNewTicket = async (form) => {
 
   const handleFirstLoginComplete = async (hash) => {
     const staff = STAFF_BASE.find(s => s.id === session.staffId);
-    if (!staff) throw new Error("Staff profile not found");
-    if (!ONLINE_TICKETS_ENABLED || !firestoreDb) throw new Error("Firestore is not configured. Please contact admin.");
+    if (!staff) return;
 
-    const existingProfile = await fetchStaffProfile(staff.id);
+    const existingProfile = await fetchStaffProfile(staff.id).catch(error => {
+      console.error("Staff first-login profile lookup failed:", error);
+      return null;
+    });
+
     const existingHash = existingProfile?.passwordHash || existingProfile?.password || "";
     const finalHash = existingHash || hash;
 
-    if (staffPasswordExists(existingProfile)) {
-      const staffSession = {
-        type: "staff",
+    if (!existingHash) {
+      await saveStaffProfile(staff.id, {
+        ...(existingProfile || {}),
+        id: String(staff.id),
         staffId: staff.id,
         email: staff.email,
         name: staff.name,
         role: staff.role,
         permissions: staff.permissions,
+        passwordHash: hash,
         passwordSet: true,
-        requiresPasswordSetup: false,
-      };
-      const staffPasswords = DB.get("staff_passwords", {});
-      if (finalHash) staffPasswords[staff.id] = finalHash;
-      DB.set("staff_passwords", staffPasswords);
-      clearStaffPasswordSetupStorage();
-      setSession(staffSession);
-      if (hasStorage()) localStorage.setItem("helpdesk_session", JSON.stringify(staffSession));
-      setPage("staff-dash");
-      return;
+        passwordUpdatedAt: Date.now(),
+      });
+      setStaffProfiles(p => ({...p, [staff.id]: {...(p[staff.id] || {}), passwordHash: hash, passwordSet: true}}));
     }
 
-    const profileToSave = {
-      ...(existingProfile || {}),
-      id: String(staff.id),
-      staffId: staff.id,
-      email: staff.email,
-      name: staff.name,
-      role: staff.role,
-      permissions: staff.permissions,
-      passwordHash: hash,
-      passwordSet: true,
-      requiresPasswordSetup: false,
-      passwordUpdatedAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    await saveStaffProfile(staff.id, profileToSave);
-    setStaffProfiles(p => ({...p, [staff.id]: {...(p[staff.id] || {}), ...profileToSave}}));
-
     const staffPasswords = DB.get("staff_passwords", {});
-    staffPasswords[staff.id] = hash;
+    staffPasswords[staff.id] = finalHash;
     DB.set("staff_passwords", staffPasswords);
-    clearStaffPasswordSetupStorage();
 
     const staffSession = {
       type: "staff",
@@ -3585,8 +3621,6 @@ const handleNewTicket = async (form) => {
       name: staff.name,
       role: staff.role,
       permissions: staff.permissions,
-      passwordSet: true,
-      requiresPasswordSetup: false,
     };
 
     setSession(staffSession);
@@ -3871,7 +3905,6 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
-
 
 
 
