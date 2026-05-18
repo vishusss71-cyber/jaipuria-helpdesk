@@ -211,9 +211,12 @@ function normalizeTempIssue(issue = {}) {
     customItem: issue.customItem || "",
 
     // APPROVAL INFO
-    permissionApprovedBy: issue.permissionApprovedBy || "",
-    requestedToStaff: issue.requestedToStaff || "",
-    requestedToStaffEmail: issue.requestedToStaffEmail || "",
+    permissionApprovedBy: issue.permissionApprovedBy || issue.permissionBy || "",
+    permissionBy: issue.permissionBy || issue.permissionApprovedBy || "",
+    requestedToStaff: issue.requestedToStaff || issue.requestToStaff || "",
+    requestToStaff: issue.requestToStaff || issue.requestedToStaff || "",
+    requestedToStaffEmail: issue.requestedToStaffEmail || issue.requestToStaffEmail || "",
+    requestToStaffEmail: issue.requestToStaffEmail || issue.requestedToStaffEmail || "",
 
     // DATES
     issueDate: issue.issueDate || "",
@@ -1489,9 +1492,9 @@ function TimerBadge({ticket}) {
 }
 
 // ── STAT CARD ─────────────────────────────────────────────────────────────
-function StatCard({label,value,icon,color,sub}) {
+function StatCard({label,value,icon,color,sub,onClick}) {
   return (
-    <div className="glass" style={{padding:"20px 22px",display:"flex",flexDirection:"column",gap:8}}>
+    <div className="glass" onClick={onClick} style={{padding:"20px 22px",display:"flex",flexDirection:"column",gap:8,cursor:onClick?"pointer":"default"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
         <span style={{fontSize:13,color:"rgba(226,232,240,0.5)",fontWeight:500}}>{label}</span>
         <div style={{fontSize:24}}>{icon}</div>
@@ -2583,10 +2586,12 @@ function SetPasswordScreen({staff,onComplete,toast}) {
     try {
       await Promise.resolve(onComplete(hash));
       toast("Password set successfully! 🎉","success");
+    } catch (error) {
+      console.error("Staff password setup failed:", error);
+      toast(`Password setup failed: ${error?.message || "Please try again"}`, "error");
     } finally {
       setLoading(false);
-    }
-  };
+    }  };
 
   return (
     <div style={{minHeight:"100dvh",background:"radial-gradient(ellipse at 30% 40%,rgba(99,102,241,0.18) 0%,transparent 60%),#0a0a0f",display:"flex",alignItems:"center",justifyContent:"center",padding:"max(20px, clamp(12px, 4vw, 32px))",overflowY:"auto",overflowX:"hidden"}}>
@@ -2796,25 +2801,24 @@ function Landing({onLogin,tickets=[]}) {
 
       const firestoreHash = profile?.passwordHash || profile?.password || "";
       const storedHash = firestoreHash || staffPasswords[staff.id] || "";
-      const hasPassword = Boolean(profile?.passwordSet || firestoreHash || storedHash);
+      const hasPassword = Boolean(profile?.passwordSet === true || firestoreHash || storedHash);
 
       if (!hasPassword) {
         setLoading(false);
-        setSetupStaff(staff);
-        setSetupPassword("");
-        setSetupConfirm("");
+        onLogin({type:"staff_firstlogin",staffId:staff.id,staff,requiresPasswordSetup:true});
         return;
       }
 
       if(!pwd){toast("Enter your password","error");setLoading(false);return;}
-      const valid=storedHash ? await verifyPassword(pwd,storedHash) : false;
+      const valid = storedHash ? await verifyPassword(pwd,storedHash) : profile?.passwordSet === true;
       setLoading(false);
       if(valid){
+        clearStaffPasswordSetupStorage();
         if(firestoreHash && staffPasswords[staff.id]!==firestoreHash){
           staffPasswords[staff.id]=firestoreHash;
           DB.set("staff_passwords",staffPasswords);
         }
-        onLogin({type:"staff",staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,permissions:staff.permissions});
+        onLogin({type:"staff",staffId:staff.id,email:staff.email,name:staff.name,role:staff.role,permissions:staff.permissions,passwordSet:true,requiresPasswordSetup:false});
       }
       else{toast("Incorrect password","error");}
     }
@@ -3263,51 +3267,85 @@ function KnowYourITStaff({staffProfiles}) {
 }
 
 function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilters, onSubmit, onAction, toast}) {
-  const defaultForm = {
+  const isNormalUser = session?.type === "user";
+  const currentStaffName = session?.type === "staff" ? STAFF_BASE.find(s => s.id === session.staffId)?.name || "" : "";
+  const canAdmin = session?.type === "admin";
+  const today = new Date().toISOString().slice(0, 10);
+
+  const emptyForm = {
     userName: session?.name || "",
     userEmail: session?.email || "",
     mobile: "",
-    item: "Laptop",
+    item: "",
     customItem: "",
-    permissionBy: "",
-    issueDate: new Date().toISOString().slice(0,10),
-    returnDate: new Date(Date.now() + 86400000).toISOString().slice(0,10),
-    requestToStaff: "Vishal Swami",
+    permissionApprovedBy: "",
+    requestedToStaff: "",
+    issueDate: today,
     purpose: "",
   };
-  const [form, setForm] = useState(defaultForm);
+
+  const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
-  const [lastAction, setLastAction] = useState(null);
 
   useEffect(() => {
-    setForm(f => ({ ...f, userName: session?.name || f.userName, userEmail: session?.email || f.userEmail }));
+    setForm(f => ({
+      ...f,
+      userName: session?.name || f.userName,
+      userEmail: session?.email || f.userEmail,
+    }));
   }, [session?.name, session?.email]);
 
+  const itemOptions = ["Laptop","Projector","HDMI Cable","VGA Cable","LAN Cable","Mouse","Keyboard","Charger","Speaker","Microphone","Webcam","Extension Board","Pen Drive","External Hard Disk","Tablet","Other"];
+  const permissionOptions = ["Director's Office","Faculty","Admin. Office","HR","Accounts","PMC","Student Affairs","MRC Office","Examination","FPM","IT","Library","Admissions & Marketing","Training","Placements & Corporate Relations","MDP","Training & Consultancy","IRC & E-Cell","Support Staff", ...STAFF_BASE.map(s => s.name)];
   const staffOptions = STAFF_BASE.map(s => s.name);
-  const currentStaffName = session?.type === "staff" ? STAFF_BASE.find(s => s.id === session.staffId)?.name || "" : "";
-  const visibleIssues = session?.type === "admin"
+  const statusOptions = ["All","Pending Approval","Approved","Issued","Return Requested","Returned","Rejected","Not Issued","Return Rejected","Force Closed"];
+
+  const getStaffForIssue = issue => STAFF_BASE.find(s => s.name === (issue.requestedToStaff || issue.requestToStaff));
+  const issueStaffName = issue => issue.requestedToStaff || issue.requestToStaff || "";
+  const issuePermission = issue => issue.permissionApprovedBy || issue.permissionBy || "";
+  const issueItem = issue => issue.item === "Other" ? issue.customItem || issue.item : issue.item || issue.customItem || "";
+  const canManageIssue = issue => canAdmin || (session?.type === "staff" && issueStaffName(issue) === currentStaffName);
+  const isOverdue = issue => issue.status === "Issued" && issue.issueDate && issue.issueDate < today;
+
+  const visibleIssues = canAdmin
     ? tempIssues
     : session?.type === "staff"
-      ? tempIssues.filter(issue => issue.requestToStaff === currentStaffName)
-      : tempIssues.filter(issue => issue.userEmail === session?.email);
+      ? tempIssues.filter(issue => issueStaffName(issue) === currentStaffName)
+      : tempIssues.filter(issue => (issue.userEmail || "").toLowerCase() === (session?.email || "").toLowerCase());
 
   const filteredIssues = visibleIssues.filter(issue => {
-    if (filters.status !== "All" && issue.status !== filters.status) return false;
-    if (filters.staff !== "All" && issue.requestToStaff !== filters.staff) return false;
-    if (filters.from && new Date(issue.issueDate) < new Date(filters.from)) return false;
-    if (filters.to && new Date(issue.issueDate) > new Date(filters.to)) return false;
-    const q = filters.search.trim().toLowerCase();
-    if (q && ![issue.userName, issue.userEmail, issue.item, issue.customItem, issue.requestToStaff].some(value => (value || "").toLowerCase().includes(q))) return false;
+    const statusFilter = filters.status || "All";
+    const staffFilter = filters.staff || "All";
+    const itemFilter = filters.item || "All";
+    if (statusFilter !== "All" && issue.status !== statusFilter) return false;
+    if (staffFilter !== "All" && issueStaffName(issue) !== staffFilter) return false;
+    if (itemFilter !== "All" && issueItem(issue) !== itemFilter) return false;
+    if (filters.from && new Date(issue.issueDate || issue.createdAt) < new Date(filters.from)) return false;
+    if (filters.to && new Date(issue.issueDate || issue.createdAt) > new Date(filters.to)) return false;
+    const q = (filters.search || "").trim().toLowerCase();
+    if (q && ![issue.requestId, issue.userName, issue.userEmail, issue.mobile, issueItem(issue), issuePermission(issue), issueStaffName(issue), issue.status].some(value => (value || "").toLowerCase().includes(q))) return false;
     return true;
   });
 
-  const statusOptions = ["All", "Pending", "Approved", "Issued", "Returned", "Rejected"];
-  const requestToStaffOptions = STAFF_BASE.map(s => s.name);
+  const adminCards = [
+    ["Total Requests", tempIssues.length, "All", "#818cf8"],
+    ["Pending Approval", tempIssues.filter(i => i.status === "Pending Approval").length, "Pending Approval", "#fbbf24"],
+    ["Approved", tempIssues.filter(i => i.status === "Approved").length, "Approved", "#38bdf8"],
+    ["Issued", tempIssues.filter(i => i.status === "Issued").length, "Issued", "#22c55e"],
+    ["Return Requested", tempIssues.filter(i => i.status === "Return Requested").length, "Return Requested", "#a78bfa"],
+    ["Returned", tempIssues.filter(i => i.status === "Returned").length, "Returned", "#10b981"],
+    ["Rejected", tempIssues.filter(i => ["Rejected","Not Issued","Return Rejected"].includes(i.status)).length, "Rejected", "#f87171"],
+    ["Overdue Items", tempIssues.filter(isOverdue).length, "Issued", "#fb7185"],
+  ];
 
-  const resetForm = () => setForm(defaultForm);
+  const resetForm = () => setForm({ ...emptyForm, userEmail: session?.email || "", userName: session?.name || "" });
 
   const handleSubmit = async () => {
-    if (!form.userName.trim() || !form.userEmail.trim() || !form.mobile.trim() || !form.issueDate || !form.returnDate || !form.permissionBy.trim() || !form.requestToStaff.trim() || !form.purpose.trim()) {
+    if (!isNormalUser) {
+      toast("Only users can create Temp Issue requests", "error");
+      return;
+    }
+    if (!form.userName.trim() || !form.userEmail.trim() || !form.mobile.trim() || !form.item || !form.permissionApprovedBy || !form.requestedToStaff) {
       toast("Please fill all required request fields.", "error");
       return;
     }
@@ -3318,11 +3356,20 @@ function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilt
     setLoading(true);
     try {
       await onSubmit({
-        ...form,
+        userId: session?.email || form.userEmail.trim(),
+        userName: form.userName.trim(),
+        userEmail: form.userEmail.trim(),
+        mobile: form.mobile.trim(),
         item: form.item === "Other" ? form.customItem.trim() : form.item,
         customItem: form.item === "Other" ? form.customItem.trim() : "",
+        permissionApprovedBy: form.permissionApprovedBy,
+        permissionBy: form.permissionApprovedBy,
+        requestedToStaff: form.requestedToStaff,
+        requestToStaff: form.requestedToStaff,
+        issueDate: form.issueDate || today,
+        returnDate: "",
+        purpose: form.purpose.trim(),
       });
-      toast("Temp issue request created successfully.", "success");
       resetForm();
     } catch (error) {
       console.error(error);
@@ -3331,168 +3378,181 @@ function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilt
     }
   };
 
-  const downloadCsv = () => {
-    const rows = [
-      ["requestId","userName","userEmail","mobile","item","customItem","permissionBy","issueDate","returnDate","requestToStaff","requestToStaffEmail","purpose","status","createdAt","updatedAt","approvedBy","approvedAt","issuedBy","issuedAt","returnedBy","returnedAt","rejectedBy","rejectedAt","remarks"],
-      ...filteredIssues.map(issue => [
-        issue.requestId,
-        issue.userName,
-        issue.userEmail,
-        issue.mobile,
-        issue.item,
-        issue.customItem,
-        issue.permissionBy,
-        issue.issueDate,
-        issue.returnDate,
-        issue.requestToStaff,
-        issue.requestToStaffEmail,
-        issue.purpose,
-        issue.status,
-        fmtDate(issue.createdAt),
-        fmtDate(issue.updatedAt),
-        issue.approvedBy,
-        issue.approvedAt ? fmtDate(issue.approvedAt) : "",
-        issue.issuedBy,
-        issue.issuedAt ? fmtDate(issue.issuedAt) : "",
-        issue.returnedBy,
-        issue.returnedAt ? fmtDate(issue.returnedAt) : "",
-        issue.rejectedBy,
-        issue.rejectedAt ? fmtDate(issue.rejectedAt) : "",
-        issue.remarks,
-      ])
-    ];
-    const csv = rows.map(r => r.map(v => `"${String(v||"").replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "temp-issues.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const statusChip = status => {
+    const map = {
+      "Pending Approval": ["rgba(245,158,11,0.16)", "#fbbf24"],
+      Approved: ["rgba(14,165,233,0.16)", "#38bdf8"],
+      Issued: ["rgba(34,197,94,0.16)", "#86efac"],
+      "Return Requested": ["rgba(167,139,250,0.16)", "#c4b5fd"],
+      Returned: ["rgba(16,185,129,0.16)", "#6ee7b7"],
+      Rejected: ["rgba(239,68,68,0.16)", "#fca5a5"],
+      "Not Issued": ["rgba(249,115,22,0.16)", "#fdba74"],
+      "Return Rejected": ["rgba(244,63,94,0.16)", "#fda4af"],
+      "Force Closed": ["rgba(100,116,139,0.2)", "#cbd5e1"],
+    };
+    const [bg, color] = map[status] || ["rgba(99,102,241,0.12)", "#dbeafe"];
+    return <span className="tag" style={{background:bg,color,border:`1px solid ${color}40`}}>{status}</span>;
   };
 
-  const requestTitle = session?.type === "admin"
-    ? "All Temp Issue Requests"
-    : session?.type === "staff"
-      ? "Assigned Temp Issue Requests"
-      : "My Temp Issue Requests";
+  const act = (issue, action, label, style = {}) => (
+    <button
+      onClick={() => {
+        const remark = prompt(`${label} remarks (optional):`, "");
+        onAction(issue.requestId, action, session?.name || currentStaffName || "Admin", remark || "");
+      }}
+      style={{padding:"7px 10px",fontSize:12,borderRadius:10,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.07)",color:"#e2e8f0",...style}}
+    >
+      {label}
+    </button>
+  );
+
+  const requestReturnButton = issue => (
+    <button
+      onClick={() => onAction(issue.requestId, "requestReturn", issue.userName || session?.email || "User", "Return requested by user")}
+      className="glow-btn"
+      style={{padding:"7px 10px",fontSize:12}}
+    >
+      Request Return
+    </button>
+  );
+
+  const exportRows = filteredIssues.map(issue => ({
+    "Request ID": issue.requestId,
+    "User Name": issue.userName,
+    Email: issue.userEmail,
+    Mobile: issue.mobile,
+    Item: issueItem(issue),
+    "Permission Approved By": issuePermission(issue),
+    "Requested To Staff": issueStaffName(issue),
+    "Issue Date": issue.issueDate || "",
+    Status: issue.status,
+    Remarks: issue.remarks || "",
+    "Created At": fmtDate(issue.createdAt),
+    "Approved By": issue.approvedBy || "",
+    "Approved At": issue.approvedAt ? fmtDate(issue.approvedAt) : "",
+    "Issued By": issue.issuedBy || "",
+    "Issued At": issue.issuedAt ? fmtDate(issue.issuedAt) : "",
+    "Return Requested At": issue.returnRequestedAt ? fmtDate(issue.returnRequestedAt) : "",
+    "Returned At": issue.returnedAt ? fmtDate(issue.returnedAt) : "",
+  }));
+
+  const downloadExcelReport = () => downloadExcel(exportRows, `temp_issues_${new Date().toISOString().slice(0,10)}.xlsx`);
+  const downloadPdfReport = () => {
+    const doc = new jsPDF({orientation:"landscape"});
+    doc.setFillColor(15,23,42); doc.rect(0,0,297,28,"F");
+    doc.setTextColor(255); doc.setFontSize(15); doc.text("Jaipuria Institute of Management",14,12);
+    doc.setFontSize(12); doc.text("Temp Issue Report",14,21);
+    doc.setFontSize(8); doc.text(`Generated: ${fmtDate(Date.now())}`,235,12);
+    autoTable(doc,{startY:34,head:[Object.keys(exportRows[0]||{"Request ID":"","User Name":"","Email":"","Item":"","Status":""})],body:exportRows.map(r=>Object.values(r)),styles:{fontSize:7,cellPadding:2,overflow:"linebreak"},headStyles:{fillColor:[79,70,229],textColor:255},alternateRowStyles:{fillColor:[248,250,252]},margin:{left:8,right:8}});
+    doc.save(`temp_issues_${new Date().toISOString().slice(0,10)}.pdf`);
+  };
+
+  const requestTitle = canAdmin ? "All Temp Issue Requests" : session?.type === "staff" ? "Assigned Temp Issue Requests" : "My Temp Issue Requests";
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:22}}>
       <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:14,alignItems:"flex-end"}}>
         <div>
           <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:4}}>Temp Issue Request</h2>
-          <div style={{fontSize:14,color:"rgba(226,232,240,0.5)"}}>Request temporary IT items and track approvals in one place.</div>
+          <div style={{fontSize:14,color:"rgba(226,232,240,0.5)"}}>{isNormalUser ? "Request temporary IT items and track approval, issue, and return status." : "Manage approval, issue, return, and reporting for temporary IT items."}</div>
         </div>
-        <button className="glow-btn" onClick={downloadCsv} style={{whiteSpace:"nowrap"}}>Export CSV</button>
+        {(canAdmin || session?.type === "staff") && <div style={{display:"flex",gap:10,flexWrap:"wrap"}}><button className="glow-btn" onClick={downloadExcelReport}>Export Excel</button><button className="glow-btn" onClick={downloadPdfReport}>Export PDF</button></div>}
       </div>
-      <div className="glass" style={{padding:24,display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
-        <div style={{display:"grid",gap:14}}>
-          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>User Name</label>
-          <input value={form.userName} onChange={e=>setForm({...form,userName:e.target.value})} placeholder="Enter your name" />
-          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>User Email ID</label>
-          <input value={form.userEmail} onChange={e=>setForm({...form,userEmail:e.target.value})} placeholder="user@jaipuria.ac.in" />
-          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Mobile Number</label>
-          <input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})} placeholder="Mobile" />
-          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Item</label>
-          <select value={form.item} onChange={e=>setForm({...form,item:e.target.value})}>
-            {["Laptop","Projector","HDMI Cable","VGA Cable","LAN Cable","Mouse","Keyboard","Charger","Speaker","Microphone","Webcam","Extension Board","Pen Drive","External Hard Disk","Tablet","Other"].map(item => <option key={item} value={item}>{item}</option>)}
-          </select>
-          {form.item === "Other" && (
-            <>
-              <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Other Item Name</label>
-              <input value={form.customItem} onChange={e=>setForm({...form,customItem:e.target.value})} placeholder="Specify item" />
-            </>
-          )}
+
+      {canAdmin && (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:14}}>
+          {adminCards.map(([label,value,status,color]) => <StatCard key={label} label={label} value={value} icon="📦" color={color} onClick={() => setFilters({...filters,status})} />)}
         </div>
-        <div style={{display:"grid",gap:14}}>
-          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Permission By / Approved By Faculty or Staff</label>
-          <input list="permission-names" value={form.permissionBy} onChange={e=>setForm({...form,permissionBy:e.target.value})} placeholder="Permission by / approved by" />
-          <datalist id="permission-names">{staffOptions.map(name => <option key={name} value={name} />)}</datalist>
-          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Issue Date</label>
-          <input type="date" value={form.issueDate} onChange={e=>setForm({...form,issueDate:e.target.value})} />
-          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Return Date</label>
-          <input type="date" value={form.returnDate} onChange={e=>setForm({...form,returnDate:e.target.value})} />
-          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Request To IT Staff</label>
-          <select value={form.requestToStaff} onChange={e=>setForm({...form,requestToStaff:e.target.value})}>
-            {requestToStaffOptions.map(name => <option key={name} value={name}>{name}</option>)}
-          </select>
-          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Reason / Purpose</label>
-          <textarea rows={3} value={form.purpose} onChange={e=>setForm({...form,purpose:e.target.value})} placeholder="Explain why you need the item" style={{resize:"vertical"}} />
-          <button className="glow-btn" onClick={handleSubmit} disabled={loading}>{loading ? "Submitting..." : "Submit Request"}</button>
+      )}
+
+      {isNormalUser && (
+        <div className="glass" style={{padding:24,display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
+          <div style={{display:"grid",gap:14}}>
+            <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Name *</label>
+            <input value={form.userName} onChange={e=>setForm({...form,userName:e.target.value})} placeholder="Enter your name" />
+            <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Email ID *</label>
+            <input value={form.userEmail} onChange={e=>setForm({...form,userEmail:e.target.value})} placeholder="user@jaipuria.ac.in" />
+            <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Mobile Number *</label>
+            <input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})} placeholder="Mobile number" />
+            <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Item *</label>
+            <select value={form.item} onChange={e=>setForm({...form,item:e.target.value,customItem:e.target.value==="Other"?form.customItem:""})}>
+              <option value="">Select Option</option>
+              {itemOptions.map(item => <option key={item} value={item}>{item}</option>)}
+            </select>
+            {form.item === "Other" && <input value={form.customItem} onChange={e=>setForm({...form,customItem:e.target.value})} placeholder="Specify item" />}
+          </div>
+          <div style={{display:"grid",gap:14}}>
+            <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Permission Approved By *</label>
+            <select value={form.permissionApprovedBy} onChange={e=>setForm({...form,permissionApprovedBy:e.target.value})}>
+              <option value="">Select Option</option>
+              {permissionOptions.map(name => <option key={name} value={name}>{name}</option>)}
+            </select>
+            <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Issue Date</label>
+            <input type="date" value={form.issueDate} onChange={e=>setForm({...form,issueDate:e.target.value})} />
+            <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Request To IT Staff *</label>
+            <select value={form.requestedToStaff} onChange={e=>setForm({...form,requestedToStaff:e.target.value})}>
+              <option value="">Select Option</option>
+              {staffOptions.map(name => <option key={name} value={name}>{name}</option>)}
+            </select>
+            <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Reason / Purpose</label>
+            <textarea rows={4} value={form.purpose} onChange={e=>setForm({...form,purpose:e.target.value})} placeholder="Optional context for IT staff" style={{resize:"vertical"}} />
+            <button className="glow-btn" onClick={handleSubmit} disabled={loading}>{loading ? "Submitting..." : "Submit Request"}</button>
+          </div>
         </div>
-      </div>
+      )}
+
       <div className="glass" style={{padding:24}}>
-        <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:18,alignItems:"center"}}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:18,alignItems:"center",justifyContent:"space-between"}}>
           <h3 style={{fontFamily:"Syne",fontSize:18,fontWeight:700,color:"#e2e8f0",margin:0}}>{requestTitle}</h3>
           <div style={{display:"flex",flexWrap:"wrap",gap:10,alignItems:"center"}}>
-            <select value={filters.status} onChange={e=>setFilters({...filters,status:e.target.value})} style={{minWidth:160}}>
-              {statusOptions.map(status => <option key={status} value={status}>{status}</option>)}
-            </select>
-            <select value={filters.staff} onChange={e=>setFilters({...filters,staff:e.target.value})} style={{minWidth:160}}>
-              <option value="All">All Staff</option>
-              {requestToStaffOptions.map(name => <option key={name} value={name}>{name}</option>)}
-            </select>
-            <input type="date" value={filters.from} onChange={e=>setFilters({...filters,from:e.target.value})} placeholder="From" />
-            <input type="date" value={filters.to} onChange={e=>setFilters({...filters,to:e.target.value})} placeholder="To" />
-            <input type="search" value={filters.search} onChange={e=>setFilters({...filters,search:e.target.value})} placeholder="Search by user/item/email" style={{minWidth:220}} />
-            <button onClick={() => setFilters({ status:"All", staff:"All", search:"", from:"", to:"" })} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",color:"#e2e8f0",padding:"10px 16px",borderRadius:10}}>Clear Filter</button>
+            <select value={filters.status || "All"} onChange={e=>setFilters({...filters,status:e.target.value})} style={{minWidth:160}}>{statusOptions.map(status => <option key={status} value={status}>{status}</option>)}</select>
+            <select value={filters.staff || "All"} onChange={e=>setFilters({...filters,staff:e.target.value})} style={{minWidth:160}}><option value="All">All Staff</option>{staffOptions.map(name => <option key={name} value={name}>{name}</option>)}</select>
+            <select value={filters.item || "All"} onChange={e=>setFilters({...filters,item:e.target.value})} style={{minWidth:150}}><option value="All">All Items</option>{itemOptions.filter(i=>i!=="Other").map(item => <option key={item} value={item}>{item}</option>)}</select>
+            <input type="date" value={filters.from || ""} onChange={e=>setFilters({...filters,from:e.target.value})} />
+            <input type="date" value={filters.to || ""} onChange={e=>setFilters({...filters,to:e.target.value})} />
+            <input type="search" value={filters.search || ""} onChange={e=>setFilters({...filters,search:e.target.value})} placeholder="Search user, item, ticket" style={{minWidth:220}} />
+            <button onClick={() => setFilters({ status:"All", staff:"All", item:"All", search:"", from:"", to:"" })} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",color:"#e2e8f0",padding:"10px 16px",borderRadius:10}}>Clear</button>
           </div>
         </div>
         <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",minWidth:1120}}>
-            <thead>
-              <tr style={{textAlign:"left",borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
-                {["Request ID","User Name","Email","Mobile","Item","Permission By","Issue Date","Return Date","Requested To","Status","Created At","Actions"].map(label => <th key={label} style={{padding:"12px 10px",fontSize:12,color:"rgba(226,232,240,0.65)",fontWeight:700}}>{label}</th>)}
-              </tr>
-            </thead>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:1280}}>
+            <thead><tr style={{textAlign:"left",borderBottom:"1px solid rgba(255,255,255,0.1)"}}>{["Request ID","User","Email","Mobile","Item","Approved By","Issue Date","Requested To","Status","Timeline / Remarks","Actions"].map(label => <th key={label} style={{padding:"12px 10px",fontSize:12,color:"rgba(226,232,240,0.65)",fontWeight:700}}>{label}</th>)}</tr></thead>
             <tbody>
-              {tempIssuesLoaded && filteredIssues.length === 0 && (
-                <tr><td colSpan={12} style={{padding:24,textAlign:"center",color:"rgba(226,232,240,0.4)"}}>No temp issue requests found.</td></tr>
-              )}
-              {filteredIssues.map(issue => (
-                <tr key={issue.requestId} style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                  <td style={{padding:"10px"}}>{issue.requestId}</td>
-                  <td style={{padding:"10px"}}>{issue.userName}</td>
-                  <td style={{padding:"10px"}}>{issue.userEmail}</td>
-                  <td style={{padding:"10px"}}>{issue.mobile}</td>
-                  <td style={{padding:"10px"}}>{issue.item}</td>
-                  <td style={{padding:"10px"}}>{issue.permissionBy}</td>
-                  <td style={{padding:"10px"}}>{issue.issueDate}</td>
-                  <td style={{padding:"10px"}}>{issue.returnDate}</td>
-                  <td style={{padding:"10px"}}>{issue.requestToStaff}</td>
-                  <td style={{padding:"10px"}}><span className="tag" style={{background:"rgba(99,102,241,0.12)",color:"#dbeafe"}}>{issue.status}</span></td>
-                  <td style={{padding:"10px"}}>{fmtDate(issue.createdAt)}</td>
-                  <td style={{padding:"10px",display:"flex",flexWrap:"wrap",gap:6}}>
-                    {(session?.type === "admin" || (session?.type === "staff" && issue.requestToStaff === currentStaffName)) && issue.status === "Pending" && (
-                      <button onClick={() => {
-                        const remark = prompt("Remarks for approval/rejection (optional):", "");
-                        onAction(issue.requestId, "approve", session?.name || "Admin", remark || "");
-                      }} className="glow-btn" style={{padding:"6px 10px",fontSize:12}}>Approve</button>
-                    )}
-                    {(session?.type === "admin" || (session?.type === "staff" && issue.requestToStaff === currentStaffName)) && issue.status === "Pending" && (
-                      <button onClick={() => {
-                        const remark = prompt("Remarks for rejection (optional):", "");
-                        onAction(issue.requestId, "reject", session?.name || "Admin", remark || "");
-                      }} style={{padding:"6px 10px",fontSize:12,background:"rgba(239,68,68,0.16)",border:"1px solid rgba(239,68,68,0.3)",color:"#fee2e2",borderRadius:10}}>Reject</button>
-                    )}
-                    {(session?.type === "admin" || (session?.type === "staff" && issue.requestToStaff === currentStaffName)) && issue.status === "Approved" && (
-                      <button onClick={() => {
-                        const remark = prompt("Remarks for issue (optional):", "");
-                        onAction(issue.requestId, "issue", session?.name || "Admin", remark || "");
-                      }} style={{padding:"6px 10px",fontSize:12,background:"rgba(16,185,129,0.16)",border:"1px solid rgba(16,185,129,0.35)",color:"#d1fae5",borderRadius:10}}>Mark Issued</button>
-                    )}
-                    {(session?.type === "admin" || (session?.type === "staff" && issue.requestToStaff === currentStaffName)) && issue.status === "Issued" && (
-                      <button onClick={() => {
-                        const remark = prompt("Remarks for return (optional):", "");
-                        onAction(issue.requestId, "return", session?.name || "Admin", remark || "");
-                      }} style={{padding:"6px 10px",fontSize:12,background:"rgba(14,165,233,0.16)",border:"1px solid rgba(14,165,233,0.35)",color:"#dbeafe",borderRadius:10}}>Mark Returned</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {tempIssuesLoaded && filteredIssues.length === 0 && <tr><td colSpan={11} style={{padding:24,textAlign:"center",color:"rgba(226,232,240,0.4)"}}>No temp issue requests found.</td></tr>}
+              {filteredIssues.map(issue => {
+                const manageable = canManageIssue(issue);
+                const ownedByUser = isNormalUser && (issue.userEmail || "").toLowerCase() === (session?.email || "").toLowerCase();
+                const history = issue.requestHistory || [];
+                return (
+                  <tr key={issue.requestId} style={{borderBottom:"1px solid rgba(255,255,255,0.06)",verticalAlign:"top"}}>
+                    <td style={{padding:"10px",fontWeight:700,color:"#c4b5fd"}}>{issue.requestId}</td>
+                    <td style={{padding:"10px"}}>{issue.userName}</td>
+                    <td style={{padding:"10px"}}>{issue.userEmail}</td>
+                    <td style={{padding:"10px"}}>{issue.mobile}</td>
+                    <td style={{padding:"10px"}}>{issueItem(issue)}</td>
+                    <td style={{padding:"10px"}}>{issuePermission(issue)}</td>
+                    <td style={{padding:"10px"}}>{issue.issueDate}</td>
+                    <td style={{padding:"10px"}}>{issueStaffName(issue)}<div style={{fontSize:11,color:"rgba(226,232,240,0.4)"}}>{getStaffForIssue(issue)?.email || issue.requestedToStaffEmail}</div></td>
+                    <td style={{padding:"10px"}}>{statusChip(issue.status)}{isOverdue(issue)&&<div style={{marginTop:6,fontSize:11,color:"#fb7185",fontWeight:800}}>Overdue / not returned</div>}</td>
+                    <td style={{padding:"10px",minWidth:240}}>
+                      <div style={{fontSize:12,color:"rgba(226,232,240,0.75)",lineHeight:1.5}}>{issue.remarks || "No remarks"}</div>
+                      <div style={{fontSize:11,color:"rgba(226,232,240,0.38)",marginTop:5}}>Created: {fmtDate(issue.createdAt)}{issue.approvedAt ? ` · Approved: ${fmtDate(issue.approvedAt)}` : ""}{issue.issuedAt ? ` · Issued: ${fmtDate(issue.issuedAt)}` : ""}{issue.returnRequestedAt ? ` · Return requested: ${fmtDate(issue.returnRequestedAt)}` : ""}{issue.returnedAt ? ` · Returned: ${fmtDate(issue.returnedAt)}` : ""}</div>
+                      {history.length>0&&<div style={{marginTop:6,fontSize:11,color:"rgba(226,232,240,0.42)"}}>Latest: {history[history.length-1]?.action} by {history[history.length-1]?.by}</div>}
+                    </td>
+                    <td style={{padding:"10px",display:"flex",flexWrap:"wrap",gap:6,minWidth:230}}>
+                      {manageable && issue.status === "Pending Approval" && act(issue,"approve","Approve",{background:"rgba(14,165,233,0.16)",color:"#dbeafe"})}
+                      {manageable && issue.status === "Pending Approval" && act(issue,"reject","Reject",{background:"rgba(239,68,68,0.16)",color:"#fee2e2"})}
+                      {manageable && issue.status === "Approved" && act(issue,"issue","Mark Issued",{background:"rgba(16,185,129,0.16)",color:"#d1fae5"})}
+                      {manageable && issue.status === "Approved" && act(issue,"notIssued","Mark Not Issued",{background:"rgba(249,115,22,0.16)",color:"#ffedd5"})}
+                      {ownedByUser && issue.status === "Issued" && requestReturnButton(issue)}
+                      {manageable && issue.status === "Return Requested" && act(issue,"acceptReturn","Accept Return",{background:"rgba(16,185,129,0.16)",color:"#d1fae5"})}
+                      {manageable && issue.status === "Return Requested" && act(issue,"rejectReturn","Reject Return",{background:"rgba(244,63,94,0.16)",color:"#ffe4e6"})}
+                      {canAdmin && !["Returned","Rejected","Force Closed"].includes(issue.status) && act(issue,"forceClose","Force Close",{background:"rgba(100,116,139,0.18)",color:"#e2e8f0"})}
+                      {canAdmin && act(issue,"editStatus","Edit Status",{background:"rgba(99,102,241,0.16)",color:"#ddd6fe"})}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -3500,7 +3560,6 @@ function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilt
     </div>
   );
 }
-
 function StaffChatModal({staff,profiles,statuses}) {
   const [selected,setSelected]=useState(STAFF_BASE.find(s=>s.id!==staff.id)?.id || STAFF_BASE[0].id);
   const [text,setText]=useState('');
@@ -3642,7 +3701,7 @@ export default function App() {
   const [feedbackLoaded, setFeedbackLoaded] = useState(false);
   const [tempIssues, setTempIssues] = useState([]);
   const [tempIssuesLoaded, setTempIssuesLoaded] = useState(false);
-  const [tempIssueFilters, setTempIssueFilters] = useState({ status:"All", staff:"All", search:"", from:"", to:"" });
+  const [tempIssueFilters, setTempIssueFilters] = useState({ status:"All", staff:"All", item:"All", search:"", from:"", to:"" });
   const [dashboardFilter, setDashboardFilter] = useState({ type:"Total", label:"Total" });
   const [feedbackTicketId, setFeedbackTicketId] = useState("");
   const [dismissedFeedbackTickets, setDismissedFeedbackTickets] = useState([]);
@@ -3878,19 +3937,47 @@ const handleNewTicket = async (form) => {
   }, [tempIssues]);
 
   const handleSaveTempIssue = async (entry) => {
-    const targetStaff = STAFF_BASE.find(s => s.name === entry.requestToStaff) || STAFF_BASE[0];
+    if (session?.type !== "user") {
+      toast("Only users can create Temp Issue requests", "error");
+      throw new Error("Only users can create Temp Issue requests");
+    }
+    const targetStaff = STAFF_BASE.find(s => s.name === (entry.requestedToStaff || entry.requestToStaff));
+    if (!targetStaff) {
+      toast("Please select IT staff", "error");
+      throw new Error("Missing requested IT staff");
+    }
+    const now = Date.now();
     const request = normalizeTempIssue({
       ...entry,
+      requestId: entry.requestId || `TI-${now.toString(36).toUpperCase()}-${Math.random().toString(36).slice(2,5).toUpperCase()}`,
+      userId: session?.email || entry.userEmail || "",
+      userName: entry.userName || session?.name || "",
+      userEmail: entry.userEmail || session?.email || "",
+      requestedToStaff: targetStaff.name,
+      requestToStaff: targetStaff.name,
+      requestedToStaffEmail: targetStaff.email,
       requestToStaffEmail: targetStaff.email,
-      status: "Pending",
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      requestId: entry.requestId || `TI-${Date.now().toString(36).toUpperCase()}`,
+      permissionApprovedBy: entry.permissionApprovedBy || entry.permissionBy || "",
+      permissionBy: entry.permissionApprovedBy || entry.permissionBy || "",
+      status: "Pending Approval",
+      returnDate: "",
+      createdAt: now,
+      updatedAt: now,
       requestedBy: session?.email || entry.userEmail || "",
+      requestHistory: [
+        { action: "Created", by: entry.userName || session?.email || "User", at: now, remark: "Temp issue request submitted" },
+        { action: "New Temp Issue Request", by: "System", at: now, remark: `Assigned to ${targetStaff.name}` },
+      ],
+      notifications: [
+        { type: "New request", to: targetStaff.email, message: "New Temp Issue Request", at: now, read: false },
+        { type: "New request", to: "admin@jaipuria.ac.in", message: "New Temp Issue Request", at: now, read: false },
+      ],
     });
     try {
       await saveTempIssue(request);
       setTempIssues(prev => [request, ...prev.filter(it => it.requestId !== request.requestId)]);
+      simulateEmail(targetStaff.email, "New Temp Issue Request", `${request.userName} requested ${request.item}. Permission approved by: ${request.permissionApprovedBy}.`);
+      simulateEmail("admin@jaipuria.ac.in", "New Temp Issue Request", `${request.userName} requested ${request.item} from ${targetStaff.name}.`);
       await reloadTempIssues();
       toast("Temp Issue request submitted", "success");
       return request;
@@ -3904,27 +3991,95 @@ const handleNewTicket = async (form) => {
   const handleTempIssueAction = async (requestId, action, actorName, remarks = "") => {
     const existing = tempIssues.find(t => t.requestId === requestId);
     if (!existing) return;
-    const updated = { ...existing, updatedAt: Date.now(), remarks: remarks || existing.remarks || "" };
+    const now = Date.now();
+    const actor = actorName || (session?.type === "admin" ? "Admin" : session?.name || session?.email || "User");
+    const updated = {
+      ...existing,
+      updatedAt: now,
+      remarks: remarks || existing.remarks || "",
+      requestHistory: Array.isArray(existing.requestHistory) ? [...existing.requestHistory] : [],
+      notifications: Array.isArray(existing.notifications) ? [...existing.notifications] : [],
+    };
+    const pushHistory = (label, message = "") => {
+      updated.requestHistory.push({ action: label, by: actor, at: now, remark: remarks || message || "" });
+    };
+    const pushNotify = (type, message, extraTo = []) => {
+      const staffEmail = updated.requestedToStaffEmail || updated.requestToStaffEmail || STAFF_BASE.find(s => s.name === (updated.requestedToStaff || updated.requestToStaff))?.email || "";
+      const targets = [updated.userEmail, staffEmail, "admin@jaipuria.ac.in", ...extraTo].filter(Boolean);
+      targets.forEach(to => updated.notifications.push({ type, to, message, at: now, read: false }));
+      if (staffEmail) simulateEmail(staffEmail, `Temp Issue ${type}`, message);
+      simulateEmail("admin@jaipuria.ac.in", `Temp Issue ${type}`, message);
+    };
+
     if (action === "approve") {
+      if (existing.status !== "Pending Approval") return;
       updated.status = "Approved";
-      updated.approvedBy = actorName;
-      updated.approvedAt = Date.now();
-    }
-    if (action === "reject") {
+      updated.approvedBy = actor;
+      updated.approvedAt = now;
+      pushHistory("Approved");
+      pushNotify("Approved", `${updated.requestId} approved by ${actor}`);
+    } else if (action === "reject") {
+      if (existing.status !== "Pending Approval") return;
       updated.status = "Rejected";
-      updated.rejectedBy = actorName;
-      updated.rejectedAt = Date.now();
-    }
-    if (action === "issue") {
+      updated.rejectedBy = actor;
+      updated.rejectedAt = now;
+      pushHistory("Rejected");
+      pushNotify("Rejected", `${updated.requestId} rejected by ${actor}`);
+    } else if (action === "issue") {
+      if (existing.status !== "Approved") return;
       updated.status = "Issued";
-      updated.issuedBy = actorName;
-      updated.issuedAt = Date.now();
-    }
-    if (action === "return") {
+      updated.issuedBy = actor;
+      updated.issuedAt = now;
+      pushHistory("Issued");
+      pushNotify("Issued", `${updated.requestId} item issued by ${actor}`);
+    } else if (action === "notIssued") {
+      if (existing.status !== "Approved") return;
+      updated.status = "Not Issued";
+      updated.notIssuedBy = actor;
+      updated.notIssuedAt = now;
+      pushHistory("Not Issued");
+      pushNotify("Not Issued", `${updated.requestId} marked not issued by ${actor}`);
+    } else if (action === "requestReturn") {
+      if (existing.status !== "Issued") return;
+      updated.status = "Return Requested";
+      updated.returnRequestedAt = now;
+      pushHistory("Return Requested", "User requested return");
+      pushNotify("Return requested", `${updated.requestId} return requested by ${actor}`);
+    } else if (action === "acceptReturn") {
+      if (existing.status !== "Return Requested") return;
       updated.status = "Returned";
-      updated.returnedBy = actorName;
-      updated.returnedAt = Date.now();
+      updated.returnAcceptedBy = actor;
+      updated.returnAcceptedAt = now;
+      updated.returnedBy = actor;
+      updated.returnedAt = now;
+      pushHistory("Return Accepted");
+      pushNotify("Return accepted", `${updated.requestId} return accepted by ${actor}`);
+    } else if (action === "rejectReturn") {
+      if (existing.status !== "Return Requested") return;
+      updated.status = "Return Rejected";
+      updated.returnRejectedBy = actor;
+      updated.returnRejectedAt = now;
+      pushHistory("Return Rejected");
+      pushNotify("Return rejected", `${updated.requestId} return rejected by ${actor}`);
+    } else if (action === "forceClose") {
+      updated.status = "Force Closed";
+      updated.forceClosedBy = actor;
+      updated.forceClosedAt = now;
+      pushHistory("Force Closed");
+      pushNotify("Force closed", `${updated.requestId} force closed by ${actor}`);
+    } else if (action === "editStatus") {
+      if (session?.type !== "admin") return;
+      const nextStatus = prompt("Enter new status", existing.status);
+      const allowed = ["Pending Approval","Approved","Issued","Return Requested","Returned","Rejected","Not Issued","Return Rejected","Force Closed"];
+      if (!nextStatus || !allowed.includes(nextStatus)) {
+        toast("Invalid status", "error");
+        return;
+      }
+      updated.status = nextStatus;
+      pushHistory("Status Edited", `Status changed to ${nextStatus}`);
+      pushNotify("Status updated", `${updated.requestId} status changed to ${nextStatus} by ${actor}`);
     }
+
     try {
       await saveTempIssue(updated);
       setTempIssues(prev => prev.map(t => t.requestId === requestId ? updated : t));
@@ -3936,7 +4091,6 @@ const handleNewTicket = async (form) => {
       throw error;
     }
   };
-
   const handleFeedbackSubmit = async (entry) => {
     const feedbackEntry = normalizeFeedback({
       id: entry.id || genFeedbackId(),
@@ -4077,8 +4231,10 @@ const handleNewTicket = async (form) => {
       permissions: staff.permissions,
     };
 
-    setSession(staffSession);
-    if (hasStorage()) localStorage.setItem("helpdesk_session", JSON.stringify(staffSession));
+    const completedSession = {...staffSession, passwordSet: true, requiresPasswordSetup: false};
+    clearStaffPasswordSetupStorage();
+    setSession(completedSession);
+    if (hasStorage()) localStorage.setItem("helpdesk_session", JSON.stringify(completedSession));
     setPage("staff-dash");
   };
 
@@ -4398,6 +4554,14 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
+
+
+
+
+
+
+
+
 
 
 
