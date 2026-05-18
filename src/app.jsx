@@ -3286,6 +3286,7 @@ function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilt
 
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
+  const [returnDrafts, setReturnDrafts] = useState({});
 
   useEffect(() => {
     setForm(f => ({
@@ -3298,19 +3299,24 @@ function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilt
   const itemOptions = ["Laptop","Projector","HDMI Cable","VGA Cable","LAN Cable","Mouse","Keyboard","Charger","Speaker","Microphone","Webcam","Extension Board","Pen Drive","External Hard Disk","Tablet","Other"];
   const permissionOptions = ["Director's Office","Faculty","Admin. Office","HR","Accounts","PMC","Student Affairs","MRC Office","Examination","FPM","IT","Library","Admissions & Marketing","Training","Placements & Corporate Relations","MDP","Training & Consultancy","IRC & E-Cell","Support Staff", ...STAFF_BASE.map(s => s.name)];
   const staffOptions = STAFF_BASE.map(s => s.name);
+  const returnStaffOptions = [
+    { name: "Vishal Swami", email: STAFF_BASE.find(s => s.name === "Vishal Swami")?.email || "vishal.swami@jaipuria.ac.in" },
+    { name: "Raj Prakash Singh", email: STAFF_BASE.find(s => s.id === 1)?.email || "raj.singh@jaipuria.ac.in" },
+    { name: "Rohit Jangid", email: STAFF_BASE.find(s => s.name === "Rohit Jangid")?.email || "rohit.jangid@jaipuria.ac.in" },
+  ];
   const statusOptions = ["All","Pending Approval","Approved","Issued","Return Requested","Returned","Rejected","Not Issued","Return Rejected","Force Closed"];
 
   const getStaffForIssue = issue => STAFF_BASE.find(s => s.name === (issue.requestedToStaff || issue.requestToStaff));
   const issueStaffName = issue => issue.requestedToStaff || issue.requestToStaff || "";
   const issuePermission = issue => issue.permissionApprovedBy || issue.permissionBy || "";
   const issueItem = issue => issue.item === "Other" ? issue.customItem || issue.item : issue.item || issue.customItem || "";
-  const canManageIssue = issue => canAdmin || (session?.type === "staff" && issueStaffName(issue) === currentStaffName);
+  const canManageIssue = issue => canAdmin || (session?.type === "staff" && (issueStaffName(issue) === currentStaffName || issue.returnToStaff === currentStaffName));
   const isOverdue = issue => issue.status === "Issued" && issue.issueDate && issue.issueDate < today;
 
   const visibleIssues = canAdmin
     ? tempIssues
     : session?.type === "staff"
-      ? tempIssues.filter(issue => issueStaffName(issue) === currentStaffName)
+      ? tempIssues.filter(issue => issueStaffName(issue) === currentStaffName || issue.returnToStaff === currentStaffName)
       : tempIssues.filter(issue => (issue.userEmail || "").toLowerCase() === (session?.email || "").toLowerCase());
 
   const filteredIssues = visibleIssues.filter(issue => {
@@ -3406,16 +3412,41 @@ function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilt
     </button>
   );
 
-  const requestReturnButton = issue => (
-    <button
-      onClick={() => onAction(issue.requestId, "requestReturn", issue.userName || session?.email || "User", "Return requested by user")}
-      className="glow-btn"
-      style={{padding:"7px 10px",fontSize:12}}
-    >
-      Request Return
-    </button>
-  );
-
+  const requestReturnButton = issue => {
+    const selectedName = returnDrafts[issue.requestId] || "";
+    const selectedStaff = returnStaffOptions.find(s => s.name === selectedName);
+    return (
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <select
+          value={selectedName}
+          onChange={e=>setReturnDrafts(d=>({...d,[issue.requestId]:e.target.value}))}
+          style={{minWidth:170,padding:"7px 10px",fontSize:12}}
+        >
+          <option value="">Select Return Staff</option>
+          {returnStaffOptions.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+        </select>
+        <button
+          onClick={() => {
+            if (!selectedStaff) {
+              toast("Please select return IT staff", "error");
+              return;
+            }
+            onAction(
+              issue.requestId,
+              "requestReturn",
+              session?.name || issue.userName || session?.email || "User",
+              "Return requested by user",
+              { returnToStaff: selectedStaff.name, returnToStaffEmail: selectedStaff.email }
+            );
+          }}
+          className="glow-btn"
+          style={{padding:"7px 10px",fontSize:12}}
+        >
+          Request Return
+        </button>
+      </div>
+    );
+  };
   const exportRows = filteredIssues.map(issue => ({
     "Request ID": issue.requestId,
     "User Name": issue.userName,
@@ -3432,8 +3463,11 @@ function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilt
     "Approved At": issue.approvedAt ? fmtDate(issue.approvedAt) : "",
     "Issued By": issue.issuedBy || "",
     "Issued At": issue.issuedAt ? fmtDate(issue.issuedAt) : "",
+    "Return To Staff": issue.returnToStaff || "",
     "Return Requested At": issue.returnRequestedAt ? fmtDate(issue.returnRequestedAt) : "",
+    "Returned By": issue.returnedBy || "",
     "Returned At": issue.returnedAt ? fmtDate(issue.returnedAt) : "",
+    "Return Remarks": issue.returnRemarks || "",
   }));
 
   const downloadExcelReport = () => downloadExcel(exportRows, `temp_issues_${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -3524,32 +3558,33 @@ function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilt
                 const ownedByUser = isNormalUser && (issue.userEmail || "").toLowerCase() === (session?.email || "").toLowerCase();
                 const history = issue.requestHistory || [];
                 return (
-                  <tr key={issue.requestId} style={{borderBottom:"1px solid rgba(255,255,255,0.06)",verticalAlign:"top"}}>
-                    <td style={{padding:"10px",fontWeight:700,color:"#c4b5fd"}}>{issue.requestId}</td>
-                    <td style={{padding:"10px"}}>{issue.userName}</td>
-                    <td style={{padding:"10px"}}>{issue.userEmail}</td>
-                    <td style={{padding:"10px"}}>{issue.mobile}</td>
-                    <td style={{padding:"10px"}}>{issueItem(issue)}</td>
-                    <td style={{padding:"10px"}}>{issuePermission(issue)}</td>
-                    <td style={{padding:"10px"}}>{issue.issueDate}</td>
-                    <td style={{padding:"10px"}}>{issueStaffName(issue)}<div style={{fontSize:11,color:"rgba(226,232,240,0.4)"}}>{getStaffForIssue(issue)?.email || issue.requestedToStaffEmail}</div></td>
-                    <td style={{padding:"10px"}}>{statusChip(issue.status)}{isOverdue(issue)&&<div style={{marginTop:6,fontSize:11,color:"#fb7185",fontWeight:800}}>Overdue / not returned</div>}</td>
-                    <td style={{padding:"10px",minWidth:240}}>
+                  <tr key={issue.requestId} style={{borderBottom:"1px solid rgba(255,255,255,0.06)",verticalAlign:"middle"}}>
+                    <td style={{padding:"12px 10px",fontWeight:700,color:"#c4b5fd",verticalAlign:"middle"}}>{issue.requestId}</td>
+                    <td style={{padding:"12px 10px",verticalAlign:"middle"}}>{issue.userName}</td>
+                    <td style={{padding:"12px 10px",verticalAlign:"middle"}}>{issue.userEmail}</td>
+                    <td style={{padding:"12px 10px",verticalAlign:"middle"}}>{issue.mobile}</td>
+                    <td style={{padding:"12px 10px",verticalAlign:"middle"}}>{issueItem(issue)}</td>
+                    <td style={{padding:"12px 10px",verticalAlign:"middle"}}>{issuePermission(issue)}</td>
+                    <td style={{padding:"12px 10px",verticalAlign:"middle"}}>{issue.issueDate}</td>
+                    <td style={{padding:"12px 10px",verticalAlign:"middle"}}>{issueStaffName(issue)}<div style={{fontSize:11,color:"rgba(226,232,240,0.4)"}}>{getStaffForIssue(issue)?.email || issue.requestedToStaffEmail}</div></td>
+                    <td style={{padding:"12px 10px",verticalAlign:"middle",textAlign:"center"}}>{statusChip(issue.status)}{isOverdue(issue)&&<div style={{marginTop:6,fontSize:11,color:"#fb7185",fontWeight:800}}>Overdue / not returned</div>}</td>
+                    <td style={{padding:"12px 10px",minWidth:240,verticalAlign:"middle"}}>
                       <div style={{fontSize:12,color:"rgba(226,232,240,0.75)",lineHeight:1.5}}>{issue.remarks || "No remarks"}</div>
                       <div style={{fontSize:11,color:"rgba(226,232,240,0.38)",marginTop:5}}>Created: {fmtDate(issue.createdAt)}{issue.approvedAt ? ` · Approved: ${fmtDate(issue.approvedAt)}` : ""}{issue.issuedAt ? ` · Issued: ${fmtDate(issue.issuedAt)}` : ""}{issue.returnRequestedAt ? ` · Return requested: ${fmtDate(issue.returnRequestedAt)}` : ""}{issue.returnedAt ? ` · Returned: ${fmtDate(issue.returnedAt)}` : ""}</div>
                       {history.length>0&&<div style={{marginTop:6,fontSize:11,color:"rgba(226,232,240,0.42)"}}>Latest: {history[history.length-1]?.action} by {history[history.length-1]?.by}</div>}
                     </td>
-                    <td style={{padding:"10px",display:"flex",flexWrap:"wrap",gap:6,minWidth:230}}>
+                    <td style={{padding:"12px 10px",verticalAlign:"middle"}}><div style={{display:"flex",flexWrap:"wrap",gap:6,minWidth:230,alignItems:"center"}}>
                       {manageable && issue.status === "Pending Approval" && act(issue,"approve","Approve",{background:"rgba(14,165,233,0.16)",color:"#dbeafe"})}
                       {manageable && issue.status === "Pending Approval" && act(issue,"reject","Reject",{background:"rgba(239,68,68,0.16)",color:"#fee2e2"})}
                       {manageable && issue.status === "Approved" && act(issue,"issue","Mark Issued",{background:"rgba(16,185,129,0.16)",color:"#d1fae5"})}
                       {manageable && issue.status === "Approved" && act(issue,"notIssued","Mark Not Issued",{background:"rgba(249,115,22,0.16)",color:"#ffedd5"})}
-                      {ownedByUser && issue.status === "Issued" && requestReturnButton(issue)}
-                      {manageable && issue.status === "Return Requested" && act(issue,"acceptReturn","Accept Return",{background:"rgba(16,185,129,0.16)",color:"#d1fae5"})}
+                      {(ownedByUser || canAdmin) && issue.status === "Issued" && requestReturnButton(issue)}
+                      {manageable && issue.status === "Return Requested" && act(issue,"acceptReturn","Receive Return",{background:"rgba(16,185,129,0.16)",color:"#d1fae5"})}
                       {manageable && issue.status === "Return Requested" && act(issue,"rejectReturn","Reject Return",{background:"rgba(244,63,94,0.16)",color:"#ffe4e6"})}
                       {canAdmin && !["Returned","Rejected","Force Closed"].includes(issue.status) && act(issue,"forceClose","Force Close",{background:"rgba(100,116,139,0.18)",color:"#e2e8f0"})}
                       {canAdmin && act(issue,"editStatus","Edit Status",{background:"rgba(99,102,241,0.16)",color:"#ddd6fe"})}
-                    </td>
+                      {issue.status === "Returned" && <span style={{fontSize:12,color:"#86efac",fontWeight:800}}>Returned to {issue.returnToStaff || issue.returnedBy || "IT Staff"}</span>}
+                    </div></td>
                   </tr>
                 );
               })}
@@ -3988,7 +4023,7 @@ const handleNewTicket = async (form) => {
     }
   };
 
-  const handleTempIssueAction = async (requestId, action, actorName, remarks = "") => {
+  const handleTempIssueAction = async (requestId, action, actorName, remarks = "", meta = {}) => {
     const existing = tempIssues.find(t => t.requestId === requestId);
     if (!existing) return;
     const now = Date.now();
@@ -4004,7 +4039,7 @@ const handleNewTicket = async (form) => {
       updated.requestHistory.push({ action: label, by: actor, at: now, remark: remarks || message || "" });
     };
     const pushNotify = (type, message, extraTo = []) => {
-      const staffEmail = updated.requestedToStaffEmail || updated.requestToStaffEmail || STAFF_BASE.find(s => s.name === (updated.requestedToStaff || updated.requestToStaff))?.email || "";
+      const staffEmail = updated.returnToStaffEmail || updated.requestedToStaffEmail || updated.requestToStaffEmail || STAFF_BASE.find(s => s.name === (updated.returnToStaff || updated.requestedToStaff || updated.requestToStaff))?.email || "";
       const targets = [updated.userEmail, staffEmail, "admin@jaipuria.ac.in", ...extraTo].filter(Boolean);
       targets.forEach(to => updated.notifications.push({ type, to, message, at: now, read: false }));
       if (staffEmail) simulateEmail(staffEmail, `Temp Issue ${type}`, message);
@@ -4041,10 +4076,17 @@ const handleNewTicket = async (form) => {
       pushNotify("Not Issued", `${updated.requestId} marked not issued by ${actor}`);
     } else if (action === "requestReturn") {
       if (existing.status !== "Issued") return;
+      if (!meta.returnToStaff || !meta.returnToStaffEmail) {
+        toast("Please select return IT staff", "error");
+        return;
+      }
       updated.status = "Return Requested";
+      updated.returnToStaff = meta.returnToStaff;
+      updated.returnToStaffEmail = meta.returnToStaffEmail;
       updated.returnRequestedAt = now;
-      pushHistory("Return Requested", "User requested return");
-      pushNotify("Return requested", `${updated.requestId} return requested by ${actor}`);
+      updated.returnRemarks = remarks || updated.returnRemarks || "";
+      pushHistory("Return Requested", `User requested return to ${meta.returnToStaff}`);
+      pushNotify("Return request received", "Temp Issue return request received", [meta.returnToStaffEmail]);
     } else if (action === "acceptReturn") {
       if (existing.status !== "Return Requested") return;
       updated.status = "Returned";
@@ -4052,13 +4094,15 @@ const handleNewTicket = async (form) => {
       updated.returnAcceptedAt = now;
       updated.returnedBy = actor;
       updated.returnedAt = now;
-      pushHistory("Return Accepted");
-      pushNotify("Return accepted", `${updated.requestId} return accepted by ${actor}`);
+      updated.returnRemarks = remarks || updated.returnRemarks || "";
+      pushHistory("Return Received", remarks || `Item handover to ${actor}`);
+      pushNotify("Return accepted", `${updated.requestId} returned to ${actor}`);
     } else if (action === "rejectReturn") {
       if (existing.status !== "Return Requested") return;
       updated.status = "Return Rejected";
       updated.returnRejectedBy = actor;
       updated.returnRejectedAt = now;
+      updated.returnRemarks = remarks || updated.returnRemarks || "";
       pushHistory("Return Rejected");
       pushNotify("Return rejected", `${updated.requestId} return rejected by ${actor}`);
     } else if (action === "forceClose") {
@@ -4554,6 +4598,11 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
+
+
+
+
+
 
 
 
