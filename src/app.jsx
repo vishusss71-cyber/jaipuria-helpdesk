@@ -193,30 +193,84 @@ async function updateFeedback(entry) {
 
 function normalizeTempIssue(issue = {}) {
   return {
-    requestId: issue.requestId || `TI-${Date.now().toString(36).toUpperCase()}`,
+    requestId:
+      issue.requestId ||
+      `TI-${Date.now().toString(36).toUpperCase()}-${Math.random()
+        .toString(36)
+        .slice(2, 5)
+        .toUpperCase()}`,
+
+    // USER INFO
+    userId: issue.userId || "",
     userName: issue.userName || "",
     userEmail: issue.userEmail || "",
     mobile: issue.mobile || "",
+
+    // ITEM INFO
     item: issue.item || "",
     customItem: issue.customItem || "",
-    permissionBy: issue.permissionBy || "",
+
+    // APPROVAL INFO
+    permissionApprovedBy: issue.permissionApprovedBy || "",
+    requestedToStaff: issue.requestedToStaff || "",
+    requestedToStaffEmail: issue.requestedToStaffEmail || "",
+
+    // DATES
     issueDate: issue.issueDate || "",
     returnDate: issue.returnDate || "",
-    requestToStaff: issue.requestToStaff || "",
-    requestToStaffEmail: issue.requestToStaffEmail || "",
+
+    // STATUS FLOW
+    status: issue.status || "Pending Approval",
+
+    // REMARKS
+    remarks: issue.remarks || "",
     purpose: issue.purpose || "",
-    status: issue.status || "Pending",
+
+    // TIMESTAMPS
     createdAt: issue.createdAt || Date.now(),
     updatedAt: issue.updatedAt || Date.now(),
+
+    // APPROVAL ACTIONS
     approvedBy: issue.approvedBy || "",
     approvedAt: issue.approvedAt || null,
-    issuedBy: issue.issuedBy || "",
-    issuedAt: issue.issuedAt || null,
-    returnedBy: issue.returnedBy || "",
-    returnedAt: issue.returnedAt || null,
+
     rejectedBy: issue.rejectedBy || "",
     rejectedAt: issue.rejectedAt || null,
-    remarks: issue.remarks || "",
+
+    // ISSUE ACTIONS
+    issuedBy: issue.issuedBy || "",
+    issuedAt: issue.issuedAt || null,
+
+    notIssuedBy: issue.notIssuedBy || "",
+    notIssuedAt: issue.notIssuedAt || null,
+
+    // RETURN FLOW
+    returnRequestedAt: issue.returnRequestedAt || null,
+
+    returnAcceptedBy: issue.returnAcceptedBy || "",
+    returnAcceptedAt: issue.returnAcceptedAt || null,
+
+    returnRejectedBy: issue.returnRejectedBy || "",
+    returnRejectedAt: issue.returnRejectedAt || null,
+
+    // FINAL RETURN
+    returnedBy: issue.returnedBy || "",
+    returnedAt: issue.returnedAt || null,
+
+    // ADMIN CONTROL
+    forceClosedBy: issue.forceClosedBy || "",
+    forceClosedAt: issue.forceClosedAt || null,
+
+    // TRACKING
+    requestHistory: Array.isArray(issue.requestHistory)
+      ? issue.requestHistory
+      : [],
+
+    notifications: Array.isArray(issue.notifications)
+      ? issue.notifications
+      : [],
+
+    // LEGACY SUPPORT
     requestedBy: issue.requestedBy || "",
   };
 }
