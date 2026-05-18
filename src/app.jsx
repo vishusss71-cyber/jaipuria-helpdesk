@@ -191,6 +191,71 @@ async function updateFeedback(entry) {
   return saveFeedback(entry);
 }
 
+function normalizeTempIssue(issue = {}) {
+  return {
+    requestId: issue.requestId || `TI-${Date.now().toString(36).toUpperCase()}`,
+    userName: issue.userName || "",
+    userEmail: issue.userEmail || "",
+    mobile: issue.mobile || "",
+    item: issue.item || "",
+    customItem: issue.customItem || "",
+    permissionBy: issue.permissionBy || "",
+    issueDate: issue.issueDate || "",
+    returnDate: issue.returnDate || "",
+    requestToStaff: issue.requestToStaff || "",
+    requestToStaffEmail: issue.requestToStaffEmail || "",
+    purpose: issue.purpose || "",
+    status: issue.status || "Pending",
+    createdAt: issue.createdAt || Date.now(),
+    updatedAt: issue.updatedAt || Date.now(),
+    approvedBy: issue.approvedBy || "",
+    approvedAt: issue.approvedAt || null,
+    issuedBy: issue.issuedBy || "",
+    issuedAt: issue.issuedAt || null,
+    returnedBy: issue.returnedBy || "",
+    returnedAt: issue.returnedAt || null,
+    rejectedBy: issue.rejectedBy || "",
+    rejectedAt: issue.rejectedAt || null,
+    remarks: issue.remarks || "",
+    requestedBy: issue.requestedBy || "",
+  };
+}
+
+async function fetchTempIssues() {
+  if (!ONLINE_TICKETS_ENABLED) {
+    console.warn("Firestore temp issue storage is not configured.");
+    return [];
+  }
+  const res = await fetch(`${FIRESTORE_BASE_URL}/tempIssues?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
+  if (!res.ok) throw new Error(`Firestore tempIssues ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
+  const data = await res.json();
+  return (data.documents || [])
+    .map(doc => normalizeTempIssue({ requestId: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+async function saveTempIssue(issue) {
+  if (!ONLINE_TICKETS_ENABLED) {
+    throw new Error("Firestore is not configured. Check Vercel env vars and redeploy.");
+  }
+  const cleanIssue = normalizeTempIssue(issue);
+  const res = await fetch(`${FIRESTORE_BASE_URL}/tempIssues/${encodeURIComponent(cleanIssue.requestId)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: toFirestoreFields(cleanIssue) }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    console.error("Firestore temp issue save response:", res.status, body);
+    throw new Error(`Firestore tempIssues ${res.status}: ${getFirestoreErrorMessage(body)}`);
+  }
+  return cleanIssue;
+}
+
+async function updateTempIssue(issue) {
+  return saveTempIssue(issue);
+}
+
 // ── MESSAGES (CHAT) ───────────────────────────────────────────────────────
 function normalizeMessage(msg = {}) {
   return {
@@ -289,9 +354,9 @@ async function verifyPassword(pwd, hash) { return (await hashPassword(pwd)) === 
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────
 const STAFF_BASE = [
-  { id: 1, name: "Raj Parkash Singh", role: "Senior IT Support Executive", email: "raj.parkash@jaipuria.ac.in", avatar: "RPS", color: "#6366f1", permissions: ["view_all","assign","close","export","manage_users"] },
-  { id: 2, name: "Rohit Jangid", role: "IT Support Executive", email: "rohit.jangid@jaipuria.ac.in", avatar: "RJ", color: "#0ea5e9", permissions: ["view_assigned","close","comment"] },
-  { id: 3, name: "Vishal Swami", role: "IT Executive", email: "vishal.swami@jaipuria.ac.in", avatar: "VS", color: "#10b981", permissions: ["view_assigned","assign","close","comment"] },
+  { id: 1, name: "Raj Prakash Singh", role: "Manager", email: "raj.singh@jaipuria.ac.in", avatar: "RPS", color: "#6366f1", permissions: ["view_all","assign","close","export","manage_users"] },
+  { id: 2, name: "Rohit Jangid", role: "Executive", email: "rohit.jangid@jaipuria.ac.in", avatar: "RJ", color: "#0ea5e9", permissions: ["view_assigned","close","comment"] },
+  { id: 3, name: "Vishal Swami", role: "Senior Executive", email: "vishal.swami@jaipuria.ac.in", avatar: "VS", color: "#10b981", permissions: ["view_assigned","assign","close","comment"] },
 ];
 
 const CATEGORIES = [
@@ -2405,9 +2470,9 @@ function AdminFeedbackPage({feedback,setFeedback,toast}) {
 }
 // ── SIDEBAR ───────────────────────────────────────────────────────────────
 function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpen,setMobileOpen,onStaffAction}) {
-  const adminNav=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"tickets",icon:"🎫",label:"All Tickets"},{id:"staff",icon:"👥",label:"IT Staff"},{id:"analytics",icon:"📊",label:"Analytics"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"export",icon:"⬇",label:"Export Reports"},{id:"staff-management",icon:"👥",label:"Staff Management"},{id:"emaillog",icon:"📧",label:"Email Log"}];
-  const userNav=[{id:"home",icon:"🏠",label:"Home"},{id:"my-tickets",icon:"🎫",label:"My Tickets"},{id:"know-staff",icon:"👥",label:"Know Your IT Staff"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"new-ticket",icon:"➕",label:"New Ticket"},{id:"track",icon:"🔍",label:"Track Ticket"}];
-  const staffNav=[{id:"staff-dash",icon:"🏠",label:"My Dashboard"},{id:"assigned",icon:"📋",label:"Assigned Tickets"},{id:"chat",icon:"💬",label:"Staff Chat",staffAction:true},{id:"know-staff",icon:"👥",label:"Know Your IT Staff"},{id:"profile",icon:"👤",label:"My Profile",staffAction:true},{id:"password",icon:"🔐",label:"Change Password",staffAction:true},{id:"logout",icon:"↩",label:"Logout",staffAction:true}];
+  const adminNav=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"tickets",icon:"🎫",label:"All Tickets"},{id:"staff",icon:"👥",label:"IT Staff"},{id:"analytics",icon:"📊",label:"Analytics"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"export",icon:"⬇",label:"Export Reports"},{id:"staff-management",icon:"👥",label:"Staff Management"},{id:"emaillog",icon:"📧",label:"Email Log"},{id:"temp-issue",icon:"📦",label:"Temp Issue"}];
+  const userNav=[{id:"home",icon:"🏠",label:"Home"},{id:"my-tickets",icon:"🎫",label:"My Tickets"},{id:"know-staff",icon:"👥",label:"Know Your IT Staff"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"new-ticket",icon:"➕",label:"New Ticket"},{id:"track",icon:"🔍",label:"Track Ticket"},{id:"temp-issue",icon:"🧾",label:"Temp Issue"}];
+  const staffNav=[{id:"staff-dash",icon:"🏠",label:"My Dashboard"},{id:"assigned",icon:"📋",label:"Assigned Tickets"},{id:"chat",icon:"💬",label:"Staff Chat",staffAction:true},{id:"know-staff",icon:"👥",label:"Know Your IT Staff"},{id:"temp-issue",icon:"🧾",label:"Temp Issue"},{id:"profile",icon:"👤",label:"My Profile",staffAction:true},{id:"password",icon:"🔐",label:"Change Password",staffAction:true},{id:"logout",icon:"↩",label:"Logout",staffAction:true}];
   const nav=isAdmin?adminNav:isStaff?staffNav:userNav;
   const open=tickets.filter(t=>t.status==="Open").length;
   const unreadFeedback=feedback.filter(f=>!f.reviewed).length;
@@ -3002,16 +3067,16 @@ function KnowYourITStaff({staffProfiles}) {
   const staffData = [
     {
       id: 1,
-      name: "Raj Parkash Singh",
-      post: "Senior IT Support Executive",
-      email: "raj.parkash@jaipuria.ac.in",
+      name: "Raj Prakash Singh",
+      post: "Manager",
+      email: "raj.singh@jaipuria.ac.in",
       contact: "9887283825",
       whatsapp: "9887283825"
     },
     {
       id: 2,
       name: "Rohit Jangid",
-      post: "IT Support Executive",
+      post: "Executive",
       email: "rohit.jangid@jaipuria.ac.in",
       contact: "8005978632",
       whatsapp: "8005978632"
@@ -3019,7 +3084,7 @@ function KnowYourITStaff({staffProfiles}) {
     {
       id: 3,
       name: "Vishal Swami",
-      post: "IT Executive",
+      post: "Senior Executive",
       email: "vishal.swami@jaipuria.ac.in",
       contact: "8233771101",
       whatsapp: "8233771101"
@@ -3138,6 +3203,245 @@ function KnowYourITStaff({staffProfiles}) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilters, onSubmit, onAction, toast}) {
+  const defaultForm = {
+    userName: session?.name || "",
+    userEmail: session?.email || "",
+    mobile: "",
+    item: "Laptop",
+    customItem: "",
+    permissionBy: "",
+    issueDate: new Date().toISOString().slice(0,10),
+    returnDate: new Date(Date.now() + 86400000).toISOString().slice(0,10),
+    requestToStaff: "Vishal Swami",
+    purpose: "",
+  };
+  const [form, setForm] = useState(defaultForm);
+  const [loading, setLoading] = useState(false);
+  const [lastAction, setLastAction] = useState(null);
+
+  useEffect(() => {
+    setForm(f => ({ ...f, userName: session?.name || f.userName, userEmail: session?.email || f.userEmail }));
+  }, [session?.name, session?.email]);
+
+  const staffOptions = STAFF_BASE.map(s => s.name);
+  const currentStaffName = session?.type === "staff" ? STAFF_BASE.find(s => s.id === session.staffId)?.name || "" : "";
+  const visibleIssues = session?.type === "admin"
+    ? tempIssues
+    : session?.type === "staff"
+      ? tempIssues.filter(issue => issue.requestToStaff === currentStaffName)
+      : tempIssues.filter(issue => issue.userEmail === session?.email);
+
+  const filteredIssues = visibleIssues.filter(issue => {
+    if (filters.status !== "All" && issue.status !== filters.status) return false;
+    if (filters.staff !== "All" && issue.requestToStaff !== filters.staff) return false;
+    if (filters.from && new Date(issue.issueDate) < new Date(filters.from)) return false;
+    if (filters.to && new Date(issue.issueDate) > new Date(filters.to)) return false;
+    const q = filters.search.trim().toLowerCase();
+    if (q && ![issue.userName, issue.userEmail, issue.item, issue.customItem, issue.requestToStaff].some(value => (value || "").toLowerCase().includes(q))) return false;
+    return true;
+  });
+
+  const statusOptions = ["All", "Pending", "Approved", "Issued", "Returned", "Rejected"];
+  const requestToStaffOptions = STAFF_BASE.map(s => s.name);
+
+  const resetForm = () => setForm(defaultForm);
+
+  const handleSubmit = async () => {
+    if (!form.userName.trim() || !form.userEmail.trim() || !form.mobile.trim() || !form.issueDate || !form.returnDate || !form.permissionBy.trim() || !form.requestToStaff.trim() || !form.purpose.trim()) {
+      toast("Please fill all required request fields.", "error");
+      return;
+    }
+    if (form.item === "Other" && !form.customItem.trim()) {
+      toast("Please enter the item name for 'Other'.", "error");
+      return;
+    }
+    setLoading(true);
+    try {
+      await onSubmit({
+        ...form,
+        item: form.item === "Other" ? form.customItem.trim() : form.item,
+        customItem: form.item === "Other" ? form.customItem.trim() : "",
+      });
+      toast("Temp issue request created successfully.", "success");
+      resetForm();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadCsv = () => {
+    const rows = [
+      ["requestId","userName","userEmail","mobile","item","customItem","permissionBy","issueDate","returnDate","requestToStaff","requestToStaffEmail","purpose","status","createdAt","updatedAt","approvedBy","approvedAt","issuedBy","issuedAt","returnedBy","returnedAt","rejectedBy","rejectedAt","remarks"],
+      ...filteredIssues.map(issue => [
+        issue.requestId,
+        issue.userName,
+        issue.userEmail,
+        issue.mobile,
+        issue.item,
+        issue.customItem,
+        issue.permissionBy,
+        issue.issueDate,
+        issue.returnDate,
+        issue.requestToStaff,
+        issue.requestToStaffEmail,
+        issue.purpose,
+        issue.status,
+        fmtDate(issue.createdAt),
+        fmtDate(issue.updatedAt),
+        issue.approvedBy,
+        issue.approvedAt ? fmtDate(issue.approvedAt) : "",
+        issue.issuedBy,
+        issue.issuedAt ? fmtDate(issue.issuedAt) : "",
+        issue.returnedBy,
+        issue.returnedAt ? fmtDate(issue.returnedAt) : "",
+        issue.rejectedBy,
+        issue.rejectedAt ? fmtDate(issue.rejectedAt) : "",
+        issue.remarks,
+      ])
+    ];
+    const csv = rows.map(r => r.map(v => `"${String(v||"").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "temp-issues.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const requestTitle = session?.type === "admin"
+    ? "All Temp Issue Requests"
+    : session?.type === "staff"
+      ? "Assigned Temp Issue Requests"
+      : "My Temp Issue Requests";
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:22}}>
+      <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:14,alignItems:"flex-end"}}>
+        <div>
+          <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:4}}>Temp Issue Request</h2>
+          <div style={{fontSize:14,color:"rgba(226,232,240,0.5)"}}>Request temporary IT items and track approvals in one place.</div>
+        </div>
+        <button className="glow-btn" onClick={downloadCsv} style={{whiteSpace:"nowrap"}}>Export CSV</button>
+      </div>
+      <div className="glass" style={{padding:24,display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
+        <div style={{display:"grid",gap:14}}>
+          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>User Name</label>
+          <input value={form.userName} onChange={e=>setForm({...form,userName:e.target.value})} placeholder="Enter your name" />
+          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>User Email ID</label>
+          <input value={form.userEmail} onChange={e=>setForm({...form,userEmail:e.target.value})} placeholder="user@jaipuria.ac.in" />
+          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Mobile Number</label>
+          <input value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})} placeholder="Mobile" />
+          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Item</label>
+          <select value={form.item} onChange={e=>setForm({...form,item:e.target.value})}>
+            {["Laptop","Projector","HDMI Cable","VGA Cable","LAN Cable","Mouse","Keyboard","Charger","Speaker","Microphone","Webcam","Extension Board","Pen Drive","External Hard Disk","Tablet","Other"].map(item => <option key={item} value={item}>{item}</option>)}
+          </select>
+          {form.item === "Other" && (
+            <>
+              <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Other Item Name</label>
+              <input value={form.customItem} onChange={e=>setForm({...form,customItem:e.target.value})} placeholder="Specify item" />
+            </>
+          )}
+        </div>
+        <div style={{display:"grid",gap:14}}>
+          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Permission By / Approved By Faculty or Staff</label>
+          <input list="permission-names" value={form.permissionBy} onChange={e=>setForm({...form,permissionBy:e.target.value})} placeholder="Permission by / approved by" />
+          <datalist id="permission-names">{staffOptions.map(name => <option key={name} value={name} />)}</datalist>
+          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Issue Date</label>
+          <input type="date" value={form.issueDate} onChange={e=>setForm({...form,issueDate:e.target.value})} />
+          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Return Date</label>
+          <input type="date" value={form.returnDate} onChange={e=>setForm({...form,returnDate:e.target.value})} />
+          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Request To IT Staff</label>
+          <select value={form.requestToStaff} onChange={e=>setForm({...form,requestToStaff:e.target.value})}>
+            {requestToStaffOptions.map(name => <option key={name} value={name}>{name}</option>)}
+          </select>
+          <label style={{fontSize:13,color:"rgba(226,232,240,0.6)"}}>Reason / Purpose</label>
+          <textarea rows={3} value={form.purpose} onChange={e=>setForm({...form,purpose:e.target.value})} placeholder="Explain why you need the item" style={{resize:"vertical"}} />
+          <button className="glow-btn" onClick={handleSubmit} disabled={loading}>{loading ? "Submitting..." : "Submit Request"}</button>
+        </div>
+      </div>
+      <div className="glass" style={{padding:24}}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:18,alignItems:"center"}}>
+          <h3 style={{fontFamily:"Syne",fontSize:18,fontWeight:700,color:"#e2e8f0",margin:0}}>{requestTitle}</h3>
+          <div style={{display:"flex",flexWrap:"wrap",gap:10,alignItems:"center"}}>
+            <select value={filters.status} onChange={e=>setFilters({...filters,status:e.target.value})} style={{minWidth:160}}>
+              {statusOptions.map(status => <option key={status} value={status}>{status}</option>)}
+            </select>
+            <select value={filters.staff} onChange={e=>setFilters({...filters,staff:e.target.value})} style={{minWidth:160}}>
+              <option value="All">All Staff</option>
+              {requestToStaffOptions.map(name => <option key={name} value={name}>{name}</option>)}
+            </select>
+            <input type="date" value={filters.from} onChange={e=>setFilters({...filters,from:e.target.value})} placeholder="From" />
+            <input type="date" value={filters.to} onChange={e=>setFilters({...filters,to:e.target.value})} placeholder="To" />
+            <input type="search" value={filters.search} onChange={e=>setFilters({...filters,search:e.target.value})} placeholder="Search by user/item/email" style={{minWidth:220}} />
+            <button onClick={() => setFilters({ status:"All", staff:"All", search:"", from:"", to:"" })} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",color:"#e2e8f0",padding:"10px 16px",borderRadius:10}}>Clear Filter</button>
+          </div>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:1120}}>
+            <thead>
+              <tr style={{textAlign:"left",borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
+                {["Request ID","User Name","Email","Mobile","Item","Permission By","Issue Date","Return Date","Requested To","Status","Created At","Actions"].map(label => <th key={label} style={{padding:"12px 10px",fontSize:12,color:"rgba(226,232,240,0.65)",fontWeight:700}}>{label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {tempIssuesLoaded && filteredIssues.length === 0 && (
+                <tr><td colSpan={12} style={{padding:24,textAlign:"center",color:"rgba(226,232,240,0.4)"}}>No temp issue requests found.</td></tr>
+              )}
+              {filteredIssues.map(issue => (
+                <tr key={issue.requestId} style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                  <td style={{padding:"10px"}}>{issue.requestId}</td>
+                  <td style={{padding:"10px"}}>{issue.userName}</td>
+                  <td style={{padding:"10px"}}>{issue.userEmail}</td>
+                  <td style={{padding:"10px"}}>{issue.mobile}</td>
+                  <td style={{padding:"10px"}}>{issue.item}</td>
+                  <td style={{padding:"10px"}}>{issue.permissionBy}</td>
+                  <td style={{padding:"10px"}}>{issue.issueDate}</td>
+                  <td style={{padding:"10px"}}>{issue.returnDate}</td>
+                  <td style={{padding:"10px"}}>{issue.requestToStaff}</td>
+                  <td style={{padding:"10px"}}><span className="tag" style={{background:"rgba(99,102,241,0.12)",color:"#dbeafe"}}>{issue.status}</span></td>
+                  <td style={{padding:"10px"}}>{fmtDate(issue.createdAt)}</td>
+                  <td style={{padding:"10px",display:"flex",flexWrap:"wrap",gap:6}}>
+                    {(session?.type === "admin" || (session?.type === "staff" && issue.requestToStaff === currentStaffName)) && issue.status === "Pending" && (
+                      <button onClick={() => {
+                        const remark = prompt("Remarks for approval/rejection (optional):", "");
+                        onAction(issue.requestId, "approve", session?.name || "Admin", remark || "");
+                      }} className="glow-btn" style={{padding:"6px 10px",fontSize:12}}>Approve</button>
+                    )}
+                    {(session?.type === "admin" || (session?.type === "staff" && issue.requestToStaff === currentStaffName)) && issue.status === "Pending" && (
+                      <button onClick={() => {
+                        const remark = prompt("Remarks for rejection (optional):", "");
+                        onAction(issue.requestId, "reject", session?.name || "Admin", remark || "");
+                      }} style={{padding:"6px 10px",fontSize:12,background:"rgba(239,68,68,0.16)",border:"1px solid rgba(239,68,68,0.3)",color:"#fee2e2",borderRadius:10}}>Reject</button>
+                    )}
+                    {(session?.type === "admin" || (session?.type === "staff" && issue.requestToStaff === currentStaffName)) && issue.status === "Approved" && (
+                      <button onClick={() => {
+                        const remark = prompt("Remarks for issue (optional):", "");
+                        onAction(issue.requestId, "issue", session?.name || "Admin", remark || "");
+                      }} style={{padding:"6px 10px",fontSize:12,background:"rgba(16,185,129,0.16)",border:"1px solid rgba(16,185,129,0.35)",color:"#d1fae5",borderRadius:10}}>Mark Issued</button>
+                    )}
+                    {(session?.type === "admin" || (session?.type === "staff" && issue.requestToStaff === currentStaffName)) && issue.status === "Issued" && (
+                      <button onClick={() => {
+                        const remark = prompt("Remarks for return (optional):", "");
+                        onAction(issue.requestId, "return", session?.name || "Admin", remark || "");
+                      }} style={{padding:"6px 10px",fontSize:12,background:"rgba(14,165,233,0.16)",border:"1px solid rgba(14,165,233,0.35)",color:"#dbeafe",borderRadius:10}}>Mark Returned</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -3282,6 +3586,10 @@ export default function App() {
   const [ticketsLoaded, setTicketsLoaded] = useState(false);
   const [feedback, setFeedback] = useState([]);
   const [feedbackLoaded, setFeedbackLoaded] = useState(false);
+  const [tempIssues, setTempIssues] = useState([]);
+  const [tempIssuesLoaded, setTempIssuesLoaded] = useState(false);
+  const [tempIssueFilters, setTempIssueFilters] = useState({ status:"All", staff:"All", search:"", from:"", to:"" });
+  const [dashboardFilter, setDashboardFilter] = useState({ type:"Total", label:"Total" });
   const [feedbackTicketId, setFeedbackTicketId] = useState("");
   const [dismissedFeedbackTickets, setDismissedFeedbackTickets] = useState([]);
   const [viewTicketId, setViewTicketId] = useState(null);
@@ -3326,6 +3634,25 @@ export default function App() {
     };
     loadFeedback();
     const interval = setInterval(loadFeedback, 15000);
+    return () => { alive = false; clearInterval(interval); };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const loadTempIssues = async () => {
+      try {
+        const onlineTempIssues = await fetchTempIssues();
+        if (alive) {
+          setTempIssues(onlineTempIssues);
+          setTempIssuesLoaded(true);
+        }
+      } catch (error) {
+        console.error("Online temp issues load failed:", error);
+        if (alive) setTempIssuesLoaded(true);
+      }
+    };
+    loadTempIssues();
+    const interval = setInterval(loadTempIssues, 15000);
     return () => { alive = false; clearInterval(interval); };
   }, []);
 
@@ -3483,6 +3810,79 @@ const handleNewTicket = async (form) => {
       toast(`Ticket save failed: ${error?.message || "Firestore error"}`, "error");
     }
   };
+
+  const reloadTempIssues = useCallback(async () => {
+    try {
+      const onlineTempIssues = await fetchTempIssues();
+      setTempIssues(onlineTempIssues);
+      setTempIssuesLoaded(true);
+      return onlineTempIssues;
+    } catch (error) {
+      console.error("Online temp issue refresh failed:", error);
+      return tempIssues;
+    }
+  }, [tempIssues]);
+
+  const handleSaveTempIssue = async (entry) => {
+    const targetStaff = STAFF_BASE.find(s => s.name === entry.requestToStaff) || STAFF_BASE[0];
+    const request = normalizeTempIssue({
+      ...entry,
+      requestToStaffEmail: targetStaff.email,
+      status: "Pending",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      requestId: entry.requestId || `TI-${Date.now().toString(36).toUpperCase()}`,
+      requestedBy: session?.email || entry.userEmail || "",
+    });
+    try {
+      await saveTempIssue(request);
+      setTempIssues(prev => [request, ...prev.filter(it => it.requestId !== request.requestId)]);
+      await reloadTempIssues();
+      toast("Temp Issue request submitted", "success");
+      return request;
+    } catch (error) {
+      console.error("Temp issue save failed:", error);
+      toast(`Temp Issue save failed: ${error?.message || "Firestore error"}`, "error");
+      throw error;
+    }
+  };
+
+  const handleTempIssueAction = async (requestId, action, actorName, remarks = "") => {
+    const existing = tempIssues.find(t => t.requestId === requestId);
+    if (!existing) return;
+    const updated = { ...existing, updatedAt: Date.now(), remarks: remarks || existing.remarks || "" };
+    if (action === "approve") {
+      updated.status = "Approved";
+      updated.approvedBy = actorName;
+      updated.approvedAt = Date.now();
+    }
+    if (action === "reject") {
+      updated.status = "Rejected";
+      updated.rejectedBy = actorName;
+      updated.rejectedAt = Date.now();
+    }
+    if (action === "issue") {
+      updated.status = "Issued";
+      updated.issuedBy = actorName;
+      updated.issuedAt = Date.now();
+    }
+    if (action === "return") {
+      updated.status = "Returned";
+      updated.returnedBy = actorName;
+      updated.returnedAt = Date.now();
+    }
+    try {
+      await saveTempIssue(updated);
+      setTempIssues(prev => prev.map(t => t.requestId === requestId ? updated : t));
+      await reloadTempIssues();
+      toast(`Temp Issue ${updated.status.toLowerCase()}`, "success");
+    } catch (error) {
+      console.error("Temp issue status update failed:", error);
+      toast(`Temp Issue update failed: ${error?.message || "Firestore error"}`, "error");
+      throw error;
+    }
+  };
+
   const handleFeedbackSubmit = async (entry) => {
     const feedbackEntry = normalizeFeedback({
       id: entry.id || genFeedbackId(),
@@ -3706,35 +4106,73 @@ const handleNewTicket = async (form) => {
 
   const renderPage = () => {
     if (isAdmin) {
-      if (page === "dashboard") return (
-        <div style={{display:"flex",flexDirection:"column",gap:24}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
-            <div>
-              <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Admin Dashboard</h2>
-              <p style={{fontSize:14,color:"rgba(226,232,240,0.5)"}}>{new Date().toLocaleDateString("en-IN",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p>
-            </div>
-            <button className="glow-btn" onClick={() => setFormCat("")}>+ New Ticket</button>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:14}}>
-            {[["Total",tickets.length,"🎫","#818cf8"],["Open",tickets.filter(t=>t.status==="Open").length,"🔵","#60a5fa"],["In Progress",tickets.filter(t=>t.status==="In Progress").length,"🟡","#fbbf24"],["Resolved",tickets.filter(t=>t.status==="Resolved"||t.status==="Closed").length,"🟢","#34d399"],["Critical",tickets.filter(t=>t.priority==="Critical").length,"🔴","#f87171"],["Closed",tickets.filter(t=>t.status==="Closed").length,"⚫","#6b7280"]].map(([l,v,i,c]) => <StatCard key={l} label={l} value={v} icon={i} color={c} />)}
-          </div>
-          <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>Recent Tickets</h3>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
-            {tickets.slice(0,6).map(t => (
-              <div key={t.id} style={{position:"relative"}}>
-                <TicketCard ticket={t} onView={setViewTicketId} />
-                <button
-                  onClick={e=>{e.stopPropagation();setQuickAssignTicketId(t.id);}}
-                  style={{position:"absolute",right:12,bottom:12,background:"rgba(99,102,241,0.92)",border:"1px solid rgba(255,255,255,0.18)",color:"#fff",padding:"7px 12px",borderRadius:8,fontSize:12,fontWeight:700,boxShadow:"0 10px 24px rgba(99,102,241,0.25)"}}
-                >
-                  Assign
-                </button>
+      if (page === "dashboard") {
+        const filteredDashboardTickets = dashboardFilter.type === "Total"
+          ? tickets
+          : dashboardFilter.type === "Open"
+            ? tickets.filter(t => t.status === "Open")
+            : dashboardFilter.type === "In Progress"
+              ? tickets.filter(t => t.status === "In Progress")
+              : dashboardFilter.type === "Resolved"
+                ? tickets.filter(t => t.status === "Resolved" || t.status === "Closed")
+                : dashboardFilter.type === "Critical"
+                  ? tickets.filter(t => t.priority === "Critical")
+                  : dashboardFilter.type === "Closed"
+                    ? tickets.filter(t => t.status === "Closed")
+                    : tickets;
+
+        return (
+          <div style={{display:"flex",flexDirection:"column",gap:24}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
+              <div>
+                <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Admin Dashboard</h2>
+                <p style={{fontSize:14,color:"rgba(226,232,240,0.5)"}}>{new Date().toLocaleDateString("en-IN",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p>
               </div>
-            ))}
-            {tickets.length === 0 && <div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>🎫</div><div>No tickets yet</div></div>}
+              <button className="glow-btn" onClick={() => setFormCat("")}>+ New Ticket</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:14}}>
+              {[["Total",tickets.length,"🎫","#818cf8"],["Open",tickets.filter(t=>t.status==="Open").length,"🔵","#60a5fa"],["In Progress",tickets.filter(t=>t.status==="In Progress").length,"🟡","#fbbf24"],["Resolved",tickets.filter(t=>t.status==="Resolved"||t.status==="Closed").length,"🟢","#34d399"],["Critical",tickets.filter(t=>t.priority==="Critical").length,"🔴","#f87171"],["Closed",tickets.filter(t=>t.status==="Closed").length,"⚫","#6b7280"]].map(([l,v,i,c]) => (
+                <StatCard
+                  key={l}
+                  label={l}
+                  value={v}
+                  icon={i}
+                  color={c}
+                  onClick={() => setDashboardFilter({ type: l, label: l })}
+                  style={{cursor: 'pointer'}}
+                />
+              ))}
+            </div>
+            {dashboardFilter.type !== "Total" && (
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:14,flexWrap:'wrap'}}>
+                <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0",margin:0}}>{`Showing ${dashboardFilter.label} Tickets (${filteredDashboardTickets.length})`}</h3>
+                <button className="glow-btn" onClick={() => setDashboardFilter({ type: "Total", label: "Total" })}>Show All</button>
+              </div>
+            )}
+            {dashboardFilter.type === "Total" ? (
+              <>
+                <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>Recent Tickets</h3>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+                  {tickets.slice(0,6).map(t => (
+                    <div key={t.id} style={{position:"relative"}}>
+                      <TicketCard ticket={t} onView={setViewTicketId} />
+                      <button
+                        onClick={e=>{e.stopPropagation();setQuickAssignTicketId(t.id);}}
+                        style={{position:"absolute",right:12,bottom:12,background:"rgba(99,102,241,0.92)",border:"1px solid rgba(255,255,255,0.18)",color:"#fff",padding:"7px 12px",borderRadius:8,fontSize:12,fontWeight:700,boxShadow:"0 10px 24px rgba(99,102,241,0.25)"}}
+                      >
+                        Assign
+                      </button>
+                    </div>
+                  ))}
+                  {tickets.length === 0 && <div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>🎫</div><div>No tickets yet</div></div>}
+                </div>
+              </>
+            ) : (
+              <TicketsTable tickets={filteredDashboardTickets} onView={setViewTicketId} isAdmin onDelete={handleDeleteTicket} />
+            )}
           </div>
-        </div>
-      );
+        );
+      }
       if (page === "tickets") return <TicketsTable tickets={tickets} onView={setViewTicketId} isAdmin onDelete={handleDeleteTicket} />;
       if (page === "analytics") return <Analytics tickets={tickets} />;
       if (page === "feedback") return <AdminFeedbackPage feedback={feedback} setFeedback={setFeedback} toast={toast} />;
@@ -3795,6 +4233,7 @@ const handleNewTicket = async (form) => {
         </div>
       </div>
     );
+    if (page === "temp-issue") return <TempIssuePanel session={session} tempIssues={tempIssues} tempIssuesLoaded={tempIssuesLoaded} filters={tempIssueFilters} setFilters={setTempIssueFilters} onSubmit={handleSaveTempIssue} onAction={handleTempIssueAction} toast={toast} />;
 
     return null;
   };
