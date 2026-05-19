@@ -2697,10 +2697,6 @@ function AdminPortalFeedbackPage({portalFeedback,setPortalFeedback,toast}) {
 function PortalFeedbackChrome({onOpen}) {
   return (
     <>
-      <div style={{position:"fixed",left:12,bottom:10,zIndex:9500,fontSize:10,lineHeight:1.35,color:"rgba(226,232,240,0.48)",letterSpacing:.1,pointerEvents:"none",textShadow:"0 1px 10px rgba(0,0,0,0.45)"}}>
-        <div>Jaipuria Institute of Management</div>
-        <div>Made with ❤️ by Vishal Swami</div>
-      </div>
       <button
         type="button"
         onClick={onOpen}
