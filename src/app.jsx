@@ -1438,7 +1438,29 @@ textarea:focus{
     height:calc(100dvh - 94px)!important;
   }
   .staff-chat-input .glow-btn{font-size:12px!important}
-}`;
+}
+.ai-helpdesk-wrap{position:fixed;right:12px;bottom:62px;z-index:920;display:flex;flex-direction:column;align-items:flex-end;gap:12px;pointer-events:none}
+.ai-helpdesk-wrap>*{pointer-events:auto}
+.ai-helpdesk-button{border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:11px 16px;color:#fff;font-weight:900;font-size:13px;background:linear-gradient(135deg,#10b981,#06b6d4,#2563eb,#8b5cf6);box-shadow:0 18px 44px rgba(37,99,235,.38),0 0 30px rgba(6,182,212,.26);backdrop-filter:blur(18px);display:flex;align-items:center;gap:8px;transition:transform .2s,box-shadow .2s}
+.ai-helpdesk-button:hover{transform:translateY(-2px);box-shadow:0 24px 58px rgba(37,99,235,.48),0 0 40px rgba(16,185,129,.28)}
+.ai-helpdesk-button span{width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.16);display:inline-flex;align-items:center;justify-content:center;color:#d1fae5}
+.ai-helpdesk-panel{width:min(380px,calc(100vw - 24px));height:min(620px,calc(100dvh - 148px));display:flex;flex-direction:column;overflow:hidden;border-radius:20px!important;background:radial-gradient(circle at 18% 0,rgba(16,185,129,.2),transparent 34%),radial-gradient(circle at 82% 8%,rgba(139,92,246,.25),transparent 38%),rgba(8,13,28,.92)!important;border:1px solid rgba(125,211,252,.28)!important;box-shadow:0 28px 80px rgba(0,0,0,.48),0 0 42px rgba(6,182,212,.22)!important}
+.ai-helpdesk-head{padding:14px 15px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.09);background:linear-gradient(135deg,rgba(37,99,235,.24),rgba(139,92,246,.18),rgba(6,182,212,.12))}
+.ai-helpdesk-avatar{width:40px;height:40px;border-radius:14px;background:linear-gradient(135deg,#10b981,#06b6d4,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;box-shadow:0 0 24px rgba(6,182,212,.3);flex-shrink:0}
+.ai-helpdesk-close{width:32px;height:32px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.08);color:#e2e8f0;font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center}
+.ai-helpdesk-messages{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.04));-webkit-overflow-scrolling:touch}
+.ai-helpdesk-row{display:flex;margin-bottom:10px}.ai-helpdesk-row.user{justify-content:flex-end}.ai-helpdesk-row.bot{justify-content:flex-start}
+.ai-helpdesk-bubble{max-width:82%;border-radius:16px;padding:10px 12px;font-size:13px;line-height:1.45;border:1px solid rgba(255,255,255,.1);box-shadow:0 10px 28px rgba(0,0,0,.2)}
+.ai-helpdesk-bubble.user{background:linear-gradient(135deg,rgba(99,102,241,.48),rgba(6,182,212,.25));color:#fff;border-top-right-radius:5px}
+.ai-helpdesk-bubble.bot{background:rgba(255,255,255,.075);color:#e2e8f0;border-top-left-radius:5px}
+.ai-helpdesk-quick{display:flex;gap:8px;overflow-x:auto;padding:10px 12px;border-top:1px solid rgba(255,255,255,.08);background:rgba(8,13,28,.72)}
+.ai-helpdesk-quick button{flex:0 0 auto;border:1px solid rgba(125,211,252,.22);border-radius:999px;background:rgba(14,165,233,.11);color:#bae6fd;padding:7px 10px;font-size:11px;font-weight:800;white-space:nowrap}
+.ai-helpdesk-quick button:hover{background:rgba(14,165,233,.2);box-shadow:0 0 18px rgba(6,182,212,.18)}
+.ai-helpdesk-input{display:flex;gap:8px;padding:12px;border-top:1px solid rgba(255,255,255,.08);background:rgba(10,10,20,.94);backdrop-filter:blur(18px);flex-shrink:0}
+.ai-helpdesk-input input{min-width:0}.ai-helpdesk-input .glow-btn{padding:10px 13px;font-size:12px}
+.ai-typing{display:flex;align-items:center;gap:5px;color:rgba(226,232,240,.68)!important;font-style:italic}.ai-typing span{width:5px;height:5px;border-radius:50%;background:#67e8f9;display:inline-block;animation:pulse 1s infinite}.ai-typing span:nth-child(2){animation-delay:.15s}.ai-typing span:nth-child(3){animation-delay:.3s}
+@media (max-width:768px){.ai-helpdesk-wrap{right:10px;bottom:132px}.ai-helpdesk-panel{width:calc(100vw - 20px);height:calc(100dvh - 176px);border-radius:18px!important}.ai-helpdesk-bubble{max-width:88%}.ai-helpdesk-button{padding:10px 13px;font-size:12px}.ai-helpdesk-quick{padding-bottom:8px}.ai-helpdesk-input{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}}
+@media (max-width:480px){.ai-helpdesk-wrap{right:8px;bottom:126px}.ai-helpdesk-panel{width:calc(100vw - 16px);height:calc(100dvh - 164px)}.ai-helpdesk-head{padding:12px}.ai-helpdesk-messages{padding:12px}.ai-helpdesk-input .glow-btn{min-width:58px}}`;
 
 // ── TOAST ─────────────────────────────────────────────────────────────────
 function Toast({ toasts, remove }) {
@@ -2757,7 +2779,99 @@ function AdminPortalFeedbackPage({portalFeedback,setPortalFeedback,toast}) {
     </div>
   );
 }
-function PortalFeedbackChrome({onOpen}) {
+
+function AIHelpdeskChat({session}) {
+  const [open,setOpen]=useState(false);
+  const [input,setInput]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [messages,setMessages]=useState([
+    {id:"welcome",role:"assistant",text:"Hello! How may I help you today?",at:Date.now()}
+  ]);
+  const endRef=useRef(null);
+  const quickReplies=["Login Issue","WiFi Issue","Moodle Issue","Printer Issue","MS Office Issue"];
+
+  useEffect(()=>{
+    if(open) endRef.current?.scrollIntoView({behavior:"smooth",block:"end"});
+  },[messages.length,loading,open]);
+
+  const buildPrompt=(question)=>`You are Jaipuria Helpdesk AI, a friendly IT support assistant for Jaipuria Institute of Management. Answer only campus IT/helpdesk questions such as login issues, WiFi, Moodle/LMS, printers, MS Office, email, laptop/software troubleshooting, and general IT support. Give concise, practical steps. If the question cannot be answered confidently, reply exactly: I have forwarded this issue to IT Support Team.\n\nUser: ${question}`;
+
+  const sendMessage=async(value)=>{
+    const clean=(value ?? input).trim();
+    if(!clean || loading) return;
+    const userMessage={id:genToken(),role:"user",text:clean,at:Date.now()};
+    setMessages(prev=>[...prev,userMessage]);
+    setInput("");
+    setLoading(true);
+    try {
+      const response=await fetch("/api/chat",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({message:buildPrompt(clean),user:{name:session?.name || session?.email || "Portal User",email:session?.email || ""}})
+      });
+      if(!response.ok) throw new Error(`AI endpoint failed: ${response.status}`);
+      const data=await response.json();
+      const reply=(data?.reply || "").trim() || "I have forwarded this issue to IT Support Team.";
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:reply,at:Date.now()}]);
+    } catch (error) {
+      console.error("AI chatbot error:",error);
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Sorry, I am unable to respond right now. Please contact IT Support.",at:Date.now(),error:true}]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const escalate=()=>{
+    setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"I have forwarded this issue to IT Support Team.",at:Date.now()}]);
+  };
+
+  return (
+    <div className="ai-helpdesk-wrap">
+      {open&&(
+        <div className="ai-helpdesk-panel glass">
+          <div className="ai-helpdesk-head">
+            <div className="ai-helpdesk-avatar">AI</div>
+            <div style={{minWidth:0,flex:1}}>
+              <div style={{fontSize:15,fontWeight:900,color:'#fff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>Jaipuria Helpdesk AI</div>
+              <div style={{fontSize:11,color:'rgba(226,232,240,.58)',display:'flex',alignItems:'center',gap:6}}><span style={{width:7,height:7,borderRadius:'50%',background:'#10b981',display:'inline-block'}}/>Online support assistant</div>
+            </div>
+            <button type="button" onClick={()=>setOpen(false)} className="ai-helpdesk-close" aria-label="Close AI helpdesk chat">×</button>
+          </div>
+
+          <div className="ai-helpdesk-messages">
+            {messages.map(m=>(
+              <div key={m.id} className={`ai-helpdesk-row ${m.role==='user'?'user':'bot'}`}>
+                <div className={`ai-helpdesk-bubble ${m.role==='user'?'user':'bot'}`}>
+                  <div style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{m.text}</div>
+                  <div style={{fontSize:10,color:'rgba(226,232,240,.38)',marginTop:5,textAlign:m.role==='user'?'right':'left'}}>{fmtDate(m.at)}</div>
+                </div>
+              </div>
+            ))}
+            {loading&&(
+              <div className="ai-helpdesk-row bot">
+                <div className="ai-helpdesk-bubble bot ai-typing"><span></span><span></span><span></span>Jaipuria Helpdesk AI is typing...</div>
+              </div>
+            )}
+            <div ref={endRef}/>
+          </div>
+
+          <div className="ai-helpdesk-quick">
+            {quickReplies.map(q=><button key={q} type="button" onClick={()=>sendMessage(q)} disabled={loading}>{q}</button>)}
+            <button type="button" onClick={escalate} disabled={loading}>Escalate to IT</button>
+          </div>
+
+          <div className="ai-helpdesk-input">
+            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}} placeholder="Ask about WiFi, Moodle, printer, login..." />
+            <button className="glow-btn" type="button" onClick={()=>sendMessage()} disabled={loading||!input.trim()}>Send</button>
+          </div>
+        </div>
+      )}
+      <button type="button" className="ai-helpdesk-button" onClick={()=>setOpen(o=>!o)} aria-label="Open AI helpdesk chat">
+        <span>✦</span> {open?"Minimize":"AI Help"}
+      </button>
+    </div>
+  );
+}function PortalFeedbackChrome({onOpen}) {
   return (
     <>
       <button
@@ -4976,6 +5090,7 @@ const handleNewTicket = async (form) => {
       )}
 
       <PortalFeedbackChrome onOpen={() => setShowPortalFeedback(true)} />
+      {!isAdmin && !isStaff && <AIHelpdeskChat session={session} />}
       {showPortalFeedback && (
         <Modal title="Portal Feedback" onClose={() => setShowPortalFeedback(false)}>
           <PortalFeedbackForm session={session} onSubmit={handlePortalFeedbackSubmit} toast={toast} onClose={() => setShowPortalFeedback(false)} />
@@ -4985,6 +5100,8 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
+
+
 
 
 
