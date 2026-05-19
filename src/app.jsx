@@ -1375,7 +1375,70 @@ textarea:focus{
     top:50%!important;
   }
 }
-  }`;
+  }
+@media (max-width:768px){
+  .staff-chat-shell{
+    display:flex!important;
+    width:100%!important;
+    max-width:100%!important;
+    min-height:calc(100dvh - 112px)!important;
+    height:calc(100dvh - 112px)!important;
+    overflow:hidden!important;
+    grid-template-columns:1fr!important;
+    gap:0!important;
+  }
+  .staff-chat-list{
+    width:100%!important;
+    max-width:100%!important;
+    height:100%!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+    display:block!important;
+  }
+  .staff-chat-window{
+    width:100%!important;
+    max-width:100%!important;
+    height:100%!important;
+    min-height:0!important;
+    display:none!important;
+    overflow:hidden!important;
+  }
+  .staff-chat-shell.mobile-chat-open .staff-chat-list{display:none!important}
+  .staff-chat-shell.mobile-chat-open .staff-chat-window{display:flex!important}
+  .staff-chat-header{flex-shrink:0!important;padding:10px 12px!important}
+  .staff-chat-back{display:inline-flex!important;align-items:center;justify-content:center;flex-shrink:0}
+  .staff-chat-messages{
+    flex:1!important;
+    min-height:0!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+    padding:12px!important;
+    padding-bottom:16px!important;
+    -webkit-overflow-scrolling:touch!important;
+  }
+  .staff-chat-bubble{max-width:86%!important}
+  .staff-chat-input{
+    flex-shrink:0!important;
+    position:sticky!important;
+    bottom:0!important;
+    background:rgba(10,10,20,.96)!important;
+    backdrop-filter:blur(18px)!important;
+    padding:10px!important;
+    padding-bottom:max(12px,env(safe-area-inset-bottom,0px))!important;
+    gap:8px!important;
+    z-index:3!important;
+  }
+  .staff-chat-input input{min-width:0!important}
+  .staff-chat-input .glow-btn{padding:10px 12px!important;min-width:64px}
+  .portal-feedback-tab{bottom:74px!important;right:10px!important}
+}
+@media (max-width:480px){
+  .staff-chat-shell{
+    min-height:calc(100dvh - 94px)!important;
+    height:calc(100dvh - 94px)!important;
+  }
+  .staff-chat-input .glow-btn{font-size:12px!important}
+}`;
 
 // ── TOAST ─────────────────────────────────────────────────────────────────
 function Toast({ toasts, remove }) {
@@ -2700,7 +2763,7 @@ function PortalFeedbackChrome({onOpen}) {
       <button
         type="button"
         onClick={onOpen}
-        style={{position:"fixed",right:12,bottom:12,zIndex:9500,border:"1px solid rgba(255,255,255,0.18)",borderRadius:999,padding:"9px 14px",fontSize:12,fontWeight:800,color:"#fff",background:"linear-gradient(135deg,#7c3aed,#2563eb,#06b6d4,#10b981)",boxShadow:"0 14px 34px rgba(37,99,235,0.36),0 0 22px rgba(6,182,212,0.24)",backdropFilter:"blur(16px)",whiteSpace:"nowrap"}}
+        className="portal-feedback-tab" style={{position:"fixed",right:12,bottom:12,zIndex:900,border:"1px solid rgba(255,255,255,0.18)",borderRadius:999,padding:"9px 14px",fontSize:12,fontWeight:800,color:"#fff",background:"linear-gradient(135deg,#7c3aed,#2563eb,#06b6d4,#10b981)",boxShadow:"0 14px 34px rgba(37,99,235,0.36),0 0 22px rgba(6,182,212,0.24)",backdropFilter:"blur(16px)",whiteSpace:"nowrap"}}
         onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 18px 44px rgba(37,99,235,0.46),0 0 30px rgba(6,182,212,0.34)";}}
         onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 14px 34px rgba(37,99,235,0.36),0 0 22px rgba(6,182,212,0.24)";}}
       >
@@ -3780,7 +3843,9 @@ function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilt
   );
 }
 function StaffChatModal({staff,profiles,statuses}) {
-  const [selected,setSelected]=useState(STAFF_BASE.find(s=>s.id!==staff.id)?.id || STAFF_BASE[0].id);
+  const firstPeerId = STAFF_BASE.find(s=>s.id!==staff.id)?.id || STAFF_BASE[0].id;
+  const [selected,setSelected]=useState(firstPeerId);
+  const [mobileChatOpen,setMobileChatOpen]=useState(false);
   const [text,setText]=useState('');
   const [messages,setMessages]=useState([]);
   const [unreadCounts,setUnreadCounts]=useState({});
@@ -3860,28 +3925,29 @@ function StaffChatModal({staff,profiles,statuses}) {
     }
   };
 
-  return <div style={{display:'grid',gridTemplateColumns:'220px 1fr',gap:14,minHeight:430}}>
-    <div className="glass" style={{padding:10,overflowY:'auto'}}>
+  return <div className={`staff-chat-shell ${mobileChatOpen ? 'mobile-chat-open' : ''}`} style={{display:'grid',gridTemplateColumns:'220px 1fr',gap:14,minHeight:430}}>
+    <div className="glass staff-chat-list" style={{padding:10,overflowY:'auto'}}>
       {STAFF_BASE.filter(s=>s.id!==staff.id).map(s=>{
         const threadKey = [staff.id,s.id].sort((a,b)=>a-b).join('-');
         const unread = unreadCounts[threadKey] || 0;
-        return <button key={s.id} onClick={()=>setSelected(s.id)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,background:selected===s.id?'rgba(99,102,241,0.18)':'transparent',border:'none',borderRadius:10,padding:10,color:'#e2e8f0',textAlign:'left',marginBottom:6}}>
+        return <button key={s.id} onClick={()=>{setSelected(s.id);setMobileChatOpen(true);}} style={{width:'100%',display:'flex',alignItems:'center',gap:10,background:selected===s.id?'rgba(99,102,241,0.18)':'transparent',border:'none',borderRadius:10,padding:10,color:'#e2e8f0',textAlign:'left',marginBottom:6}}>
           <StaffAvatar staff={s} profiles={profiles} statuses={statuses} size={34} showStatus/>
-          <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>{s.name}</div><StatusDot status={getStaffStatus(s.id,statuses)}/></div>
-          {unread>0&&<span style={{background:'#ef4444',color:'#fff',borderRadius:999,padding:'2px 7px',fontSize:11}}>{unread}</span>}
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</div><StatusDot status={getStaffStatus(s.id,statuses)}/></div>
+          {unread>0&&<span style={{background:'#ef4444',color:'#fff',borderRadius:999,padding:'2px 7px',fontSize:11,flexShrink:0}}>{unread}</span>}
         </button>
       })}
     </div>
-    <div className="glass" style={{display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      <div style={{padding:14,borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10,alignItems:'center'}}>
+    <div className="glass staff-chat-window" style={{display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div className="staff-chat-header" style={{padding:14,borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10,alignItems:'center'}}>
+        <button type="button" className="staff-chat-back" onClick={()=>setMobileChatOpen(false)} style={{display:'none',background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.12)',color:'#e2e8f0',borderRadius:10,padding:'8px 10px',fontSize:12,fontWeight:700}}>← Back</button>
         <StaffAvatar staff={peer} profiles={profiles} statuses={statuses} size={38} showStatus/>
-        <div><div style={{fontSize:14,fontWeight:800,color:'#fff'}}>{peer?.name}</div><StatusDot status={getStaffStatus(peer?.id,statuses)}/></div>
+        <div style={{minWidth:0}}><div style={{fontSize:14,fontWeight:800,color:'#fff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{peer?.name}</div><StatusDot status={getStaffStatus(peer?.id,statuses)}/></div>
       </div>
-      <div style={{flex:1,padding:14,overflowY:'auto'}}>
+      <div className="staff-chat-messages" style={{flex:1,padding:14,overflowY:'auto',overflowX:'hidden'}}>
         {messages.map(m=>{
           const mine=m.from===staff.id;
           return <div key={m.id} style={{display:'flex',justifyContent:mine?'flex-end':'flex-start',marginBottom:10}}>
-            <div style={{maxWidth:'72%',background:mine?'rgba(99,102,241,0.28)':'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:14,padding:'9px 12px'}}>
+            <div className="staff-chat-bubble" style={{maxWidth:'72%',background:mine?'rgba(99,102,241,0.28)':'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:14,padding:'9px 12px'}}>
               <div style={{fontSize:12,color:'rgba(226,232,240,0.45)',marginBottom:3}}>{STAFF_BASE.find(s=>s.id===m.from)?.name || m.fromName || 'Staff'} · {timeAgo(m.at)}</div>
               <div style={{fontSize:13,color:'#e2e8f0',lineHeight:1.4,whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{m.text}</div>
             </div>
@@ -3890,7 +3956,7 @@ function StaffChatModal({staff,profiles,statuses}) {
         {messages.length===0&&<div style={{textAlign:'center',color:'rgba(226,232,240,0.35)',paddingTop:80}}>No messages yet</div>}
         <div ref={messagesEndRef} />
       </div>
-      <div style={{padding:12,borderTop:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10}}>
+      <div className="staff-chat-input" style={{padding:12,borderTop:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10}}>
         <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}} placeholder="Type a message..."/>
         <button className="glow-btn" style={{padding:'10px 18px'}} onClick={send}>Send</button>
       </div>
@@ -4899,6 +4965,7 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
+
 
 
 
