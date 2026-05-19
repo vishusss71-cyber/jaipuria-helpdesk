@@ -191,6 +191,60 @@ async function updateFeedback(entry) {
   return saveFeedback(entry);
 }
 
+function genPortalFeedbackId() {
+  return "PFB-" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2,5).toUpperCase();
+}
+
+function normalizePortalFeedback(entry = {}) {
+  return {
+    ...entry,
+    id: entry.id || genPortalFeedbackId(),
+    name: entry.name || "",
+    email: entry.email || "",
+    role: entry.role || "User",
+    rating: Number(entry.rating || 0),
+    feedbackType: entry.feedbackType || "General Feedback",
+    message: entry.message || "",
+    createdAt: entry.createdAt || Date.now(),
+    status: entry.status || "New",
+    reviewed: Boolean(entry.reviewed),
+  };
+}
+
+async function fetchPortalFeedback() {
+  if (!ONLINE_TICKETS_ENABLED) {
+    console.warn("Firestore portal feedback storage is not configured.");
+    return [];
+  }
+  const res = await fetch(`${FIRESTORE_BASE_URL}/portalFeedback?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
+  if (!res.ok) throw new Error(`Firestore portalFeedback ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
+  const data = await res.json();
+  return (data.documents || [])
+    .map(doc => normalizePortalFeedback({ id: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+async function savePortalFeedback(entry) {
+  if (!ONLINE_TICKETS_ENABLED) {
+    throw new Error("Firestore is not configured. Check Vercel env vars and redeploy.");
+  }
+  const cleanEntry = normalizePortalFeedback(entry);
+  const res = await fetch(`${FIRESTORE_BASE_URL}/portalFeedback/${encodeURIComponent(cleanEntry.id)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: toFirestoreFields(cleanEntry) }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    console.error("Firestore portal feedback save response:", res.status, body);
+    throw new Error(`Firestore portalFeedback ${res.status}: ${getFirestoreErrorMessage(body)}`);
+  }
+  return cleanEntry;
+}
+
+async function updatePortalFeedback(entry) {
+  return savePortalFeedback(entry);
+}
 function normalizeTempIssue(issue = {}) {
   return {
     requestId:
@@ -2525,9 +2579,143 @@ function AdminFeedbackPage({feedback,setFeedback,toast}) {
     </div>
   );
 }
+
+function PortalFeedbackForm({session,onSubmit,toast,onClose}) {
+  const roleLabel = session?.type === "admin" ? "Admin" : session?.type === "staff" ? "Staff" : session?.type === "user" ? "User" : "Guest";
+  const [form,setForm]=useState({
+    name: session?.name || "",
+    email: session?.email || "",
+    role: roleLabel,
+    rating: 0,
+    feedbackType: "",
+    message: "",
+  });
+  const [loading,setLoading]=useState(false);
+  const types=["Bug Report","Feature Request","UI/Design Feedback","Performance Issue","General Feedback"];
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const submit=async()=>{
+    if(!form.name.trim() || !form.email.trim() || !form.role || !form.rating || !form.feedbackType || !form.message.trim()){
+      toast("Please complete all portal feedback fields","error");
+      return;
+    }
+    setLoading(true);
+    try {
+      await onSubmit({
+        ...form,
+        name: form.name.trim(),
+        email: form.email.trim(),
+        message: form.message.trim(),
+      });
+      onClose?.();
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:18}}>
+      <div className="glass2" style={{padding:"16px 18px",background:"linear-gradient(135deg,rgba(99,102,241,0.14),rgba(6,182,212,0.08))",borderColor:"rgba(125,211,252,0.24)"}}>
+        <div style={{fontFamily:"Syne",fontSize:18,fontWeight:800,color:"#fff",marginBottom:4}}>Help us improve the portal</div>
+        <div style={{fontSize:13,color:"rgba(226,232,240,0.58)",lineHeight:1.5}}>Share bugs, ideas, design feedback, or performance issues. This goes directly to the admin portal.</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:14}}>
+        <div><label style={{fontSize:12,color:"rgba(226,232,240,0.6)",marginBottom:6,display:"block"}}>Name</label><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Your name" /></div>
+        <div><label style={{fontSize:12,color:"rgba(226,232,240,0.6)",marginBottom:6,display:"block"}}>Email</label><input type="email" value={form.email} onChange={e=>set("email",e.target.value)} placeholder="name@jaipuria.ac.in" /></div>
+        <div><label style={{fontSize:12,color:"rgba(226,232,240,0.6)",marginBottom:6,display:"block"}}>Role / User Type</label><select value={form.role} onChange={e=>set("role",e.target.value)}><option>User</option><option>Staff</option><option>Admin</option><option>Guest</option></select></div>
+        <div><label style={{fontSize:12,color:"rgba(226,232,240,0.6)",marginBottom:6,display:"block"}}>Feedback Type</label><select value={form.feedbackType} onChange={e=>set("feedbackType",e.target.value)}><option value="">Select Feedback Type</option>{types.map(t=><option key={t}>{t}</option>)}</select></div>
+      </div>
+      <div className="glass2" style={{padding:"16px 18px"}}>
+        <div style={{fontSize:13,fontWeight:700,color:"rgba(226,232,240,0.74)",marginBottom:10}}>Rating</div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          {[1,2,3,4,5].map(n=><button key={n} type="button" onClick={()=>set("rating",n)} style={{background:"transparent",border:"none",fontSize:32,lineHeight:1,color:n<=form.rating?"#fbbf24":"rgba(255,255,255,0.18)",filter:n<=form.rating?"drop-shadow(0 0 10px rgba(251,191,36,0.35))":"none",transform:n===form.rating?"translateY(-2px) scale(1.08)":"none"}}>★</button>)}
+          <span style={{fontSize:13,color:"rgba(226,232,240,0.48)"}}>{form.rating ? `${form.rating}/5` : "Select rating"}</span>
+        </div>
+      </div>
+      <div><label style={{fontSize:12,color:"rgba(226,232,240,0.6)",marginBottom:6,display:"block"}}>Message / Feedback</label><textarea rows={5} value={form.message} onChange={e=>set("message",e.target.value)} placeholder="Tell us what should be fixed or improved..." style={{resize:"vertical"}} /></div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
+        <button onClick={onClose} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",padding:"10px 18px",borderRadius:10}}>Cancel</button>
+        <button className="glow-btn" onClick={submit} disabled={loading}>{loading?"Submitting...":"Submit Feedback"}</button>
+      </div>
+    </div>
+  );
+}
+
+function AdminPortalFeedbackPage({portalFeedback,setPortalFeedback,toast}) {
+  const [statusFilter,setStatusFilter]=useState("All");
+  const [typeFilter,setTypeFilter]=useState("All");
+  const [ratingFilter,setRatingFilter]=useState("All");
+  const types=["Bug Report","Feature Request","UI/Design Feedback","Performance Issue","General Feedback"];
+  const filtered=portalFeedback.filter(f=>{
+    if(statusFilter!=="All" && f.status!==statusFilter) return false;
+    if(typeFilter!=="All" && f.feedbackType!==typeFilter) return false;
+    if(ratingFilter!=="All" && Number(f.rating)!==Number(ratingFilter)) return false;
+    return true;
+  });
+  const avg=filtered.length?(filtered.reduce((a,f)=>a+Number(f.rating||0),0)/filtered.length).toFixed(1):"0.0";
+  const markReviewed=async(id)=>{
+    const current=portalFeedback.find(f=>f.id===id);
+    if(!current) return;
+    const updated={...current,status:"Reviewed",reviewed:true,reviewedAt:Date.now()};
+    try{
+      await updatePortalFeedback(updated);
+      setPortalFeedback(fs=>fs.map(f=>f.id===id?updated:f));
+      toast("Portal feedback marked reviewed","success");
+    }catch(error){
+      console.error("Portal feedback review failed:",error);
+      toast("Portal feedback update failed","error");
+    }
+  };
+  const exportRows=filtered.map(f=>({"Feedback ID":f.id,Name:f.name,Email:f.email,Role:f.role,Rating:f.rating,"Feedback Type":f.feedbackType,Message:f.message,"Created At":fmtDate(f.createdAt),Status:f.status,Reviewed:f.reviewed?"Yes":"No"}));
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:22}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
+        <div><h2 style={{fontFamily:"Syne",fontSize:24,fontWeight:800,color:"#e2e8f0"}}>Portal Feedback</h2><p style={{fontSize:14,color:"rgba(226,232,240,0.5)",marginTop:4}}>Review portal bugs, feature ideas, UI feedback, and performance reports.</p></div>
+        <button className="glow-btn" onClick={()=>downloadExcel(exportRows,`portal_feedback_${new Date().toISOString().slice(0,10)}.xlsx`)}>Export Excel</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:14}}>
+        <StatCard label="Total" value={portalFeedback.length} icon="★" color="#818cf8" />
+        <StatCard label="New" value={portalFeedback.filter(f=>f.status==="New"&&!f.reviewed).length} icon="●" color="#fbbf24" />
+        <StatCard label="Reviewed" value={portalFeedback.filter(f=>f.reviewed).length} icon="✓" color="#34d399" />
+        <StatCard label="Avg Rating" value={`${avg}/5`} icon="★" color="#f59e0b" />
+      </div>
+      <div className="glass" style={{padding:"18px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:14}}>
+        <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="All">All Status</option><option>New</option><option>Reviewed</option></select>
+        <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}><option value="All">All Types</option>{types.map(t=><option key={t}>{t}</option>)}</select>
+        <select value={ratingFilter} onChange={e=>setRatingFilter(e.target.value)}><option value="All">All Ratings</option>{[5,4,3,2,1].map(r=><option key={r} value={r}>{r} Star</option>)}</select>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
+        {filtered.map(f=><div key={f.id} className="glass2" style={{padding:"18px 16px",borderColor:f.reviewed?"rgba(16,185,129,0.24)":"rgba(245,158,11,0.28)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"flex-start",marginBottom:10}}><div><div style={{fontSize:14,fontWeight:800,color:"#fff"}}>{f.feedbackType}</div><div style={{fontSize:12,color:"rgba(226,232,240,0.44)",marginTop:3}}>{f.name} · {f.role}</div></div><span className="tag" style={{background:f.reviewed?"rgba(16,185,129,0.14)":"rgba(245,158,11,0.14)",color:f.reviewed?"#6ee7b7":"#fbbf24"}}>{f.status}</span></div>
+          <div style={{fontSize:13,color:"rgba(226,232,240,0.7)",lineHeight:1.55,marginBottom:10}}>{f.message}</div>
+          <div style={{fontSize:12,color:"rgba(226,232,240,0.45)",display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}><span>{f.email}</span><span>{f.rating}/5 · {fmtDate(f.createdAt)}</span></div>
+          {!f.reviewed&&<button className="glow-btn" style={{width:"100%",marginTop:14,padding:"9px 12px",fontSize:13}} onClick={()=>markReviewed(f.id)}>Mark Reviewed</button>}
+        </div>)}
+        {filtered.length===0&&<div className="glass" style={{gridColumn:"1/-1",padding:40,textAlign:"center",color:"rgba(226,232,240,0.42)"}}>No portal feedback found.</div>}
+      </div>
+    </div>
+  );
+}
+function PortalFeedbackChrome({onOpen}) {
+  return (
+    <>
+      <div style={{position:"fixed",left:12,bottom:10,zIndex:9500,fontSize:10,lineHeight:1.35,color:"rgba(226,232,240,0.48)",letterSpacing:.1,pointerEvents:"none",textShadow:"0 1px 10px rgba(0,0,0,0.45)"}}>
+        <div>Jaipuria Institute of Management</div>
+        <div>Made with ❤️ by Vishal Swami</div>
+      </div>
+      <button
+        type="button"
+        onClick={onOpen}
+        style={{position:"fixed",right:12,bottom:12,zIndex:9500,border:"1px solid rgba(255,255,255,0.18)",borderRadius:999,padding:"9px 14px",fontSize:12,fontWeight:800,color:"#fff",background:"linear-gradient(135deg,#7c3aed,#2563eb,#06b6d4,#10b981)",boxShadow:"0 14px 34px rgba(37,99,235,0.36),0 0 22px rgba(6,182,212,0.24)",backdropFilter:"blur(16px)",whiteSpace:"nowrap"}}
+        onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 18px 44px rgba(37,99,235,0.46),0 0 30px rgba(6,182,212,0.34)";}}
+        onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 14px 34px rgba(37,99,235,0.36),0 0 22px rgba(6,182,212,0.24)";}}
+      >
+        Portal Feedback
+      </button>
+    </>
+  );
+}
 // ── SIDEBAR ───────────────────────────────────────────────────────────────
 function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpen,setMobileOpen,onStaffAction}) {
-  const adminNav=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"tickets",icon:"🎫",label:"All Tickets"},{id:"staff",icon:"👥",label:"IT Staff"},{id:"analytics",icon:"📊",label:"Analytics"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"export",icon:"⬇",label:"Export Reports"},{id:"staff-management",icon:"👥",label:"Staff Management"},{id:"emaillog",icon:"📧",label:"Email Log"},{id:"temp-issue",icon:"📦",label:"Temp Issue"}];
+  const adminNav=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"tickets",icon:"🎫",label:"All Tickets"},{id:"staff",icon:"👥",label:"IT Staff"},{id:"analytics",icon:"📊",label:"Analytics"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"export",icon:"⬇",label:"Export Reports"},{id:"staff-management",icon:"👥",label:"Staff Management"},{id:"emaillog",icon:"📧",label:"Email Log"},{id:"portal-feedback",icon:"★",label:"Portal Feedback"},{id:"temp-issue",icon:"📦",label:"Temp Issue"}];
   const userNav=[{id:"home",icon:"🏠",label:"Home"},{id:"my-tickets",icon:"🎫",label:"My Tickets"},{id:"know-staff",icon:"👥",label:"Know Your IT Staff"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"new-ticket",icon:"➕",label:"New Ticket"},{id:"track",icon:"🔍",label:"Track Ticket"},{id:"temp-issue",icon:"🧾",label:"Temp Issue"}];
   const staffNav=[{id:"staff-dash",icon:"🏠",label:"My Dashboard"},{id:"assigned",icon:"📋",label:"Assigned Tickets"},{id:"chat",icon:"💬",label:"Staff Chat",staffAction:true},{id:"know-staff",icon:"👥",label:"Know Your IT Staff"},{id:"temp-issue",icon:"🧾",label:"Temp Issue"},{id:"profile",icon:"👤",label:"My Profile",staffAction:true},{id:"password",icon:"🔐",label:"Change Password",staffAction:true},{id:"logout",icon:"↩",label:"Logout",staffAction:true}];
   const nav=isAdmin?adminNav:isStaff?staffNav:userNav;
@@ -3734,6 +3922,9 @@ export default function App() {
   const [ticketsLoaded, setTicketsLoaded] = useState(false);
   const [feedback, setFeedback] = useState([]);
   const [feedbackLoaded, setFeedbackLoaded] = useState(false);
+  const [portalFeedback, setPortalFeedback] = useState([]);
+  const [portalFeedbackLoaded, setPortalFeedbackLoaded] = useState(false);
+  const [showPortalFeedback, setShowPortalFeedback] = useState(false);
   const [tempIssues, setTempIssues] = useState([]);
   const [tempIssuesLoaded, setTempIssuesLoaded] = useState(false);
   const [tempIssueFilters, setTempIssueFilters] = useState({ status:"All", staff:"All", item:"All", search:"", from:"", to:"" });
@@ -3785,6 +3976,24 @@ export default function App() {
     return () => { alive = false; clearInterval(interval); };
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    const loadPortalFeedback = async () => {
+      try {
+        const onlinePortalFeedback = await fetchPortalFeedback();
+        if (alive) {
+          setPortalFeedback(onlinePortalFeedback);
+          setPortalFeedbackLoaded(true);
+        }
+      } catch (error) {
+        console.error("Online portal feedback load failed:", error);
+        if (alive) setPortalFeedbackLoaded(true);
+      }
+    };
+    loadPortalFeedback();
+    const interval = setInterval(loadPortalFeedback, 15000);
+    return () => { alive = false; clearInterval(interval); };
+  }, []);
   useEffect(() => {
     let alive = true;
     const loadTempIssues = async () => {
@@ -3878,6 +4087,43 @@ export default function App() {
       return feedback;
     }
   }, [feedback]);
+  const reloadPortalFeedback = useCallback(async () => {
+    try {
+      const onlinePortalFeedback = await fetchPortalFeedback();
+      setPortalFeedback(onlinePortalFeedback);
+      setPortalFeedbackLoaded(true);
+      return onlinePortalFeedback;
+    } catch (error) {
+      console.error("Online portal feedback refresh failed:", error);
+      return portalFeedback;
+    }
+  }, [portalFeedback]);
+
+  const handlePortalFeedbackSubmit = async (entry) => {
+    const portalEntry = normalizePortalFeedback({
+      id: entry.id || genPortalFeedbackId(),
+      name: entry.name || "",
+      email: entry.email || "",
+      role: entry.role || session?.type || "User",
+      rating: Number(entry.rating || 0),
+      feedbackType: entry.feedbackType || "General Feedback",
+      message: entry.message || "",
+      createdAt: Date.now(),
+      status: "New",
+      reviewed: false,
+    });
+    try {
+      await savePortalFeedback(portalEntry);
+      setPortalFeedback(fs => [portalEntry, ...fs.filter(f => f.id !== portalEntry.id)]);
+      reloadPortalFeedback().catch(error => console.error("Post-submit portal feedback refresh failed:", error));
+      toast("Portal feedback submitted. Thank you!", "success");
+      return portalEntry;
+    } catch (error) {
+      console.error("Portal feedback save failed:", error);
+      toast(`Portal feedback save failed: ${error?.message || "Firestore error"}`, "error");
+      throw error;
+    }
+  };
   const handleDeleteTicket = async (id) => {
     try {
       await deleteTicket(id);
@@ -4287,6 +4533,12 @@ const handleNewTicket = async (form) => {
     <>
       <style>{CSS}</style>
       <Landing onLogin={handleLogin} tickets={tickets} />
+      <PortalFeedbackChrome onOpen={() => setShowPortalFeedback(true)} />
+      {showPortalFeedback && (
+        <Modal title="Portal Feedback" onClose={() => setShowPortalFeedback(false)}>
+          <PortalFeedbackForm session={session} onSubmit={handlePortalFeedbackSubmit} toast={toast} onClose={() => setShowPortalFeedback(false)} />
+        </Modal>
+      )}
       <Toast toasts={toasts} remove={remove} />
     </>
   );
@@ -4297,6 +4549,12 @@ const handleNewTicket = async (form) => {
       <>
         <style>{CSS}</style>
         <SetPasswordScreen staff={session.staff} onComplete={handleFirstLoginComplete} toast={toast} />
+        <PortalFeedbackChrome onOpen={() => setShowPortalFeedback(true)} />
+        {showPortalFeedback && (
+          <Modal title="Portal Feedback" onClose={() => setShowPortalFeedback(false)}>
+            <PortalFeedbackForm session={session} onSubmit={handlePortalFeedbackSubmit} toast={toast} onClose={() => setShowPortalFeedback(false)} />
+          </Modal>
+        )}
         <Toast toasts={toasts} remove={remove} />
       </>
     );
@@ -4430,6 +4688,7 @@ const handleNewTicket = async (form) => {
       if (page === "tickets") return <TicketsTable tickets={tickets} onView={setViewTicketId} isAdmin onDelete={handleDeleteTicket} />;
       if (page === "analytics") return <Analytics tickets={tickets} />;
       if (page === "feedback") return <AdminFeedbackPage feedback={feedback} setFeedback={setFeedback} toast={toast} />;
+      if (page === "portal-feedback") return <AdminPortalFeedbackPage portalFeedback={portalFeedback} setPortalFeedback={setPortalFeedback} toast={toast} />;
       if (page === "staff-management") return renderStaffManagement();
       if (page === "export") return <ExportPanel tickets={tickets} toast={toast} />;
       if (page === "emaillog") return <EmailLog />;
@@ -4594,10 +4853,26 @@ const handleNewTicket = async (form) => {
         </Modal>
       )}
 
+      <PortalFeedbackChrome onOpen={() => setShowPortalFeedback(true)} />
+      {showPortalFeedback && (
+        <Modal title="Portal Feedback" onClose={() => setShowPortalFeedback(false)}>
+          <PortalFeedbackForm session={session} onSubmit={handlePortalFeedbackSubmit} toast={toast} onClose={() => setShowPortalFeedback(false)} />
+        </Modal>
+      )}
       <Toast toasts={toasts} remove={remove} />
     </>
   );
 }
+
+
+
+
+
+
+
+
+
+
 
 
 
