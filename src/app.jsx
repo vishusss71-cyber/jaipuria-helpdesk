@@ -5,7 +5,7 @@ import autoTable from "jspdf-autotable";
 import emailjs from '@emailjs/browser';
 import { motion, AnimatePresence } from 'framer-motion';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, query, where, orderBy, addDoc } from 'firebase/firestore';
 const EMAIL_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || 'service_ctyqqbc';
 const EMAIL_CREATE_TEMPLATE_ID = "template_a30g4md";
 const EMAIL_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || 'N9OlDxPyO0uf_IlxJ';
@@ -3784,40 +3784,80 @@ function StaffChatModal({staff,profiles,statuses}) {
   const [text,setText]=useState('');
   const [messages,setMessages]=useState([]);
   const [unreadCounts,setUnreadCounts]=useState({});
+  const messagesEndRef=useRef(null);
   const peer=STAFF_BASE.find(s=>s.id===selected);
   const thread=[staff.id,selected].sort((a,b)=>a-b).join('-');
 
   useEffect(() => {
-    if (!firestoreDb || !thread) return;
-    const q = query(collection(firestoreDb, 'messages'), where('thread', '==', thread), orderBy('at', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMessages(msgs);
-      // Mark messages as read when viewing
-      msgs.filter(m => m.to === staff.id && !m.read).forEach(async (m) => {
-        await setDoc(doc(firestoreDb, 'messages', m.id), { ...m, read: true }, { merge: true });
-      });
-    });
-    return unsubscribe;
-  }, [thread, staff.id]);
+    setMessages([]);
+    if (!firestoreDb || !thread || !staff?.id) return undefined;
+
+    const q = query(collection(firestoreDb, 'messages'), where('thread', '==', thread));
+    const unsubscribe = onSnapshot(
+      q,
+      async (snapshot) => {
+        const msgs = snapshot.docs
+          .map(snap => normalizeMessage({ id: snap.id, ...snap.data() }))
+          .sort((a,b)=>(a.at||0)-(b.at||0));
+        setMessages(msgs);
+
+        const unreadForMe = msgs.filter(m => m.to === staff.id && !m.read);
+        await Promise.all(unreadForMe.map(m =>
+          setDoc(doc(firestoreDb, 'messages', m.id), { read: true, readAt: Date.now() }, { merge: true })
+            .catch(error => console.error('Chat read receipt failed:', error))
+        ));
+      },
+      (error) => {
+        console.error('Realtime chat listener failed:', error);
+        setMessages([]);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [thread, staff?.id]);
 
   useEffect(() => {
-    if (!firestoreDb) return;
-    const allThreads = STAFF_BASE.filter(s => s.id !== staff.id).map(s => [staff.id, s.id].sort((a,b)=>a-b).join('-'));
-    const unsubscribes = allThreads.map(thread => {
-      const q = query(collection(firestoreDb, 'messages'), where('thread', '==', thread), where('to', '==', staff.id), where('read', '==', false));
-      return onSnapshot(q, (snapshot) => {
-        setUnreadCounts(prev => ({ ...prev, [thread]: snapshot.size }));
+    messagesEndRef.current?.scrollIntoView({behavior:'smooth',block:'end'});
+  }, [messages.length, thread]);
+
+  useEffect(() => {
+    if (!firestoreDb || !staff?.id) return undefined;
+    const unsubscribes = STAFF_BASE
+      .filter(s => s.id !== staff.id)
+      .map(peerStaff => {
+        const threadKey = [staff.id,peerStaff.id].sort((a,b)=>a-b).join('-');
+        const q = query(collection(firestoreDb, 'messages'), where('thread', '==', threadKey), where('to', '==', staff.id), where('read', '==', false));
+        return onSnapshot(
+          q,
+          (snapshot) => setUnreadCounts(prev => ({ ...prev, [threadKey]: snapshot.size })),
+          (error) => console.error('Unread chat listener failed:', error)
+        );
       });
-    });
     return () => unsubscribes.forEach(unsub => unsub());
-  }, [staff.id]);
+  }, [staff?.id]);
 
   const send=async()=>{
-    if(!text.trim() || !firestoreDb) return;
-    const msg = {thread,from:staff.id,to:selected,text:text.trim(),at:Date.now(),read:false};
-    await setDoc(doc(collection(firestoreDb, 'messages')), msg);
+    const cleanText=text.trim();
+    if(!cleanText || !firestoreDb || !peer) return;
+    const createdAt=Date.now();
+    const msg = {
+      thread,
+      from:staff.id,
+      fromName:staff.name,
+      to:selected,
+      toName:peer.name,
+      text:cleanText,
+      at:createdAt,
+      createdAt,
+      read:false,
+    };
     setText('');
+    try {
+      await addDoc(collection(firestoreDb, 'messages'), msg);
+    } catch (error) {
+      console.error('Chat message send failed:', error);
+      setText(cleanText);
+    }
   };
 
   return <div style={{display:'grid',gridTemplateColumns:'220px 1fr',gap:14,minHeight:430}}>
@@ -3842,21 +3882,21 @@ function StaffChatModal({staff,profiles,statuses}) {
           const mine=m.from===staff.id;
           return <div key={m.id} style={{display:'flex',justifyContent:mine?'flex-end':'flex-start',marginBottom:10}}>
             <div style={{maxWidth:'72%',background:mine?'rgba(99,102,241,0.28)':'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:14,padding:'9px 12px'}}>
-              <div style={{fontSize:12,color:'rgba(226,232,240,0.45)',marginBottom:3}}>{STAFF_BASE.find(s=>s.id===m.from)?.name} · {timeAgo(m.at)}</div>
-              <div style={{fontSize:13,color:'#e2e8f0',lineHeight:1.4}}>{m.text}</div>
+              <div style={{fontSize:12,color:'rgba(226,232,240,0.45)',marginBottom:3}}>{STAFF_BASE.find(s=>s.id===m.from)?.name || m.fromName || 'Staff'} · {timeAgo(m.at)}</div>
+              <div style={{fontSize:13,color:'#e2e8f0',lineHeight:1.4,whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{m.text}</div>
             </div>
           </div>
         })}
         {messages.length===0&&<div style={{textAlign:'center',color:'rgba(226,232,240,0.35)',paddingTop:80}}>No messages yet</div>}
+        <div ref={messagesEndRef} />
       </div>
       <div style={{padding:12,borderTop:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10}}>
-        <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Type a message..."/>
+        <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}} placeholder="Type a message..."/>
         <button className="glow-btn" style={{padding:'10px 18px'}} onClick={send}>Send</button>
       </div>
     </div>
   </div>;
-}
-// ── QUICK ASSIGN DIALOG ───────────────────────────────────────────────────
+}// ── QUICK ASSIGN DIALOG ───────────────────────────────────────────────────
 function QuickAssignDialog({ticket,onClose,onSave,statuses={}}) {
   const [assigneeId,setAssigneeId]=useState(ticket?.assigneeId || STAFF_BASE[0]?.id || "");
   const [remark,setRemark]=useState("");
@@ -4859,6 +4899,7 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
+
 
 
 
