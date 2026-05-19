@@ -3843,40 +3843,36 @@ function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilt
   );
 }
 function StaffChatModal({staff,profiles,statuses}) {
-  const firstPeerId = STAFF_BASE.find(s=>s.id!==staff.id)?.id || STAFF_BASE[0].id;
-  const [selected,setSelected]=useState(firstPeerId);
-  const [mobileChatOpen,setMobileChatOpen]=useState(false);
-  const [text,setText]=useState('');
-  const [messages,setMessages]=useState([]);
-  const [unreadCounts,setUnreadCounts]=useState({});
-  const messagesEndRef=useRef(null);
-  const peer=STAFF_BASE.find(s=>s.id===selected);
-  const thread=[staff.id,selected].sort((a,b)=>a-b).join('-');
+  const firstPeerId = STAFF_BASE.find(s => s.id !== staff.id)?.id || STAFF_BASE[0].id;
+  const [selected, setSelected] = useState(firstPeerId);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [unreadCounts, setUnreadCounts] = useState({});
+  const messagesEndRef = useRef(null);
+
+  const peer = STAFF_BASE.find(s => s.id === selected);
+  const thread = [staff.id, selected].sort((a, b) => a - b).join('-');
 
   useEffect(() => {
     setMessages([]);
-    if (!firestoreDb || !thread || !staff?.id) return undefined;
 
-    const q = query(collection(firestoreDb, 'messages'), where('thread', '==', thread));
-    const unsubscribe = onSnapshot(
-      q,
-      async (snapshot) => {
-        const msgs = snapshot.docs
-          .map(snap => normalizeMessage({ id: snap.id, ...snap.data() }))
-          .sort((a,b)=>(a.at||0)-(b.at||0));
-        setMessages(msgs);
+    if (!firestoreDb || !thread || !staff?.id) {
+      return undefined;
+    }
 
-        const unreadForMe = msgs.filter(m => m.to === staff.id && !m.read);
-        await Promise.all(unreadForMe.map(m =>
-          setDoc(doc(firestoreDb, 'messages', m.id), { read: true, readAt: Date.now() }, { merge: true })
-            .catch(error => console.error('Chat read receipt failed:', error))
-        ));
-      },
-      (error) => {
-        console.error('Realtime chat listener failed:', error);
-        setMessages([]);
-      }
+    const q = query(
+      collection(firestoreDb, 'messages'),
+      where('thread', '==', thread)
     );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs
+        .map((snap) => normalizeMessage({ id: snap.id, ...snap.data() }))
+        .sort((a, b) => (a.at || 0) - (b.at || 0));
+
+      setMessages(msgs);
+    });
 
     return () => unsubscribe();
   }, [thread, staff?.id]);
@@ -3917,13 +3913,37 @@ function StaffChatModal({staff,profiles,statuses}) {
       read:false,
     };
     setText('');
-    try {
-      await addDoc(collection(firestoreDb, 'messages'), msg);
-    } catch (error) {
-      console.error('Chat message send failed:', error);
-      setText(cleanText);
-    }
-  };
+   try {
+await addDoc(collection(firestoreDb, 'messages'), msg);
+
+// AI RESPONSE
+const aiResponse = await fetch("/api/chat", {
+method: "POST",
+headers: {
+"Content-Type": "application/json",
+},
+body: JSON.stringify({
+message: cleanText,
+}),
+});
+
+const aiData = await aiResponse.json();
+
+const aiMsg = {
+text: aiData.reply,
+sender: "JIMJ AI Helpdesk",
+createdAt: new Date(),
+};
+
+await addDoc(collection(firestoreDb, 'messages'), aiMsg);
+
+} catch (error) {
+console.error("Chat message send failed:", error);
+setText(cleanText);
+}
+};
+
+
 
   return <div className={`staff-chat-shell ${mobileChatOpen ? 'mobile-chat-open' : ''}`} style={{display:'grid',gridTemplateColumns:'220px 1fr',gap:14,minHeight:430}}>
     <div className="glass staff-chat-list" style={{padding:10,overflowY:'auto'}}>
@@ -4965,14 +4985,6 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
-
-
-
-
-
-
-
-
 
 
 
