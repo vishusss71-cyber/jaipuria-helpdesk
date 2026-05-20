@@ -2852,11 +2852,11 @@ function AIHelpdeskChat({session}) {
     try {
       const response=await fetch("/api/key-test",{cache:"no-store"});
       const data=await response.json().catch(()=>({hasKey:false,error:"INVALID_JSON_RESPONSE"}));
-      console.log("Gemini key test response", {status:response.status, ok:response.ok, data});
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`Gemini key test: hasKey=${Boolean(data.hasKey)}, keyLength=${data.keyLength || 0}`,at:Date.now()}]);
+      console.log("OpenRouter key test response", {status:response.status, ok:response.ok, data});
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`OpenRouter key test: hasKey=${Boolean(data.hasKey)}, keyLength=${data.keyLength || 0}`,at:Date.now()}]);
     } catch (error) {
-      console.error("Gemini key test failed:",error);
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`Gemini key test failed: ${error.message}`,at:Date.now(),error:true}]);
+      console.error("OpenRouter key test failed:",error);
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`OpenRouter key test failed: ${error.message}`,at:Date.now(),error:true}]);
     } finally {
       setTestingApi(false);
     }
@@ -5139,6 +5139,7 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
+
 
 
 

@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@emailjs/browser": "^4.4.1",
-    "@google/generative-ai": "^0.24.1",
     "file-saver": "^2.0.5",
     "firebase": "^12.13.0",
     "framer-motion": "^12.38.0",
