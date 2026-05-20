@@ -2784,6 +2784,7 @@ function AIHelpdeskChat({session}) {
   const [open,setOpen]=useState(false);
   const [input,setInput]=useState("");
   const [loading,setLoading]=useState(false);
+  const [testingApi,setTestingApi]=useState(false);
   const [messages,setMessages]=useState([
     {id:"welcome",role:"assistant",text:"Hello! How may I help you today?",at:Date.now()}
   ]);
@@ -2804,18 +2805,22 @@ function AIHelpdeskChat({session}) {
     setInput("");
     setLoading(true);
     try {
+      console.log("Calling AI chat API", { message: clean });
       const response=await fetch("/api/chat",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({message:buildPrompt(clean),user:{name:session?.name || session?.email || "Portal User",email:session?.email || ""}})
+        cache:"no-store",
+        body:JSON.stringify({message:clean,user:{name:session?.name || session?.email || "Portal User",email:session?.email || ""}})
       });
-      if(!response.ok) throw new Error(`AI endpoint failed: ${response.status}`);
-      const data=await response.json();
+      const data=await response.json().catch(()=>({reply:"",error:"INVALID_JSON_RESPONSE"}));
+      console.log("AI chat API response", { status:response.status, ok:response.ok, data });
+      if(!response.ok) throw new Error(data?.detail || data?.error || `AI endpoint failed: ${response.status}`);
       const reply=(data?.reply || "").trim() || "I have forwarded this issue to IT Support Team.";
       setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:reply,at:Date.now()}]);
     } catch (error) {
       console.error("AI chatbot error:",error);
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Sorry, I am unable to respond right now. Please contact IT Support.",at:Date.now(),error:true}]);
+      const errorText = import.meta.env.DEV ? `AI API error: ${error.message}` : "Sorry, I am unable to respond right now. Please contact IT Support.";
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:errorText,at:Date.now(),error:true}]);
     } finally {
       setLoading(false);
     }
@@ -2823,6 +2828,38 @@ function AIHelpdeskChat({session}) {
 
   const escalate=()=>{
     setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"I have forwarded this issue to IT Support Team.",at:Date.now()}]);
+  };
+
+  const testAiApi=async()=>{
+    if(testingApi) return;
+    setTestingApi(true);
+    try {
+      const response=await fetch("/api/test",{cache:"no-store"});
+      const data=await response.json().catch(()=>({success:false,error:"INVALID_JSON_RESPONSE"}));
+      console.log("AI test API response", {status:response.status, ok:response.ok, data});
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`API test response: ${JSON.stringify(data)}`,at:Date.now()}]);
+    } catch (error) {
+      console.error("AI test API failed:",error);
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`API test failed: ${error.message}`,at:Date.now(),error:true}]);
+    } finally {
+      setTestingApi(false);
+    }
+  };
+
+  const testGeminiKey=async()=>{
+    if(testingApi) return;
+    setTestingApi(true);
+    try {
+      const response=await fetch("/api/key-test",{cache:"no-store"});
+      const data=await response.json().catch(()=>({hasKey:false,error:"INVALID_JSON_RESPONSE"}));
+      console.log("Gemini key test response", {status:response.status, ok:response.ok, data});
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`Gemini key test: hasKey=${Boolean(data.hasKey)}, keyLength=${data.keyLength || 0}`,at:Date.now()}]);
+    } catch (error) {
+      console.error("Gemini key test failed:",error);
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`Gemini key test failed: ${error.message}`,at:Date.now(),error:true}]);
+    } finally {
+      setTestingApi(false);
+    }
   };
 
   return (
@@ -2858,6 +2895,8 @@ function AIHelpdeskChat({session}) {
           <div className="ai-helpdesk-quick">
             {quickReplies.map(q=><button key={q} type="button" onClick={()=>sendMessage(q)} disabled={loading}>{q}</button>)}
             <button type="button" onClick={escalate} disabled={loading}>Escalate to IT</button>
+            <button type="button" onClick={testAiApi} disabled={testingApi}>{testingApi?"Testing...":"Test AI API"}</button>
+            <button type="button" onClick={testGeminiKey} disabled={testingApi}>Key Test</button>
           </div>
 
           <div className="ai-helpdesk-input">
@@ -5100,6 +5139,9 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
+
+
+
 
 
 
