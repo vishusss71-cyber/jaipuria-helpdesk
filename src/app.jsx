@@ -1646,6 +1646,12 @@ function Modal({ title, children, onClose, wide=false }) {
 function TicketClosureReview({ticket,onConfirmResolved,onStillIssue}) {
   const [comment,setComment]=useState("");
   const [showComment,setShowComment]=useState(false);
+  if(!ticket) return null;
+  const submitReopen=()=>{
+    const clean=comment.trim();
+    if(!clean) return;
+    onStillIssue(clean);
+  };
   return (
     <div className="glass2" style={{padding:"16px",borderColor:"rgba(16,185,129,.3)",background:"rgba(16,185,129,.08)",display:"flex",flexDirection:"column",gap:12}}>
       <div style={{fontSize:16,fontWeight:900,color:"#fff"}}>Your ticket has been closed. Please confirm if your issue is resolved.</div>
@@ -1660,7 +1666,7 @@ function TicketClosureReview({ticket,onConfirmResolved,onStillIssue}) {
           <textarea rows={3} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Please describe what issue is still pending." style={{resize:"vertical"}} />
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
             <button type="button" onClick={()=>setShowComment(false)} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",color:"#e2e8f0",padding:"9px 14px",borderRadius:10,fontWeight:900}}>Cancel</button>
-            <button className="glow-btn" type="button" onClick={()=>onStillIssue(comment)} disabled={!comment.trim()}>Submit & Reopen</button>
+            <button className="glow-btn" type="button" onClick={submitReopen} disabled={!comment.trim()}>Submit & Reopen</button>
           </div>
         </div>
       )}
@@ -1721,7 +1727,8 @@ function AuditTimeline({timeline}) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:0}}>
       {(timeline||[]).map((ev,i)=>{
-        const icon=Object.keys(icons).find(k=>ev.action.startsWith(k))||"default";
+        const action=ev?.action || "Updated";
+        const icon=Object.keys(icons).find(k=>action.startsWith(k))||"default";
         return (
           <div key={i} style={{display:"flex",gap:14,alignItems:"flex-start",position:"relative",paddingBottom:i<timeline.length-1?16:0}}>
             {i<timeline.length-1&&<div style={{position:"absolute",left:15,top:32,width:2,height:"calc(100% - 10px)",background:"rgba(255,255,255,0.07)"}}/>}
@@ -1729,7 +1736,7 @@ function AuditTimeline({timeline}) {
               {icons[icon]}
             </div>
             <div style={{paddingTop:4}}>
-              <div style={{fontSize:13,color:"#e2e8f0",fontWeight:500}}>{ev.action}</div>
+              <div style={{fontSize:13,color:"#e2e8f0",fontWeight:500}}>{action}</div>
               {ev.remark&&<div style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginTop:2,fontStyle:"italic"}}>"{ev.remark}"</div>}
               <div style={{fontSize:11,color:"rgba(226,232,240,0.35)",marginTop:3}}>{fmtDate(ev.at)} · {ev.by}</div>
             </div>
@@ -1792,22 +1799,37 @@ function CloseTicketDialog({ticket,onClose,onConfirm}) {
 
 // ── TICKET DETAIL ─────────────────────────────────────────────────────────
 function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staffId,staffName,toast,staffProfiles={},staffStatuses={}}) {
-  const ticket=tickets.find(t=>t.id===ticketId)||{};
+  const ticket=tickets.find(t=>t.id===ticketId)||null;
   const [comment,setComment]=useState("");
-  const [editStatus,setEditStatus]=useState(ticket.status);
-  const [editAssignee,setEditAssignee]=useState(ticket.assigneeId);
+  const [editStatus,setEditStatus]=useState(ticket?.status || "Open");
+  const [editAssignee,setEditAssignee]=useState(ticket?.assigneeId || STAFF_BASE[0]?.id || 1);
   const [showClose,setShowClose]=useState(false);
-  const assignee=STAFF_BASE.find(s=>s.id===ticket.assigneeId);
-  const cat=CATEGORIES.find(c=>c.id===ticket.category);
+  const currentTicket=ticket;
 
-  const updateTicket = async (changes, auditAction, remark = "") => {
+  useEffect(()=>{
+    if(!currentTicket) return;
+    setEditStatus(currentTicket.status || "Open");
+    setEditAssignee(currentTicket.assigneeId || STAFF_BASE[0]?.id || 1);
+  },[currentTicket?.id,currentTicket?.status,currentTicket?.assigneeId]);
+
+  const applyTicketChanges = async (changes, auditAction, remark = "") => {
+    if(!currentTicket){
+      toast("Ticket not found. Please reopen the ticket.", "error");
+      return null;
+    }
+    if(!currentTicket.id){
+      toast("Ticket update failed: missing ticket ID.", "error");
+      console.error("Ticket update failed: missing ticket id", currentTicket);
+      return null;
+    }
     let closedByStatusChange = false;
     let closedTicket = null;
+    let updatedTicket = null;
 
     setTickets(ts=>ts.map(t=>{
-      if(t.id!==ticketId) return t;
+      if(t.id!==currentTicket.id) return t;
       const actor=isAdmin?"Admin":staffName||"User";
-      const tl=[...(t.timeline||[]),{action:auditAction,remark,at:Date.now(),by:actor}];
+      const tl=[...(t.timeline||[]),{action:auditAction || "Updated",remark,at:Date.now(),by:actor}];
       const oldStatus=t.status;
       const closingNow=["Closed","Resolved"].includes(changes.status)&&!["Closed","Resolved"].includes(oldStatus);
       const nextAssignee=changes.assigneeId ? STAFF_BASE.find(s=>s.id===Number(changes.assigneeId)) : null;
@@ -1830,11 +1852,13 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
       if(changes.assigneeId&&Number(changes.assigneeId)!==Number(t.assigneeId)){
         emailTicketAssigned(updated,STAFF_BASE.find(s=>s.id===Number(changes.assigneeId)),STAFF_BASE.find(s=>s.id===t.assigneeId),actor,remark);
       }
+      updatedTicket = updated;
       return updated;
     }));
 
     toast(closedByStatusChange ? "Ticket closed" : auditAction,"success");
     if(closedTicket) notifyTicketClosed(closedTicket, isAdmin?"Admin":staffName||"IT Support", remark);
+    return updatedTicket;
   };
   const addComment=()=>{
     if(!comment.trim()) return;
@@ -1849,24 +1873,70 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
   };
 
   const confirmUserResolved=async()=>{
-    const now=Date.now();
-    const updated={...currentTicket,userConfirmedResolved:true,userFeedbackStatus:"resolved",userReviewedAt:now,updatedAt:now,
-      timeline:[...(currentTicket.timeline||[]),{action:"User confirmed resolved",remark:"Issue resolved",at:now,by:currentTicket.email || "User"}]};
-    await updateTicket(updated);
-    setTickets(ts=>ts.map(t=>t.id===ticketId?updated:t));
-    toast("Resolution confirmed","success");
+    try {
+      if(!currentTicket){
+        toast("Ticket not found. Please reopen the ticket.", "error");
+        return;
+      }
+      if(!currentTicket.id){
+        toast("Ticket update failed: missing ticket ID.", "error");
+        console.error("Confirm resolved failed: missing ticket id", currentTicket);
+        return;
+      }
+      const now=Date.now();
+      const updated={
+        ...currentTicket,
+        userConfirmedResolved:true,
+        userFeedbackStatus:"resolved",
+        userReviewedAt:now,
+        updatedAt:now,
+        timeline:[...(currentTicket.timeline||[]),{action:"User confirmed resolved",remark:"Issue resolved",at:now,by:currentTicket.email || "User"}]
+      };
+      if(ONLINE_TICKETS_ENABLED) await saveTicket(updated);
+      setTickets(ts=>ts.map(t=>t.id===currentTicket.id?updated:t));
+      toast("Thank you for confirming.","success");
+    } catch(error) {
+      console.error("Confirm resolved failed:", error);
+      toast("Could not confirm this ticket right now. Please try again.","error");
+    }
   };
 
   const reopenFromUser=async(reason)=>{
-    const clean=String(reason||"").trim();
-    if(!clean) return;
-    const now=Date.now();
-    const updated={...currentTicket,status:"Open",reopenReason:clean,reopenedAt:now,reopenedBy:currentTicket.email || "User",userFeedbackStatus:"still_issue",userReviewedAt:now,updatedAt:now,
-      comments:[...(currentTicket.comments||[]),{text:clean,at:now,by:currentTicket.email || "User"}],
-      timeline:[...(currentTicket.timeline||[]),{action:"Reopened",remark:clean,at:now,by:currentTicket.email || "User"}]};
-    await updateTicket(updated);
-    setTickets(ts=>ts.map(t=>t.id===ticketId?updated:t));
-    toast("Ticket reopened","success");
+    try {
+      const clean=String(reason||"").trim();
+      if(!clean){
+        toast("Please describe what issue is still pending.","error");
+        return;
+      }
+      if(!currentTicket){
+        toast("Ticket not found. Please reopen the ticket.", "error");
+        return;
+      }
+      if(!currentTicket.id){
+        toast("Ticket update failed: missing ticket ID.", "error");
+        console.error("Reopen ticket failed: missing ticket id", currentTicket);
+        return;
+      }
+      const now=Date.now();
+      const updated={
+        ...currentTicket,
+        status:"Open",
+        reopenReason:clean,
+        reopenedAt:now,
+        reopenedBy:currentTicket.email || "User",
+        userFeedbackStatus:"still_issue",
+        userReviewedAt:now,
+        updatedAt:now,
+        comments:[...(currentTicket.comments||[]),{text:clean,at:now,by:currentTicket.email || "User"}],
+        timeline:[...(currentTicket.timeline||[]),{action:"Reopened",remark:clean,at:now,by:currentTicket.email || "User"}]
+      };
+      if(ONLINE_TICKETS_ENABLED) await saveTicket(updated);
+      setTickets(ts=>ts.map(t=>t.id===currentTicket.id?updated:t));
+      toast("Ticket reopened","success");
+    } catch(error) {
+      console.error("Reopen ticket failed:", error);
+      toast("Ticket could not be reopened right now. Please try again.","error");
+    }
   };
 
   const handleCloseTicket=async(remarks)=>{
@@ -1888,8 +1958,18 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
       notifyTicketClosed(closedTicket, closedBy, remarks);
     }
   };
-  const canClose=(isAdmin||(isStaff&&ticket.assigneeId===staffId))&&ticket.status!=="Closed";
-  const currentTicket=tickets.find(t=>t.id===ticketId)||ticket;
+
+  if(!currentTicket) {
+    return (
+      <div className="glass2" style={{padding:"16px",borderColor:"rgba(239,68,68,.28)",background:"rgba(239,68,68,.08)",color:"#fecaca"}}>
+        Ticket details are not available. Please close this window and open the ticket again.
+      </div>
+    );
+  }
+
+  const assignee=STAFF_BASE.find(s=>s.id===currentTicket.assigneeId);
+  const cat=CATEGORIES.find(c=>c.id===currentTicket.category);
+  const canClose=(isAdmin||(isStaff&&currentTicket.assigneeId===staffId))&&currentTicket.status!=="Closed";
 
   if(showClose) return (
     <div>
@@ -2084,7 +2164,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
 
         }
 
-        updateTicket(
+        applyTicketChanges(
           changes,
           actions.join("; ") || "Updated"
         );
