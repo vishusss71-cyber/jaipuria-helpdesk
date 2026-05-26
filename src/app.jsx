@@ -3576,6 +3576,67 @@ function AIHelpdeskChat({session,onCreateTicket}) {
     </>
   );
 }
+
+function PWAInstallPrompt() {
+  const [promptEvent,setPromptEvent]=useState(null);
+  const [dismissed,setDismissed]=useState(()=>DB.get("pwa_install_dismissed", false));
+  const [installed,setInstalled]=useState(false);
+
+  useEffect(()=>{
+    const isStandalone = window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone;
+    setInstalled(Boolean(isStandalone));
+    const onPrompt=(event)=>{
+      event.preventDefault();
+      setPromptEvent(event);
+    };
+    const onInstalled=()=>{
+      setInstalled(true);
+      setPromptEvent(null);
+      DB.set("pwa_install_dismissed", true);
+    };
+    window.addEventListener("beforeinstallprompt",onPrompt);
+    window.addEventListener("appinstalled",onInstalled);
+    return ()=>{
+      window.removeEventListener("beforeinstallprompt",onPrompt);
+      window.removeEventListener("appinstalled",onInstalled);
+    };
+  },[]);
+
+  const isIOS = /iphone|ipad|ipod/i.test(window.navigator.userAgent || "");
+  const canShow = !installed && !dismissed && (promptEvent || isIOS);
+  if(!canShow) return null;
+
+  const install=async()=>{
+    if(!promptEvent) return;
+    promptEvent.prompt();
+    await promptEvent.userChoice.catch(()=>null);
+    setPromptEvent(null);
+    setDismissed(true);
+    DB.set("pwa_install_dismissed", true);
+  };
+  const close=()=>{
+    setDismissed(true);
+    DB.set("pwa_install_dismissed", true);
+  };
+
+  return (
+    <div style={{position:"fixed",left:12,bottom:12,zIndex:910,maxWidth:360,border:"1px solid rgba(125,211,252,.22)",borderRadius:16,background:"linear-gradient(135deg,rgba(7,17,31,.96),rgba(15,23,42,.94))",boxShadow:"0 18px 44px rgba(0,0,0,.38),0 0 24px rgba(14,165,233,.18)",padding:"12px 13px",color:"#e2e8f0",backdropFilter:"blur(18px)"}}>
+      <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+        <div className="pulse" style={{width:34,height:34,borderRadius:12,background:"rgba(14,165,233,.16)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✦</div>
+        <div style={{minWidth:0,flex:1}}>
+          <div style={{fontSize:13,fontWeight:900,color:"#fff"}}>Install Jaipuria Helpdesk App</div>
+          <div style={{fontSize:12,lineHeight:1.45,color:"rgba(226,232,240,.62)",marginTop:3}}>
+            {isIOS ? "Tap Share button and select Add to Home Screen." : "Open the portal faster from your home screen."}
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+            {promptEvent&&<button className="glow-btn" type="button" onClick={install} style={{padding:"8px 12px",fontSize:12}}>Install</button>}
+            <button type="button" onClick={close} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",color:"#cbd5e1",padding:"8px 12px",borderRadius:10,fontSize:12,fontWeight:800}}>Later</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 // ── SIDEBAR ───────────────────────────────────────────────────────────────
 function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpen,setMobileOpen,onStaffAction}) {
   const adminNav=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"tickets",icon:"🎫",label:"All Tickets"},{id:"staff",icon:"👥",label:"IT Staff"},{id:"analytics",icon:"📊",label:"Analytics"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"export",icon:"⬇",label:"Export Reports"},{id:"staff-management",icon:"👥",label:"Staff Management"},{id:"emaillog",icon:"📧",label:"Email Log"},{id:"portal-feedback",icon:"★",label:"Portal Feedback"},{id:"temp-issue",icon:"📦",label:"Temp Issue"}];
@@ -5797,6 +5858,7 @@ const handleNewTicket = async (form) => {
       )}
 
       <PortalFeedbackChrome onOpen={() => setShowPortalFeedback(true)} />
+      <PWAInstallPrompt />
       {!isAdmin && !isStaff && <AIHelpdeskChat session={session} onCreateTicket={handleNewTicket} />}
       {showPortalFeedback && (
         <Modal title="Portal Feedback" onClose={() => setShowPortalFeedback(false)}>
