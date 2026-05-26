@@ -2822,7 +2822,7 @@ function getWifiSteps() {
       "If it still does not connect, restart WiFi and try again.",
       "If issue continues, escalate to IT Support."
     ],
-    footer:"Do you want AI assistance for this issue? Type AI.\nDo you want to escalate this to IT Support? Type ESCALATE."
+    footer:"Is your issue resolved? Type YES or NO.\nDo you want AI assistance for this issue? Type AI.\nDo you want to escalate this to IT Support? Type ESCALATE."
   };
 }
 
@@ -2843,8 +2843,50 @@ function getCategorySteps(category) {
   const flow=categoryMap[normalized] || fallback;
   return {
     ...flow,
-    footer:"Do you want AI assistance for this issue? Type AI.\nDo you want to escalate this to IT Support? Type ESCALATE."
+    footer:"Is your issue resolved? Type YES or NO.\nDo you want AI assistance for this issue? Type AI.\nDo you want to escalate this to IT Support? Type ESCALATE."
   };
+}
+
+function getTicketCategoryFromHelpdesk(categoryId) {
+  const categoryMap={
+    wifi:"wifi",
+    printer:"printer",
+    moodle:"erp",
+    internet:"internet",
+    laptop:"laptop",
+    desktop:"desktop",
+    "ms-office":"software",
+    email:"email",
+    login:"password",
+    resources:"other"
+  };
+  return categoryMap[categoryId] || "other";
+}
+
+function getHelpdeskCategoryLabel(categoryId) {
+  return HELPDESK_MENU_ITEMS.find(item=>item.id===categoryId)?.label || "Other IT Resources";
+}
+
+function resolveTicketCategory(value, fallback="other") {
+  const text=String(value || "").trim().toLowerCase();
+  if(!text || text==="ok" || text==="yes") return fallback;
+  const matched=CATEGORIES.find(category=>category.id===text || category.label.toLowerCase()===text || category.label.toLowerCase().includes(text));
+  if(matched) return matched.id;
+  const menuMatch=HELPDESK_MENU_ITEMS.find(item=>item.aliases.includes(text) || item.label.toLowerCase()===text);
+  return menuMatch ? getTicketCategoryFromHelpdesk(menuMatch.id) : fallback;
+}
+
+function getTicketFlowPrompt(step, draft={}) {
+  const prompts={
+    name:"Please enter your name.",
+    email:"Please enter your email.",
+    dept:"Please enter your Department / Program.",
+    location:"Please enter your Location / Room / Lab.",
+    category:`Issue category is ${draft.categoryLabel || "Other IT Resources"}. Type OK to keep it, or type another category.`,
+    description:"Please describe the issue in detail.",
+    priority:"Please choose priority: Low / Medium / High."
+  };
+  return prompts[step] || "";
 }
 
 function handleMenuSelection(userText) {
@@ -2866,14 +2908,16 @@ function handleMenuSelection(userText) {
     return {type:"escalate",text:"Your issue has been marked for IT Support escalation. Please share your name, system/location, and issue details."};
   }
   return selected.id==="wifi"
-    ? {type:"steps",...getWifiSteps()}
-    : {type:"steps",...getCategorySteps(selected.id)};
+    ? {type:"steps",categoryId:selected.id,categoryLabel:selected.label,...getWifiSteps()}
+    : {type:"steps",categoryId:selected.id,categoryLabel:selected.label,...getCategorySteps(selected.id)};
 }
 
-function AIHelpdeskChat({session}) {
+function AIHelpdeskChat({session,onCreateTicket}) {
   const [open,setOpen]=useState(false);
   const [input,setInput]=useState("");
   const [loading,setLoading]=useState(false);
+  const [ticketFlow,setTicketFlow]=useState(null);
+  const [lastHelpdeskContext,setLastHelpdeskContext]=useState(null);
   const [messages,setMessages]=useState([
     {id:"welcome",role:"assistant",text:"Hello! How may I help you today?",at:Date.now()}
   ]);
@@ -2885,15 +2929,107 @@ function AIHelpdeskChat({session}) {
 
   const buildPrompt=(question)=>`You are Jaipuria Helpdesk AI, a friendly IT support assistant for Jaipuria Institute of Management. Answer only campus IT/helpdesk questions such as login issues, WiFi, Moodle/LMS, printers, MS Office, email, laptop/software troubleshooting, and general IT support. Give concise, practical steps. If the question cannot be answered confidently, reply exactly: I have forwarded this issue to IT Support Team.\n\nUser: ${question}`;
 
+  const startTicketFlow=(context=lastHelpdeskContext)=>{
+    const categoryId=context?.categoryId || "resources";
+    const categoryLabel=context?.categoryLabel || getHelpdeskCategoryLabel(categoryId);
+    const ticketCategory=getTicketCategoryFromHelpdesk(categoryId);
+    const draft={
+      name:"",
+      email:"",
+      dept:"",
+      location:"",
+      category:ticketCategory,
+      categoryLabel,
+      description:"",
+      priority:"Medium",
+      source:"AI Chatbot",
+      notes:context?.notes || ""
+    };
+    const firstStep="name";
+    setTicketFlow({step:firstStep,draft});
+    setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:getTicketFlowPrompt(firstStep,draft),at:Date.now(),type:"ticket-flow"}]);
+  };
+
+  const handleTicketFlowInput=async(clean)=>{
+    if(!ticketFlow) return false;
+    const step=ticketFlow.step;
+    const value=clean.trim();
+    const draft={...ticketFlow.draft};
+    if(step==="email" && !/\S+@\S+\.\S+/.test(value)) {
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Please enter a valid email address.",at:Date.now(),error:true}]);
+      return true;
+    }
+    if(step==="priority" && !["low","medium","high"].includes(value.toLowerCase())) {
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Please type Low, Medium, or High.",at:Date.now(),error:true}]);
+      return true;
+    }
+    if(step==="category") {
+      draft.category=resolveTicketCategory(value,draft.category);
+      draft.categoryLabel=CATEGORIES.find(c=>c.id===draft.category)?.label || draft.categoryLabel;
+    } else if(step==="priority") {
+      draft.priority=value.charAt(0).toUpperCase()+value.slice(1).toLowerCase();
+    } else {
+      draft[step]=value;
+    }
+    const steps=["name","email","dept","location","category","description","priority"];
+    const nextStep=steps[steps.indexOf(step)+1];
+    if(nextStep) {
+      setTicketFlow({step:nextStep,draft});
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:getTicketFlowPrompt(nextStep,draft),at:Date.now(),type:"ticket-flow"}]);
+      return true;
+    }
+    setTicketFlow(null);
+    setLoading(true);
+    try {
+      const ticket=await Promise.resolve(onCreateTicket?.({
+        name:draft.name,
+        email:draft.email,
+        dept:draft.dept,
+        mobile:"",
+        location:draft.location,
+        category:draft.category,
+        description:draft.description,
+        priority:draft.priority,
+        source:"AI Chatbot",
+        notes:draft.notes
+      }));
+      if(!ticket?.id) throw new Error("Ticket could not be created.");
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`Your ticket has been generated successfully. Ticket ID: ${ticket.id}. Our IT Support Team will contact you soon.`,at:Date.now(),type:"ticket-success"}]);
+    } catch (error) {
+      console.error("Chatbot ticket creation failed:",error);
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`Ticket creation failed: ${error?.message || "Please try again from the portal ticket form."}`,at:Date.now(),error:true}]);
+    } finally {
+      setLoading(false);
+    }
+    return true;
+  };
+
   const sendMessage=async(value)=>{
     const clean=(value ?? input).trim();
     if(!clean || loading) return;
     const userMessage={id:genToken(),role:"user",text:clean,at:Date.now()};
     setMessages(prev=>[...prev,userMessage]);
     setInput("");
+    if(ticketFlow && await handleTicketFlowInput(clean)) return;
+    const normalized=clean.toLowerCase().trim();
+    if(normalized==="yes") {
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Great! Happy to help.",at:Date.now()}]);
+      return;
+    }
+    if(normalized==="no" || ["escalate","esc","talk to it","talk to support","it support","support"].includes(normalized)) {
+      startTicketFlow();
+      return;
+    }
     const localReply=handleMenuSelection(clean);
     const wantsAi=["ai","ask ai","talk to ai"].includes(clean.toLowerCase().trim());
     if(localReply && localReply.type!=="ai" && !wantsAi) {
+      if(localReply.type==="steps") {
+        setLastHelpdeskContext({
+          categoryId:localReply.categoryId,
+          categoryLabel:localReply.categoryLabel,
+          notes:`AI Chatbot troubleshooting shown:\n${localReply.title}\n${localReply.steps.map((step,index)=>`${index+1}. ${step}`).join("\n")}`
+        });
+      }
       setMessages(prev=>[...prev,{id:genToken(),role:"assistant",at:Date.now(),...localReply}]);
       return;
     }
@@ -4489,7 +4625,8 @@ const handleNewTicket = async (form) => {
 
   const assignee =
     getActiveStaffForAssignment() ||
-    STAFF_BASE[0];
+    STAFF_BASE[0] ||
+    { id: 0, name: "IT Support Team", role: "IT Support", email: "" };
 
   const now = Date.now();
 
@@ -4503,6 +4640,8 @@ const handleNewTicket = async (form) => {
       category: form.category,
       description: form.description,
       priority: form.priority || "Medium",
+      source: form.source || "Portal",
+      notes: form.notes || "",
       status: "Assigned",
       assigneeId: assignee.id,
       assigneeName: assignee.name,
@@ -4516,7 +4655,8 @@ const handleNewTicket = async (form) => {
         {
           action: "Created",
           by: form.name,
-          at: now
+          at: now,
+          remark: form.source ? `Source: ${form.source}` : ""
         },
         {
           action: `Assigned to ${assignee.name}`,
@@ -4548,9 +4688,11 @@ const handleNewTicket = async (form) => {
       }
 
       toast("Ticket created successfully", "success");
+      return newTicket;
     } catch (error) {
       console.error("Ticket create/save failed:", error);
       toast(`Ticket save failed: ${error?.message || "Firestore error"}`, "error");
+      return null;
     }
   };
 
@@ -5203,7 +5345,7 @@ const handleNewTicket = async (form) => {
       )}
 
       <PortalFeedbackChrome onOpen={() => setShowPortalFeedback(true)} />
-      {!isAdmin && !isStaff && <AIHelpdeskChat session={session} />}
+      {!isAdmin && !isStaff && <AIHelpdeskChat session={session} onCreateTicket={handleNewTicket} />}
       {showPortalFeedback && (
         <Modal title="Portal Feedback" onClose={() => setShowPortalFeedback(false)}>
           <PortalFeedbackForm session={session} onSubmit={handlePortalFeedbackSubmit} toast={toast} onClose={() => setShowPortalFeedback(false)} />
