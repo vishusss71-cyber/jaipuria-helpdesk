@@ -78,9 +78,12 @@ function normalizeTicket(ticket = {}) {
     watchers: Array.isArray(ticket.watchers) ? ticket.watchers : [],
     notifiedStaff: Array.isArray(ticket.notifiedStaff) ? ticket.notifiedStaff : [],
     feedbackSubmitted: Boolean(ticket.feedbackSubmitted),
-    closurePopupShown: Boolean(ticket.closurePopupShown),
-    closeReview: ticket.closeReview || null,
-    followUpTicketId: ticket.followUpTicketId || "",
+    userConfirmedResolved: Boolean(ticket.userConfirmedResolved),
+    userFeedbackStatus: ticket.userFeedbackStatus || "",
+    userReviewedAt: ticket.userReviewedAt || null,
+    reopenReason: ticket.reopenReason || "",
+    reopenedAt: ticket.reopenedAt || null,
+    reopenedBy: ticket.reopenedBy || "",
     closedAt: ticket.closedAt ?? null,
     closingRemarks: ticket.closingRemarks || "",
   };
@@ -637,37 +640,23 @@ function emailAllITStaff(subject, body) {
   simulateEmail("admin@jaipuria.ac.in", subject, body);
 }
 
-function notifyWhatsApp(payload) {
-  try {
-    fetch("/api/notify-whatsapp", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(payload),
-    }).catch(error => console.warn("WhatsApp notification skipped", error));
-  } catch (error) {
-    console.warn("WhatsApp notification skipped", error);
-  }
-}
-
 function notifyTicketCreated(ticket) {
   const body=`New IT Ticket Created
 Ticket ID: ${ticket.id}
 Category: ${categoryLabel(ticket.category)}
 User: ${ticket.name}
 Mobile: ${ticket.mobile || "Not provided"}
-Issue: ${ticket.description || ticket.issueSummary || "Not provided"}`;
+  Issue: ${ticket.description || ticket.issueSummary || "Not provided"}`;
   emailAllITStaff(`[${ticket.id}] New IT Ticket Created`, body);
-  notifyWhatsApp({type:"ticket_created",message:body,ticket});
 }
 
 function notifyTicketClosed(ticket, closedBy="IT Support", resolution="") {
   const body=`Ticket Closed
 Ticket ID: ${ticket.id}
 Closed By: ${closedBy}
-Resolution: ${resolution || ticket.closingRemarks || "Resolved by IT Support"}`;
+  Resolution: ${resolution || ticket.closingRemarks || "Resolved by IT Support"}`;
   if(ticket.email) simulateEmail(ticket.email, `[${ticket.id}] Ticket Closed`, `Dear ${ticket.name},\n\nYour ticket has been closed. Please review the resolution.\n\n${body}\n\nRegards,\nJaipuria IT Support`);
   emailAllITStaff(`[${ticket.id}] Ticket Closed`, body);
-  notifyWhatsApp({type:"ticket_closed",message:body,ticket});
 }
 
 function emailTicketCreated(ticket, assignee) {
@@ -1654,39 +1643,27 @@ function Modal({ title, children, onClose, wide=false }) {
   );
 }
 
-function TicketClosurePopup({ticket,onView,onClose,onComment,onReview,onFeedback,onReopen,onFollowUp}) {
+function TicketClosureReview({ticket,onConfirmResolved,onStillIssue}) {
   const [comment,setComment]=useState("");
-  const [rating,setRating]=useState(5);
-  const [outcome,setOutcome]=useState("Resolved");
+  const [showComment,setShowComment]=useState(false);
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <div className="glass2" style={{padding:"16px",background:"linear-gradient(135deg,rgba(16,185,129,.12),rgba(14,165,233,.08))"}}>
-        <div style={{fontSize:18,fontWeight:900,color:"#fff",marginBottom:6}}>Your ticket has been closed. Please review the resolution.</div>
-        <div style={{fontSize:13,color:"rgba(226,232,240,.62)"}}>Ticket {ticket.id} · {categoryLabel(ticket.category)}</div>
-        {ticket.closingRemarks&&<div style={{marginTop:10,fontSize:13,color:"#bbf7d0"}}>Resolution: {ticket.closingRemarks}</div>}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
-        <label style={{fontSize:12,color:"rgba(226,232,240,.65)"}}>Rate resolution
-          <select value={rating} onChange={e=>setRating(Number(e.target.value))} style={{marginTop:6}}>{[5,4,3,2,1].map(r=><option key={r} value={r}>{r}</option>)}</select>
-        </label>
-        <label style={{fontSize:12,color:"rgba(226,232,240,.65)"}}>Status
-          <select value={outcome} onChange={e=>setOutcome(e.target.value)} style={{marginTop:6}}><option>Resolved</option><option>Still facing issue</option></select>
-        </label>
-      </div>
-      <textarea rows={3} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Optional comment for IT Support..." style={{resize:"vertical"}} />
-      {outcome==="Still facing issue"&&(
-        <div className="glass2" style={{padding:"12px",display:"flex",gap:10,flexWrap:"wrap",borderColor:"rgba(245,158,11,.28)"}}>
-          <button className="glow-btn" type="button" onClick={()=>onReopen({rating,outcome,comment})}>Reopen Ticket</button>
-          <button type="button" onClick={()=>onFollowUp({rating,outcome,comment})} style={{background:"rgba(245,158,11,.13)",border:"1px solid rgba(245,158,11,.28)",color:"#fbbf24",padding:"9px 14px",borderRadius:10,fontWeight:900}}>Create Follow-up Ticket</button>
+    <div className="glass2" style={{padding:"16px",borderColor:"rgba(16,185,129,.3)",background:"rgba(16,185,129,.08)",display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{fontSize:16,fontWeight:900,color:"#fff"}}>Your ticket has been closed. Please confirm if your issue is resolved.</div>
+      {ticket.closingRemarks&&<div style={{fontSize:13,color:"#bbf7d0"}}>Resolution: {ticket.closingRemarks}</div>}
+      {!showComment ? (
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          <button className="glow-btn" type="button" onClick={onConfirmResolved}>Yes, Resolved</button>
+          <button type="button" onClick={()=>setShowComment(true)} style={{background:"rgba(245,158,11,.13)",border:"1px solid rgba(245,158,11,.28)",color:"#fbbf24",padding:"9px 14px",borderRadius:10,fontWeight:900}}>No, Still Issue</button>
+        </div>
+      ) : (
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <textarea rows={3} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Please describe what issue is still pending." style={{resize:"vertical"}} />
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <button type="button" onClick={()=>setShowComment(false)} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",color:"#e2e8f0",padding:"9px 14px",borderRadius:10,fontWeight:900}}>Cancel</button>
+            <button className="glow-btn" type="button" onClick={()=>onStillIssue(comment)} disabled={!comment.trim()}>Submit & Reopen</button>
+          </div>
         </div>
       )}
-      <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
-        <button type="button" onClick={onView} style={{background:"rgba(14,165,233,.14)",border:"1px solid rgba(14,165,233,.28)",color:"#bae6fd",padding:"9px 14px",borderRadius:10,fontWeight:900}}>View Ticket</button>
-        <button type="button" onClick={()=>onComment(comment)} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",color:"#e2e8f0",padding:"9px 14px",borderRadius:10,fontWeight:900}}>Add Comment</button>
-        <button className="glow-btn" type="button" onClick={()=>onReview({rating,outcome,comment})}>Save Review</button>
-        <button type="button" onClick={onFeedback} style={{background:"rgba(139,92,246,.14)",border:"1px solid rgba(139,92,246,.28)",color:"#ddd6fe",padding:"9px 14px",borderRadius:10,fontWeight:900}}>Give Feedback</button>
-        <button type="button" onClick={onClose} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",color:"#e2e8f0",padding:"9px 14px",borderRadius:10,fontWeight:900}}>Close</button>
-      </div>
     </div>
   );
 }
@@ -1844,7 +1821,9 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         updated.closingRemarks=remark||"Closed from ticket controls.";
         updated.resolutionTime=updated.closedAt-t.createdAt;
         updated.feedbackSubmitted=false;
-        updated.closurePopupShown=false;
+        updated.userConfirmedResolved=false;
+        updated.userFeedbackStatus="";
+        updated.userReviewedAt=null;
         closedByStatusChange=true;
         closedTicket=updated;
       }
@@ -1869,6 +1848,27 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     toast("Comment added","success");
   };
 
+  const confirmUserResolved=async()=>{
+    const now=Date.now();
+    const updated={...currentTicket,userConfirmedResolved:true,userFeedbackStatus:"resolved",userReviewedAt:now,updatedAt:now,
+      timeline:[...(currentTicket.timeline||[]),{action:"User confirmed resolved",remark:"Issue resolved",at:now,by:currentTicket.email || "User"}]};
+    await updateTicket(updated);
+    setTickets(ts=>ts.map(t=>t.id===ticketId?updated:t));
+    toast("Resolution confirmed","success");
+  };
+
+  const reopenFromUser=async(reason)=>{
+    const clean=String(reason||"").trim();
+    if(!clean) return;
+    const now=Date.now();
+    const updated={...currentTicket,status:"Open",reopenReason:clean,reopenedAt:now,reopenedBy:currentTicket.email || "User",userFeedbackStatus:"still_issue",userReviewedAt:now,updatedAt:now,
+      comments:[...(currentTicket.comments||[]),{text:clean,at:now,by:currentTicket.email || "User"}],
+      timeline:[...(currentTicket.timeline||[]),{action:"Reopened",remark:clean,at:now,by:currentTicket.email || "User"}]};
+    await updateTicket(updated);
+    setTickets(ts=>ts.map(t=>t.id===ticketId?updated:t));
+    toast("Ticket reopened","success");
+  };
+
   const handleCloseTicket=async(remarks)=>{
     const closedAt=Date.now();
     const closedBy = staffName || (isAdmin ? "Admin" : "User");
@@ -1876,7 +1876,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
       if(t.status==="Closed") return t;
-      const updated={...t,status:"Closed",closedAt,closingRemarks:remarks,resolutionTime:closedAt-t.createdAt,updatedAt:closedAt,feedbackSubmitted:false,closurePopupShown:false,
+      const updated={...t,status:"Closed",closedAt,closingRemarks:remarks,resolutionTime:closedAt-t.createdAt,updatedAt:closedAt,feedbackSubmitted:false,userConfirmedResolved:false,userFeedbackStatus:"",userReviewedAt:null,
         timeline:[...(t.timeline||[]),{action:"Closed",remark:remarks,at:closedAt,by:closedBy}]};
       closedTicket = updated;
       return updated;
@@ -1933,6 +1933,10 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
           </div>
         )}
       </div>
+
+      {!isAdmin&&!isStaff&&["Closed","Resolved"].includes(currentTicket.status)&&!currentTicket.userReviewedAt&&(
+        <TicketClosureReview ticket={currentTicket} onConfirmResolved={confirmUserResolved} onStillIssue={reopenFromUser} />
+      )}
 
       {/* Info */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -2180,8 +2184,9 @@ function TicketCard({ticket,onView}) {
         <div>Assigned to: <span style={{color:"#e2e8f0"}}>{ticket.assigneeName || ticket.assignedTo || staffName(ticket.assigneeId)}</span></div>
         <div>Watchers: <span style={{color:"#e2e8f0"}}>{(ticket.watchers||ticket.notifiedStaff||[]).map(w=>w.name).filter(Boolean).join(", ") || "All IT Staff"}</span></div>
         <div>Source: <span style={{color:"#e2e8f0"}}>{ticket.source || "Portal"}</span></div>
-        {ticket.closeReview&&<div>Close feedback: <span style={{color:"#e2e8f0"}}>{ticket.closeReview.rating || "—"}/5 · {ticket.closeReview.outcome || "Reviewed"}{ticket.closeReview.comment ? ` · ${ticket.closeReview.comment}` : ""}</span></div>}
+        {ticket.userFeedbackStatus&&<div>User review: <span style={{color:"#e2e8f0"}}>{ticket.userFeedbackStatus}{ticket.reopenReason ? ` · ${ticket.reopenReason}` : ""}</span></div>}
       </div>
+      {["Closed","Resolved"].includes(ticket.status)&&!ticket.userReviewedAt&&<div style={{display:"inline-flex",alignItems:"center",gap:7,marginBottom:10,border:"1px solid rgba(16,185,129,.28)",background:"rgba(16,185,129,.12)",color:"#bbf7d0",borderRadius:999,padding:"5px 9px",fontSize:11,fontWeight:900}}><span className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",display:"inline-block"}}/>Closed - Review pending</div>}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:10}}>
         <PriorityBadge p={ticket.priority}/>
         <span style={{fontSize:11,color:"rgba(226,232,240,0.35)"}}>{timeAgo(ticket.createdAt)}</span>
@@ -5059,74 +5064,6 @@ export default function App() {
     }
   };
 
-  const saveTicketState = async (updatedTicket) => {
-    await updateTicket(updatedTicket);
-    setTickets(ts => ts.map(t => t.id === updatedTicket.id ? updatedTicket : t));
-    return updatedTicket;
-  };
-
-  const markClosurePopupShown = async (ticket, extra = {}) => {
-    if(!ticket) return null;
-    const updated = {...ticket, ...extra, closurePopupShown:true, updatedAt:Date.now()};
-    return saveTicketState(updated);
-  };
-
-  const handleClosureComment = async (ticket, comment) => {
-    const clean = String(comment || "").trim();
-    if(!clean) {
-      await markClosurePopupShown(ticket);
-      return;
-    }
-    const now=Date.now();
-    await markClosurePopupShown(ticket, {
-      comments:[...(ticket.comments||[]),{text:clean,at:now,by:session?.email || "User"}],
-      timeline:[...(ticket.timeline||[]),{action:"Commented",remark:clean.slice(0,60),at:now,by:session?.email || "User"}],
-    });
-    toast("Comment added", "success");
-  };
-
-  const handleClosureReview = async (ticket, review) => {
-    const now=Date.now();
-    await markClosurePopupShown(ticket, {
-      feedbackSubmitted:true,
-      closeReview:{...review,at:now,by:session?.email || ticket.email || "User"},
-      comments:review.comment ? [...(ticket.comments||[]),{text:review.comment,at:now,by:session?.email || "User"}] : (ticket.comments||[]),
-      timeline:[...(ticket.timeline||[]),{action:"Closure reviewed",remark:`${review.outcome} · ${review.rating}/5`,at:now,by:session?.email || "User"}],
-    });
-    toast("Ticket review saved", "success");
-  };
-
-  const handleReopenTicket = async (ticket, review) => {
-    const now=Date.now();
-    await markClosurePopupShown(ticket, {
-      status:"Open",
-      closedAt:null,
-      closeReview:{...review,at:now,by:session?.email || "User"},
-      comments:review.comment ? [...(ticket.comments||[]),{text:review.comment,at:now,by:session?.email || "User"}] : (ticket.comments||[]),
-      timeline:[...(ticket.timeline||[]),{action:"Reopened",remark:review.comment || "User still facing issue",at:now,by:session?.email || "User"}],
-    });
-    toast("Ticket reopened", "success");
-  };
-
-  const handleFollowUpTicket = async (ticket, review) => {
-    const followUp = await handleNewTicket({
-      name:ticket.name,
-      email:ticket.email,
-      dept:ticket.dept || "Not provided",
-      mobile:ticket.mobile || "",
-      location:ticket.location || "Not provided",
-      category:ticket.category,
-      subCategory:ticket.subCategory || "Follow-up issue",
-      priority:ticket.priority || "Medium",
-      description:`Follow-up for ${ticket.id}: ${review.comment || "User is still facing the issue."}\n\nOriginal issue:\n${ticket.description}`,
-      source:"Follow-up Ticket",
-      notes:`Created from closure review of ${ticket.id}`,
-    });
-    if(followUp?.id) {
-      await markClosurePopupShown(ticket, {followUpTicketId:followUp.id, closeReview:{...review,at:Date.now(),by:session?.email || "User"}});
-    }
-  };
-
 const handleNewTicket = async (form) => {
 
   const assignee =
@@ -5565,8 +5502,7 @@ const handleNewTicket = async (form) => {
   const myTickets = isAdmin || isStaff ? tickets : tickets.filter(t => t.email === session.email);
   const quickAssignTicket = tickets.find(t => t.id === quickAssignTicketId);
   const linkedFeedbackTicket = tickets.find(t => t.id === feedbackTicketId);
-  const pendingClosureTicket = !isAdmin && !isStaff ? tickets.find(t => t.email === session.email && ["Closed","Resolved"].includes(t.status) && !t.closurePopupShown) : null;
-  const pendingFeedbackTicket = !isAdmin && !isStaff && !pendingClosureTicket ? tickets.find(t => t.email === session.email && t.status === "Closed" && !t.feedbackSubmitted && !feedback.some(f => f.ticketId === t.id && f.email === session.email) && !dismissedFeedbackTickets.includes(t.id)) : null;
+  const pendingFeedbackTicket = null;
 
   const handleStaffMenuAction = (id) => {
     setStaffMenuOpen(false);
@@ -5807,21 +5743,6 @@ const handleNewTicket = async (form) => {
         </Modal>
       )}
 
-
-      {pendingClosureTicket && (
-        <Modal title="Ticket Resolution Review" onClose={() => markClosurePopupShown(pendingClosureTicket)}>
-          <TicketClosurePopup
-            ticket={pendingClosureTicket}
-            onView={() => { markClosurePopupShown(pendingClosureTicket); setViewTicketId(pendingClosureTicket.id); }}
-            onClose={() => markClosurePopupShown(pendingClosureTicket)}
-            onComment={(comment) => handleClosureComment(pendingClosureTicket, comment)}
-            onReview={(review) => handleClosureReview(pendingClosureTicket, review)}
-            onFeedback={() => { markClosurePopupShown(pendingClosureTicket); setFeedbackTicketId(pendingClosureTicket.id); setPage("feedback"); }}
-            onReopen={(review) => handleReopenTicket(pendingClosureTicket, review)}
-            onFollowUp={(review) => handleFollowUpTicket(pendingClosureTicket, review)}
-          />
-        </Modal>
-      )}
 
       {pendingFeedbackTicket && page !== "feedback" && (
         <Modal title="Share IT Support Feedback" onClose={() => setDismissedFeedbackTickets(ids => Array.from(new Set([...ids, pendingFeedbackTicket.id])))}>
