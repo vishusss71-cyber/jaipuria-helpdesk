@@ -75,7 +75,12 @@ function normalizeTicket(ticket = {}) {
     assigneeId: Number(ticket.assigneeId || STAFF_BASE[0]?.id || 1),
     comments: Array.isArray(ticket.comments) ? ticket.comments : [],
     timeline: Array.isArray(ticket.timeline) ? ticket.timeline : [],
+    watchers: Array.isArray(ticket.watchers) ? ticket.watchers : [],
+    notifiedStaff: Array.isArray(ticket.notifiedStaff) ? ticket.notifiedStaff : [],
     feedbackSubmitted: Boolean(ticket.feedbackSubmitted),
+    closurePopupShown: Boolean(ticket.closurePopupShown),
+    closeReview: ticket.closeReview || null,
+    followUpTicketId: ticket.followUpTicketId || "",
     closedAt: ticket.closedAt ?? null,
     closingRemarks: ticket.closingRemarks || "",
   };
@@ -623,6 +628,46 @@ function simulateEmail(to, subject, body) {
   const log = DB.get("emaillog", []);
   log.unshift({ id: genToken().slice(0,8), to, subject, body, sentAt: Date.now() });
   DB.set("emaillog", log.slice(0,50));
+}
+
+function emailAllITStaff(subject, body) {
+  STAFF_BASE.forEach(staff => {
+    if(staff.email) simulateEmail(staff.email, subject, body);
+  });
+  simulateEmail("admin@jaipuria.ac.in", subject, body);
+}
+
+function notifyWhatsApp(payload) {
+  try {
+    fetch("/api/notify-whatsapp", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload),
+    }).catch(error => console.warn("WhatsApp notification skipped", error));
+  } catch (error) {
+    console.warn("WhatsApp notification skipped", error);
+  }
+}
+
+function notifyTicketCreated(ticket) {
+  const body=`New IT Ticket Created
+Ticket ID: ${ticket.id}
+Category: ${categoryLabel(ticket.category)}
+User: ${ticket.name}
+Mobile: ${ticket.mobile || "Not provided"}
+Issue: ${ticket.description || ticket.issueSummary || "Not provided"}`;
+  emailAllITStaff(`[${ticket.id}] New IT Ticket Created`, body);
+  notifyWhatsApp({type:"ticket_created",message:body,ticket});
+}
+
+function notifyTicketClosed(ticket, closedBy="IT Support", resolution="") {
+  const body=`Ticket Closed
+Ticket ID: ${ticket.id}
+Closed By: ${closedBy}
+Resolution: ${resolution || ticket.closingRemarks || "Resolved by IT Support"}`;
+  if(ticket.email) simulateEmail(ticket.email, `[${ticket.id}] Ticket Closed`, `Dear ${ticket.name},\n\nYour ticket has been closed. Please review the resolution.\n\n${body}\n\nRegards,\nJaipuria IT Support`);
+  emailAllITStaff(`[${ticket.id}] Ticket Closed`, body);
+  notifyWhatsApp({type:"ticket_closed",message:body,ticket});
 }
 
 function emailTicketCreated(ticket, assignee) {
@@ -1609,6 +1654,43 @@ function Modal({ title, children, onClose, wide=false }) {
   );
 }
 
+function TicketClosurePopup({ticket,onView,onClose,onComment,onReview,onFeedback,onReopen,onFollowUp}) {
+  const [comment,setComment]=useState("");
+  const [rating,setRating]=useState(5);
+  const [outcome,setOutcome]=useState("Resolved");
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div className="glass2" style={{padding:"16px",background:"linear-gradient(135deg,rgba(16,185,129,.12),rgba(14,165,233,.08))"}}>
+        <div style={{fontSize:18,fontWeight:900,color:"#fff",marginBottom:6}}>Your ticket has been closed. Please review the resolution.</div>
+        <div style={{fontSize:13,color:"rgba(226,232,240,.62)"}}>Ticket {ticket.id} · {categoryLabel(ticket.category)}</div>
+        {ticket.closingRemarks&&<div style={{marginTop:10,fontSize:13,color:"#bbf7d0"}}>Resolution: {ticket.closingRemarks}</div>}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+        <label style={{fontSize:12,color:"rgba(226,232,240,.65)"}}>Rate resolution
+          <select value={rating} onChange={e=>setRating(Number(e.target.value))} style={{marginTop:6}}>{[5,4,3,2,1].map(r=><option key={r} value={r}>{r}</option>)}</select>
+        </label>
+        <label style={{fontSize:12,color:"rgba(226,232,240,.65)"}}>Status
+          <select value={outcome} onChange={e=>setOutcome(e.target.value)} style={{marginTop:6}}><option>Resolved</option><option>Still facing issue</option></select>
+        </label>
+      </div>
+      <textarea rows={3} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Optional comment for IT Support..." style={{resize:"vertical"}} />
+      {outcome==="Still facing issue"&&(
+        <div className="glass2" style={{padding:"12px",display:"flex",gap:10,flexWrap:"wrap",borderColor:"rgba(245,158,11,.28)"}}>
+          <button className="glow-btn" type="button" onClick={()=>onReopen({rating,outcome,comment})}>Reopen Ticket</button>
+          <button type="button" onClick={()=>onFollowUp({rating,outcome,comment})} style={{background:"rgba(245,158,11,.13)",border:"1px solid rgba(245,158,11,.28)",color:"#fbbf24",padding:"9px 14px",borderRadius:10,fontWeight:900}}>Create Follow-up Ticket</button>
+        </div>
+      )}
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+        <button type="button" onClick={onView} style={{background:"rgba(14,165,233,.14)",border:"1px solid rgba(14,165,233,.28)",color:"#bae6fd",padding:"9px 14px",borderRadius:10,fontWeight:900}}>View Ticket</button>
+        <button type="button" onClick={()=>onComment(comment)} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",color:"#e2e8f0",padding:"9px 14px",borderRadius:10,fontWeight:900}}>Add Comment</button>
+        <button className="glow-btn" type="button" onClick={()=>onReview({rating,outcome,comment})}>Save Review</button>
+        <button type="button" onClick={onFeedback} style={{background:"rgba(139,92,246,.14)",border:"1px solid rgba(139,92,246,.28)",color:"#ddd6fe",padding:"9px 14px",borderRadius:10,fontWeight:900}}>Give Feedback</button>
+        <button type="button" onClick={onClose} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",color:"#e2e8f0",padding:"9px 14px",borderRadius:10,fontWeight:900}}>Close</button>
+      </div>
+    </div>
+  );
+}
+
 // ── STATUS / PRIORITY BADGES ─────────────────────────────────────────────
 function StatusBadge({status}) {
   const c={Open:{bg:"rgba(99,102,241,0.2)",col:"#818cf8"},Assigned:{bg:"rgba(14,165,233,0.2)",col:"#38bdf8"},"In Progress":{bg:"rgba(245,158,11,0.2)",col:"#fbbf24"},Resolved:{bg:"rgba(16,185,129,0.2)",col:"#34d399"},Closed:{bg:"rgba(107,114,128,0.2)",col:"#9ca3af"}}[status]||{bg:"rgba(99,102,241,0.2)",col:"#818cf8"};
@@ -1743,21 +1825,28 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
 
   const updateTicket = async (changes, auditAction, remark = "") => {
     let closedByStatusChange = false;
+    let closedTicket = null;
 
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
       const actor=isAdmin?"Admin":staffName||"User";
       const tl=[...(t.timeline||[]),{action:auditAction,remark,at:Date.now(),by:actor}];
       const oldStatus=t.status;
-      const closingNow=changes.status==="Closed"&&oldStatus!=="Closed";
+      const closingNow=["Closed","Resolved"].includes(changes.status)&&!["Closed","Resolved"].includes(oldStatus);
+      const nextAssignee=changes.assigneeId ? STAFF_BASE.find(s=>s.id===Number(changes.assigneeId)) : null;
       const updated={...t,...changes,updatedAt:Date.now(),timeline:tl};
+      if(nextAssignee){
+        updated.assigneeName=nextAssignee.name;
+        updated.assignedTo=nextAssignee.name;
+      }
       if(closingNow){
         updated.closedAt=Date.now();
         updated.closingRemarks=remark||"Closed from ticket controls.";
         updated.resolutionTime=updated.closedAt-t.createdAt;
         updated.feedbackSubmitted=false;
+        updated.closurePopupShown=false;
         closedByStatusChange=true;
-        console.log("Ticket closed without email:", updated);
+        closedTicket=updated;
       }
       if(changes.assigneeId&&Number(changes.assigneeId)!==Number(t.assigneeId)){
         emailTicketAssigned(updated,STAFF_BASE.find(s=>s.id===Number(changes.assigneeId)),STAFF_BASE.find(s=>s.id===t.assigneeId),actor,remark);
@@ -1766,6 +1855,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     }));
 
     toast(closedByStatusChange ? "Ticket closed" : auditAction,"success");
+    if(closedTicket) notifyTicketClosed(closedTicket, isAdmin?"Admin":staffName||"IT Support", remark);
   };
   const addComment=()=>{
     if(!comment.trim()) return;
@@ -1786,16 +1876,16 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
       if(t.status==="Closed") return t;
-      const updated={...t,status:"Closed",closedAt,closingRemarks:remarks,resolutionTime:closedAt-t.createdAt,updatedAt:closedAt,feedbackSubmitted:false,
+      const updated={...t,status:"Closed",closedAt,closingRemarks:remarks,resolutionTime:closedAt-t.createdAt,updatedAt:closedAt,feedbackSubmitted:false,closurePopupShown:false,
         timeline:[...(t.timeline||[]),{action:"Closed",remark:remarks,at:closedAt,by:closedBy}]};
       closedTicket = updated;
-      console.log("Ticket closed without email:", updated);
       return updated;
     }));
 
     setShowClose(false);
     if(closedTicket){
       toast("Ticket closed", "success");
+      notifyTicketClosed(closedTicket, closedBy, remarks);
     }
   };
   const canClose=(isAdmin||(isStaff&&ticket.assigneeId===staffId))&&ticket.status!=="Closed";
@@ -2086,6 +2176,12 @@ function TicketCard({ticket,onView}) {
       </div>
       <div style={{fontSize:13,color:"rgba(226,232,240,0.7)",marginBottom:8,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{ticket.description}</div>
       <div style={{fontSize:12,color:"#93c5fd",marginBottom:8}}>AI status: {getTicketStatusExplanation(ticket.status)}</div>
+      <div style={{display:"grid",gap:4,marginBottom:10,fontSize:11,color:"rgba(226,232,240,.46)"}}>
+        <div>Assigned to: <span style={{color:"#e2e8f0"}}>{ticket.assigneeName || ticket.assignedTo || staffName(ticket.assigneeId)}</span></div>
+        <div>Watchers: <span style={{color:"#e2e8f0"}}>{(ticket.watchers||ticket.notifiedStaff||[]).map(w=>w.name).filter(Boolean).join(", ") || "All IT Staff"}</span></div>
+        <div>Source: <span style={{color:"#e2e8f0"}}>{ticket.source || "Portal"}</span></div>
+        {ticket.closeReview&&<div>Close feedback: <span style={{color:"#e2e8f0"}}>{ticket.closeReview.rating || "—"}/5 · {ticket.closeReview.outcome || "Reviewed"}{ticket.closeReview.comment ? ` · ${ticket.closeReview.comment}` : ""}</span></div>}
+      </div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:10}}>
         <PriorityBadge p={ticket.priority}/>
         <span style={{fontSize:11,color:"rgba(226,232,240,0.35)"}}>{timeAgo(ticket.createdAt)}</span>
@@ -3948,7 +4044,7 @@ function TrackTicket({tickets,onView}) {
 // ── STAFF PANEL ───────────────────────────────────────────────────────────
 function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions,staffProfiles={},staffStatuses={}}) {
   const staff=STAFF_BASE.find(s=>s.id===staffId);
-  const myTickets=tickets.filter(t=>t.assigneeId===staffId);
+  const myTickets=tickets.filter(t=>t.assigneeId===staffId || (t.watchers||[]).some(w=>Number(w.id)===Number(staffId)) || (t.notifiedStaff||[]).some(w=>Number(w.id)===Number(staffId)));
   const active=myTickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
   const resolved=myTickets.filter(t=>t.status==="Resolved"||t.status==="Closed").length;
   return (
@@ -4963,6 +5059,74 @@ export default function App() {
     }
   };
 
+  const saveTicketState = async (updatedTicket) => {
+    await updateTicket(updatedTicket);
+    setTickets(ts => ts.map(t => t.id === updatedTicket.id ? updatedTicket : t));
+    return updatedTicket;
+  };
+
+  const markClosurePopupShown = async (ticket, extra = {}) => {
+    if(!ticket) return null;
+    const updated = {...ticket, ...extra, closurePopupShown:true, updatedAt:Date.now()};
+    return saveTicketState(updated);
+  };
+
+  const handleClosureComment = async (ticket, comment) => {
+    const clean = String(comment || "").trim();
+    if(!clean) {
+      await markClosurePopupShown(ticket);
+      return;
+    }
+    const now=Date.now();
+    await markClosurePopupShown(ticket, {
+      comments:[...(ticket.comments||[]),{text:clean,at:now,by:session?.email || "User"}],
+      timeline:[...(ticket.timeline||[]),{action:"Commented",remark:clean.slice(0,60),at:now,by:session?.email || "User"}],
+    });
+    toast("Comment added", "success");
+  };
+
+  const handleClosureReview = async (ticket, review) => {
+    const now=Date.now();
+    await markClosurePopupShown(ticket, {
+      feedbackSubmitted:true,
+      closeReview:{...review,at:now,by:session?.email || ticket.email || "User"},
+      comments:review.comment ? [...(ticket.comments||[]),{text:review.comment,at:now,by:session?.email || "User"}] : (ticket.comments||[]),
+      timeline:[...(ticket.timeline||[]),{action:"Closure reviewed",remark:`${review.outcome} · ${review.rating}/5`,at:now,by:session?.email || "User"}],
+    });
+    toast("Ticket review saved", "success");
+  };
+
+  const handleReopenTicket = async (ticket, review) => {
+    const now=Date.now();
+    await markClosurePopupShown(ticket, {
+      status:"Open",
+      closedAt:null,
+      closeReview:{...review,at:now,by:session?.email || "User"},
+      comments:review.comment ? [...(ticket.comments||[]),{text:review.comment,at:now,by:session?.email || "User"}] : (ticket.comments||[]),
+      timeline:[...(ticket.timeline||[]),{action:"Reopened",remark:review.comment || "User still facing issue",at:now,by:session?.email || "User"}],
+    });
+    toast("Ticket reopened", "success");
+  };
+
+  const handleFollowUpTicket = async (ticket, review) => {
+    const followUp = await handleNewTicket({
+      name:ticket.name,
+      email:ticket.email,
+      dept:ticket.dept || "Not provided",
+      mobile:ticket.mobile || "",
+      location:ticket.location || "Not provided",
+      category:ticket.category,
+      subCategory:ticket.subCategory || "Follow-up issue",
+      priority:ticket.priority || "Medium",
+      description:`Follow-up for ${ticket.id}: ${review.comment || "User is still facing the issue."}\n\nOriginal issue:\n${ticket.description}`,
+      source:"Follow-up Ticket",
+      notes:`Created from closure review of ${ticket.id}`,
+    });
+    if(followUp?.id) {
+      await markClosurePopupShown(ticket, {followUpTicketId:followUp.id, closeReview:{...review,at:Date.now(),by:session?.email || "User"}});
+    }
+  };
+
 const handleNewTicket = async (form) => {
 
   const assignee =
@@ -4971,6 +5135,7 @@ const handleNewTicket = async (form) => {
     { id: 0, name: "IT Support Team", role: "IT Support", email: "" };
 
   const now = Date.now();
+  const allStaffWatchers = STAFF_BASE.map(staff => ({ id: staff.id, name: staff.name, email: staff.email, role: staff.role }));
 
   const newTicket = {
       id: genId(),
@@ -4991,6 +5156,9 @@ const handleNewTicket = async (form) => {
       status: "Assigned",
       assigneeId: assignee.id,
       assigneeName: assignee.name,
+      assignedTo: assignee.name,
+      watchers: allStaffWatchers,
+      notifiedStaff: allStaffWatchers,
       createdAt: now,
       updatedAt: now,
       closedAt: null,
@@ -5024,14 +5192,7 @@ const handleNewTicket = async (form) => {
 
       await sendTicketEmail(newTicket, { name: newTicket.name, email: newTicket.email });
       emailTicketCreated(newTicket, assignee);
-
-      if (assignee?.email) {
-        simulateEmail(
-          assignee.email,
-          `[${newTicket.id}] New Ticket Assigned`,
-          `${newTicket.name} submitted a ${categoryLabel(newTicket.category)} ticket.\n\n${newTicket.description}`
-        );
-      }
+      notifyTicketCreated(newTicket);
 
       toast("Ticket created successfully", "success");
       return newTicket;
@@ -5290,6 +5451,8 @@ const handleNewTicket = async (form) => {
       assignedTicket = {
         ...t,
         assigneeId,
+        assigneeName:newAssignee?.name || t.assigneeName,
+        assignedTo:newAssignee?.name || t.assignedTo,
         status: t.status === "Open" ? "Assigned" : t.status,
         updatedAt: Date.now(),
         comments,
@@ -5402,7 +5565,8 @@ const handleNewTicket = async (form) => {
   const myTickets = isAdmin || isStaff ? tickets : tickets.filter(t => t.email === session.email);
   const quickAssignTicket = tickets.find(t => t.id === quickAssignTicketId);
   const linkedFeedbackTicket = tickets.find(t => t.id === feedbackTicketId);
-  const pendingFeedbackTicket = !isAdmin && !isStaff ? tickets.find(t => t.email === session.email && t.status === "Closed" && !t.feedbackSubmitted && !feedback.some(f => f.ticketId === t.id && f.email === session.email) && !dismissedFeedbackTickets.includes(t.id)) : null;
+  const pendingClosureTicket = !isAdmin && !isStaff ? tickets.find(t => t.email === session.email && ["Closed","Resolved"].includes(t.status) && !t.closurePopupShown) : null;
+  const pendingFeedbackTicket = !isAdmin && !isStaff && !pendingClosureTicket ? tickets.find(t => t.email === session.email && t.status === "Closed" && !t.feedbackSubmitted && !feedback.some(f => f.ticketId === t.id && f.email === session.email) && !dismissedFeedbackTickets.includes(t.id)) : null;
 
   const handleStaffMenuAction = (id) => {
     setStaffMenuOpen(false);
@@ -5643,6 +5807,21 @@ const handleNewTicket = async (form) => {
         </Modal>
       )}
 
+
+      {pendingClosureTicket && (
+        <Modal title="Ticket Resolution Review" onClose={() => markClosurePopupShown(pendingClosureTicket)}>
+          <TicketClosurePopup
+            ticket={pendingClosureTicket}
+            onView={() => { markClosurePopupShown(pendingClosureTicket); setViewTicketId(pendingClosureTicket.id); }}
+            onClose={() => markClosurePopupShown(pendingClosureTicket)}
+            onComment={(comment) => handleClosureComment(pendingClosureTicket, comment)}
+            onReview={(review) => handleClosureReview(pendingClosureTicket, review)}
+            onFeedback={() => { markClosurePopupShown(pendingClosureTicket); setFeedbackTicketId(pendingClosureTicket.id); setPage("feedback"); }}
+            onReopen={(review) => handleReopenTicket(pendingClosureTicket, review)}
+            onFollowUp={(review) => handleFollowUpTicket(pendingClosureTicket, review)}
+          />
+        </Modal>
+      )}
 
       {pendingFeedbackTicket && page !== "feedback" && (
         <Modal title="Share IT Support Feedback" onClose={() => setDismissedFeedbackTickets(ids => Array.from(new Set([...ids, pendingFeedbackTicket.id])))}>
