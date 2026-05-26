@@ -2085,6 +2085,7 @@ function TicketCard({ticket,onView}) {
         <StatusBadge status={ticket.status}/>
       </div>
       <div style={{fontSize:13,color:"rgba(226,232,240,0.7)",marginBottom:8,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{ticket.description}</div>
+      <div style={{fontSize:12,color:"#93c5fd",marginBottom:8}}>AI status: {getTicketStatusExplanation(ticket.status)}</div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:10}}>
         <PriorityBadge p={ticket.priority}/>
         <span style={{fontSize:11,color:"rgba(226,232,240,0.35)"}}>{timeAgo(ticket.createdAt)}</span>
@@ -2095,12 +2096,129 @@ function TicketCard({ticket,onView}) {
 }
 
 // ── CATEGORY GRID ─────────────────────────────────────────────────────────
-function CategoryGrid({onSelect}) {
+function AIHelpCards({onAskAI,onQuickWifi,onPrinter,onMoodle,onTrack,onSmartTicket}) {
+  const cards=[
+    ["Ask AI","Describe your issue in simple words.","🤖",onAskAI],
+    ["Quick WiFi Fix","Try this quick fix first.","📶",onQuickWifi],
+    ["Printer Help","I can guide printer issues.","🖨️",onPrinter],
+    ["Moodle Help","Get LMS support instantly.","📚",onMoodle],
+    ["Track My Ticket","Know your ticket status.","🔍",onTrack],
+    ["Raise Smart Ticket","I can create a ticket for you.","✨",onSmartTicket],
+  ];
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:12,marginBottom:24}}>
+      {cards.map(([title,sub,icon,action])=>(
+        <button key={title} type="button" onClick={action} className="glass2" style={{textAlign:"left",padding:"16px 15px",border:"1px solid rgba(125,211,252,.16)",background:"linear-gradient(135deg,rgba(14,165,233,.11),rgba(139,92,246,.08),rgba(255,255,255,.04))",cursor:"pointer"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+            <span className="pulse" style={{width:34,height:34,borderRadius:12,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(14,165,233,.15)",fontSize:18}}>{icon}</span>
+            <span style={{fontSize:13,fontWeight:900,color:"#f8fafc"}}>{title}</span>
+          </div>
+          <div style={{fontSize:12,lineHeight:1.45,color:"rgba(226,232,240,.58)"}}>{sub}</div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SmartTicketModal({session,onSubmit,onClose,toast}) {
+  const [issue,setIssue]=useState("");
+  const [summary,setSummary]=useState(null);
+  const [resolution,setResolution]=useState(null);
+  const [ready,setReady]=useState(false);
+  const [loading,setLoading]=useState(false);
+
+  const analyze=()=>{
+    if(!issue.trim()){toast("Describe your issue in simple words.","error");return;}
+    const next=detectSmartTicketIssue(issue);
+    setSummary(next);
+    setResolution(getSmartResolution(next));
+    setReady(false);
+  };
+
+  const create=async()=>{
+    if(!summary) return;
+    setLoading(true);
+    try {
+      await Promise.resolve(onSubmit({
+        name:session?.name || session?.email?.split("@")[0] || "Portal User",
+        email:session?.email || "",
+        dept:"Not provided",
+        mobile:"",
+        location:"Not provided",
+        category:summary.category,
+        subCategory:summary.subCategory,
+        priority:summary.priority,
+        description:`${summary.issueSummary}\n\nAI Summary: ${summary.subCategory}\nRecommended Action: ${summary.recommendedAction}`,
+        source:"AI Smart Ticket",
+        assignmentGroup:getAssignmentGroup(summary.category),
+        issueSummary:summary.issueSummary,
+        recommendedAction:summary.recommendedAction,
+        notes:`AI guided ticket created from: ${issue}`
+      }));
+      onClose();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div className="glass2" style={{padding:"16px 18px",background:"linear-gradient(135deg,rgba(14,165,233,.12),rgba(139,92,246,.1))"}}>
+        <div style={{display:"inline-flex",gap:8,alignItems:"center",fontSize:12,fontWeight:900,color:"#7dd3fc",marginBottom:8}}><span className="pulse">✦</span> AI Guided Ticket Creation</div>
+        <div style={{fontSize:18,fontWeight:900,color:"#fff",marginBottom:6}}>Describe your issue in simple words.</div>
+        <div style={{fontSize:13,color:"rgba(226,232,240,.62)"}}>I can create a ticket for you after a quick fix check.</div>
+      </div>
+      <textarea rows={3} value={issue} onChange={e=>setIssue(e.target.value)} placeholder="Example: OneJaipuria WiFi is not connecting on my laptop" style={{resize:"vertical"}}/>
+      <button className="glow-btn" type="button" onClick={analyze}>Analyze with AI</button>
+      {summary&&(
+        <div className="glass2" style={{padding:"16px",display:"grid",gap:10}}>
+          <div style={{fontWeight:900,color:"#fff"}}>Your ticket is ready. Please confirm.</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,fontSize:12}}>
+            <div><b>Category</b><br/>{summary.categoryLabel}</div>
+            <div><b>Sub-category</b><br/>{summary.subCategory}</div>
+            <div><b>Priority</b><br/>{summary.priority}</div>
+            <div><b>Assign group</b><br/>{getAssignmentGroup(summary.category)}</div>
+          </div>
+          <div style={{fontSize:13,color:"rgba(226,232,240,.72)"}}><b>Summary:</b> {summary.issueSummary}</div>
+          <div style={{fontSize:13,color:"#bfdbfe"}}><b>Recommended action:</b> {summary.recommendedAction}</div>
+        </div>
+      )}
+      {summary&&resolution&&!ready&&(
+        <div className="glass2" style={{padding:"16px",borderColor:"rgba(16,185,129,.24)"}}>
+          <div style={{fontWeight:900,color:"#bbf7d0",marginBottom:8}}>Try this quick fix first.</div>
+          <ol style={{margin:0,paddingLeft:20,color:"rgba(226,232,240,.76)",fontSize:13,lineHeight:1.55}}>
+            {resolution.steps.slice(0,4).map((step,index)=><li key={index}>{step}</li>)}
+          </ol>
+          <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap"}}>
+            <button type="button" onClick={onClose} style={{background:"rgba(16,185,129,.16)",border:"1px solid rgba(16,185,129,.28)",color:"#bbf7d0",padding:"9px 14px",borderRadius:10,fontWeight:900}}>YES, solved</button>
+            <button className="glow-btn" type="button" onClick={()=>setReady(true)}>NO, create ticket</button>
+          </div>
+        </div>
+      )}
+      {ready&&<button className="glow-btn" type="button" onClick={create} disabled={loading}>{loading?"Creating...":"Confirm & Submit Ticket"}</button>}
+    </div>
+  );
+}
+
+function CategoryGrid({onSelect,onSmartTicket,onNavigate}) {
   const [hover,setHover]=useState(null);
   return (
     <div>
+      <div className="glass" style={{padding:"22px",marginBottom:18,background:"radial-gradient(circle at 0 0,rgba(14,165,233,.22),transparent 36%),linear-gradient(135deg,rgba(15,23,42,.9),rgba(30,41,59,.78))"}}>
+        <div style={{display:"inline-flex",alignItems:"center",gap:8,border:"1px solid rgba(125,211,252,.22)",borderRadius:999,padding:"6px 10px",color:"#7dd3fc",fontSize:12,fontWeight:900,marginBottom:12}}><span className="pulse">✦</span> AI Powered Support</div>
+        <h2 style={{fontFamily:"Syne",fontSize:24,fontWeight:900,color:"#e2e8f0",marginBottom:6}}>Smart IT Helpdesk Portal</h2>
+        <p style={{fontSize:14,color:"rgba(226,232,240,0.62)",margin:0}}>Minimum effort support: describe your issue, try a smart fix, and let AI prepare the ticket.</p>
+      </div>
+      <AIHelpCards
+        onAskAI={()=>onNavigate?.("ai")}
+        onQuickWifi={()=>onNavigate?.("wifi")}
+        onPrinter={()=>onSelect("printer")}
+        onMoodle={()=>onSelect("erp")}
+        onTrack={()=>onNavigate?.("track")}
+        onSmartTicket={onSmartTicket}
+      />
       <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:6}}>Raise IT Support Ticket</h2>
-      <p style={{fontSize:14,color:"rgba(226,232,240,0.5)",marginBottom:24}}>Select the issue category to get started</p>
+      <p style={{fontSize:14,color:"rgba(226,232,240,0.5)",marginBottom:24}}>Select the issue category or let AI create a smart ticket</p>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(145px,1fr))",gap:14}}>
         {CATEGORIES.map(cat=>(
           <button key={cat.id} onClick={()=>onSelect(cat.id)} onMouseEnter={()=>setHover(cat.id)} onMouseLeave={()=>setHover(null)} style={{
@@ -3010,6 +3128,67 @@ function getTicketContextFromTroubleshooting(reply) {
   };
 }
 
+function detectSmartTicketIssue(text) {
+  const q=normalizeHelpdeskText(text);
+  const rules=[
+    {category:"wifi",subCategory:"Not able to connect OneJaipuria",priority:"Medium",words:["wifi","wi-fi","onejaipuria","certificate","campus wifi"]},
+    {category:"printer",subCategory:"Printer showing offline",priority:"Medium",words:["printer","print","scan","toner","paper jam"]},
+    {category:"erp",label:"Moodle / LMS",subCategory:"Moodle login issue",priority:"Medium",words:["moodle","lms","course","assignment","quiz"]},
+    {category:"internet",subCategory:"Internet not working",priority:"High",words:["internet","lan","website","network","ip conflict"]},
+    {category:"laptop",subCategory:"Other laptop issue",priority:"Medium",words:["laptop","battery","charging","keyboard","windows"]},
+    {category:"desktop",subCategory:"Other desktop issue",priority:"Medium",words:["desktop","monitor","cpu","mouse"]},
+    {category:"software",label:"MS Office",subCategory:"Other MS Office issue",priority:"Medium",words:["office","word","excel","powerpoint","teams","onedrive","outlook"]},
+    {category:"email",subCategory:"Email login issue",priority:"Medium",words:["email","mail","mailbox","attachment"]},
+    {category:"password",label:"Login Issue",subCategory:"Portal login issue",priority:"High",words:["login","password","signin","sign in","forgot"]},
+    {category:"resources",subCategory:"Other IT request",priority:"Medium",words:["projector","biometric","cctv","software access","new system","peripheral"]}
+  ];
+  const matched=rules.find(rule=>rule.words.some(word=>q.includes(word))) || rules[rules.length-1];
+  const friendlyCategoryLabel=matched.label || categoryLabel(matched.category);
+  const issueSummary=String(text || "").trim() || matched.subCategory;
+  const recommendedAction=matched.category==="wifi"
+    ? "Try the OneJaipuria configuration setup and restart WiFi once."
+    : `Try a quick restart/check for ${friendlyCategoryLabel}; if it continues, submit this AI-prepared ticket.`;
+  return {
+    category:matched.category,
+    categoryLabel:friendlyCategoryLabel,
+    subCategory:matched.subCategory,
+    priority:matched.priority,
+    issueSummary,
+    recommendedAction
+  };
+}
+
+function getSmartResolution(ticketSummary) {
+  if(ticketSummary.category==="wifi") return getWifiTroubleshooting(ticketSummary.subCategory);
+  return {
+    type:"steps",
+    categoryId:ticketSummary.category,
+    categoryLabel:ticketSummary.categoryLabel,
+    subCategory:ticketSummary.subCategory,
+    title:ticketSummary.subCategory,
+    steps:getBasicTroubleshootingSteps(ticketSummary.categoryLabel, ticketSummary.subCategory),
+    footer:"Did this solve your issue? YES / NO"
+  };
+}
+
+function getAssignmentGroup(category) {
+  if(["wifi","internet"].includes(category)) return "Network Support";
+  if(["printer","desktop","laptop"].includes(category)) return "Hardware Support";
+  if(["moodle","erp","login","password","email","ms-office","software"].includes(category)) return "Application Support";
+  return "IT Support Team";
+}
+
+function getTicketStatusExplanation(status) {
+  const text={
+    Open:"Your request is received and waiting for IT review.",
+    Assigned:"Your ticket has been assigned to the right IT support team.",
+    "In Progress":"IT support is actively working on your issue.",
+    Resolved:"IT has marked this issue resolved. Please verify once.",
+    Closed:"This ticket is closed after resolution."
+  };
+  return text[status] || "Your ticket is being tracked by IT Support.";
+}
+
 function getTicketFlowPrompt(step, draft={}) {
   const prompts={
     name:"Please enter your name.",
@@ -3757,6 +3936,7 @@ function TrackTicket({tickets,onView}) {
       {searched&&!result&&<div className="glass" style={{padding:"24px",textAlign:"center",color:"rgba(226,232,240,0.4)"}}><div style={{fontSize:36,marginBottom:8}}>🔍</div><div>No ticket found: {id}</div></div>}
       {result&&<div className="glass2" style={{padding:"20px",cursor:"pointer"}} onClick={()=>onView(result.id)}>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><div style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>{result.id}</div><StatusBadge status={result.status}/></div>
+        <div style={{marginBottom:10,border:"1px solid rgba(125,211,252,.22)",background:"rgba(14,165,233,.1)",borderRadius:12,padding:"10px 12px",fontSize:13,color:"#bfdbfe"}}>AI says: {getTicketStatusExplanation(result.status)}</div>
         <div style={{fontSize:14,color:"rgba(226,232,240,0.7)",marginBottom:8}}>{result.description.slice(0,100)}...</div>
         <PriorityBadge p={result.priority}/><div style={{marginTop:10}}><TimerBadge ticket={result}/></div>
         <div style={{marginTop:10,fontSize:12,color:"#818cf8"}}>Click to view full details →</div>
@@ -4580,6 +4760,7 @@ export default function App() {
   const [viewTicketId, setViewTicketId] = useState(null);
   const [quickAssignTicketId, setQuickAssignTicketId] = useState(null);
   const [formCat, setFormCat] = useState(null);
+  const [smartTicketOpen, setSmartTicketOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [staffProfiles, setStaffProfiles] = useState(() => DB.get("staff_profiles", {}));
   const [staffStatuses, setStaffStatuses] = useState(() => DB.get("staff_statuses", {}));
@@ -4803,6 +4984,9 @@ const handleNewTicket = async (form) => {
       description: form.description,
       priority: form.priority || "Medium",
       source: form.source || "Portal",
+      assignmentGroup: form.assignmentGroup || getAssignmentGroup(form.category),
+      issueSummary: form.issueSummary || "",
+      recommendedAction: form.recommendedAction || "",
       notes: form.notes || "",
       status: "Assigned",
       assigneeId: assignee.id,
@@ -4818,7 +5002,7 @@ const handleNewTicket = async (form) => {
           action: "Created",
           by: form.name,
           at: now,
-          remark: form.source ? `Source: ${form.source}` : ""
+          remark: form.source ? `Source: ${form.source}${form.assignmentGroup ? ` · ${form.assignmentGroup}` : ""}` : ""
         },
         {
           action: `Assigned to ${assignee.name}`,
@@ -5378,7 +5562,7 @@ const handleNewTicket = async (form) => {
       return <StaffPanel staffId={session.staffId} tickets={tickets} setTickets={setTickets} toast={toast} onViewTicket={setViewTicketId} permissions={session.permissions} staffProfiles={staffProfiles} staffStatuses={staffStatuses} />;
     }
 
-    if (page === "home") return <CategoryGrid onSelect={cat => setFormCat(cat)} />;
+    if (page === "home") return <CategoryGrid onSelect={cat => setFormCat(cat)} onSmartTicket={()=>setSmartTicketOpen(true)} onNavigate={(target)=>{ if(target==="track") setPage("track"); if(target==="ai") setSmartTicketOpen(true); if(target==="wifi") setFormCat("wifi"); }} />;
     if (page === "my-tickets") return (
       <div>
         <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>My Tickets</h2>
@@ -5439,6 +5623,12 @@ const handleNewTicket = async (form) => {
       {formCat !== null && (
         <Modal title="Raise IT Support Ticket" onClose={() => setFormCat(null)}>
           <TicketForm userEmail={session?.email} initialCategory={formCat} onSubmit={handleNewTicket} onCancel={() => setFormCat(null)} toast={toast} />
+        </Modal>
+      )}
+
+      {smartTicketOpen && (
+        <Modal title="AI Smart Ticket" onClose={() => setSmartTicketOpen(false)} wide>
+          <SmartTicketModal session={session} onSubmit={handleNewTicket} onClose={() => setSmartTicketOpen(false)} toast={toast} />
         </Modal>
       )}
 
