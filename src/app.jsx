@@ -1459,6 +1459,7 @@ textarea:focus{
 .ai-helpdesk-menu-item{display:flex;align-items:center;gap:9px;border-radius:11px;background:rgba(255,255,255,.065);border:1px solid rgba(255,255,255,.08);padding:8px 9px;color:#e2e8f0}
 .ai-helpdesk-menu-item span{width:24px;height:24px;border-radius:8px;background:rgba(16,185,129,.18);color:#a7f3d0;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;flex-shrink:0}
 .ai-helpdesk-menu-item strong{font-size:12px;line-height:1.25}
+.ai-helpdesk-menu-hint{margin:0 9px 9px;border-radius:10px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.08);padding:7px 9px;color:#94a3b8;font-size:11px;font-weight:800}
 .ai-helpdesk-steps-card ol{margin:0;padding:10px 12px 4px 30px}
 .ai-helpdesk-steps-card li{margin:0 0 7px;padding-left:2px;color:#e2e8f0}
 .ai-helpdesk-causes{margin:6px 10px 8px;border-radius:12px;background:rgba(15,23,42,.58);border:1px solid rgba(255,255,255,.08);padding:9px 10px;color:#cbd5e1;font-size:12px}
@@ -2802,13 +2803,25 @@ const HELPDESK_MENU_ITEMS=[
   {id:"email",label:"Email",aliases:["email","mail","outlook","email issue"]},
   {id:"login",label:"Login Issue",aliases:["login","login issue","password","signin","sign in","account"]},
   {id:"resources",label:"Other IT Resources",aliases:["other it resources","it resources","resources","other"]},
-  {id:"ai",label:"Talk to AI",aliases:["ai","ask ai","talk to ai","assistant"]},
-  {id:"escalate",label:"Escalate to IT",aliases:["escalate","escalate to it","talk to it","it support","support"]}
+  {id:"ai",label:"Talk to AI",aliases:["ai","ask ai","talk to ai","assistant"]}
 ];
 
 function getHelpdeskMenu() {
   return HELPDESK_MENU_ITEMS.map((item,index)=>({number:index+1,id:item.id,label:item.label}));
 }
+
+const HELPDESK_SUBCATEGORIES={
+  wifi:["WiFi Network not showing","Not able to connect OneJaipuria","OneJaipuria connected but internet not working","Guest WiFi password for guest user","WiFi certificate/configuration issue","WiFi slow","Mobile connected but laptop not connecting","Other WiFi issue"],
+  printer:["Need to install printer driver","Printer showing offline","Print command given but print not coming","Printer paper jam","Printer toner/ink issue","Scan not working","Printer not visible in system","Wrong printer selected","Other printer issue"],
+  moodle:["Moodle login issue","Course not visible","Assignment upload issue","Quiz/test not opening","Password reset issue","File download issue","Attendance/course material not visible","Other Moodle issue"],
+  internet:["Internet not working","Internet slow","LAN cable connected but no internet","Website not opening","Only some websites not opening","IP conflict / network issue","Other internet issue"],
+  laptop:["Laptop login password forgot","Laptop slow","Laptop not turning on","Battery/charging issue","Keyboard/mouse not working","WiFi not working on laptop","Software installation required","Windows update issue","Other laptop issue"],
+  desktop:["Desktop login password forgot","Desktop not turning on","Monitor no display","Keyboard/mouse not working","Desktop slow","LAN/internet issue","Software installation required","Other desktop issue"],
+  "ms-office":["Office license expired","Word/Excel/PowerPoint not opening","Outlook login issue","Teams login issue","OneDrive sync issue","Office activation issue","Other MS Office issue"],
+  email:["Email login issue","Password reset issue","Email not sending","Email not receiving","Outlook configuration issue","Mailbox full","Attachment issue","Other email issue"],
+  login:["Portal login issue","Laptop/Desktop login password forgot","Moodle login issue","Email login issue","MS Teams login issue","Other login issue"],
+  resources:["Projector issue","Smart classroom issue","Biometric issue","CCTV request","Software access request","New system/peripheral request","Other IT request"]
+};
 
 const wifiKnowledgeBase={
   category:"WiFi",
@@ -2854,12 +2867,13 @@ function detectWifiIssue(userText) {
   return wifiKnowledgeBase.keywords.some(keyword=>text.includes(keyword));
 }
 
-function getWifiTroubleshooting() {
+function getWifiTroubleshooting(subCategory="Not able to connect OneJaipuria") {
   return {
     type:"steps",
     categoryId:"wifi",
     categoryLabel:wifiKnowledgeBase.category,
-    title:wifiKnowledgeBase.title,
+    subCategory,
+    title:subCategory,
     steps:wifiKnowledgeBase.steps,
     commonCauses:wifiKnowledgeBase.commonCauses,
     url:wifiKnowledgeBase.url,
@@ -2867,12 +2881,13 @@ function getWifiTroubleshooting() {
   };
 }
 
-function handleWifiTicketFlow() {
+function handleWifiTicketFlow(subCategory="Not able to connect OneJaipuria") {
   return {
     categoryId:"wifi",
     categoryLabel:wifiKnowledgeBase.category,
-    notes:`AI Chatbot troubleshooting shown:\n${wifiKnowledgeBase.title}\n${wifiKnowledgeBase.steps.map((step,index)=>`${index+1}. ${step}`).join("\n")}\n\nCommon Causes:\n${wifiKnowledgeBase.commonCauses.map(cause=>`- ${cause}`).join("\n")}`,
-    description:wifiKnowledgeBase.title
+    subCategory,
+    notes:`AI Chatbot troubleshooting shown:\n${subCategory}\n${wifiKnowledgeBase.steps.map((step,index)=>`${index+1}. ${step}`).join("\n")}\n\nCommon Causes:\n${wifiKnowledgeBase.commonCauses.map(cause=>`- ${cause}`).join("\n")}`,
+    description:`${subCategory}\n\nTroubleshooting shown:\n${wifiKnowledgeBase.steps.map((step,index)=>`${index+1}. ${step}`).join("\n")}`
   };
 }
 
@@ -2921,6 +2936,80 @@ function getHelpdeskCategoryLabel(categoryId) {
   return HELPDESK_MENU_ITEMS.find(item=>item.id===categoryId)?.label || "Other IT Resources";
 }
 
+function normalizeHelpdeskText(value) {
+  return String(value || "").toLowerCase().replace(/[?.!]+$/g,"").replace(/\s+/g," ").trim();
+}
+
+function getSubCategoryMenu(categoryId) {
+  const categoryLabel=getHelpdeskCategoryLabel(categoryId);
+  return {
+    type:"menu",
+    menuType:"sub",
+    categoryId,
+    text:`${categoryLabel} issue type:`,
+    hint:"Type back to return to categories.",
+    menu:(HELPDESK_SUBCATEGORIES[categoryId] || []).map((label,index)=>({number:index+1,id:`${categoryId}-${index+1}`,label}))
+  };
+}
+
+function findMainCategorySelection(userText) {
+  const text=normalizeHelpdeskText(userText);
+  const number=Number(text);
+  if(Number.isInteger(number)) return HELPDESK_MENU_ITEMS[number-1] || null;
+  return HELPDESK_MENU_ITEMS.find(item=>item.aliases.includes(text) || item.label.toLowerCase()===text) || null;
+}
+
+function findSubCategorySelection(userText, categoryId=null) {
+  const text=normalizeHelpdeskText(userText);
+  const categories=categoryId ? [categoryId] : Object.keys(HELPDESK_SUBCATEGORIES);
+  for(const currentCategory of categories) {
+    const options=HELPDESK_SUBCATEGORIES[currentCategory] || [];
+    const number=Number(text);
+    const selectedByNumber=Number.isInteger(number) && categoryId ? options[number-1] : null;
+    const selected=selectedByNumber || options.find(label=>{
+      const normalized=label.toLowerCase();
+      return normalized===text || normalized.includes(text) || text.includes(normalized);
+    });
+    if(selected) return {categoryId:currentCategory,categoryLabel:getHelpdeskCategoryLabel(currentCategory),subCategory:selected};
+  }
+  return null;
+}
+
+function getBasicTroubleshootingSteps(categoryLabel, subCategory) {
+  return [
+    `Confirm the exact ${categoryLabel} issue: ${subCategory}.`,
+    "Restart the related app, device, or connection once.",
+    "Check login, cable, network, power, or account status as applicable.",
+    "Try again from another browser/device if available.",
+    "Keep a screenshot or exact error message ready for IT Support."
+  ];
+}
+
+function getSubCategoryTroubleshooting(categoryId, subCategory) {
+  if(categoryId==="wifi" && subCategory==="Not able to connect OneJaipuria") return getWifiTroubleshooting(subCategory);
+  const categoryLabel=getHelpdeskCategoryLabel(categoryId);
+  return {
+    type:"steps",
+    categoryId,
+    categoryLabel,
+    subCategory,
+    title:subCategory,
+    steps:getBasicTroubleshootingSteps(categoryLabel, subCategory),
+    footer:"Is your issue resolved? Type YES or NO."
+  };
+}
+
+function getTicketContextFromTroubleshooting(reply) {
+  if(reply.categoryId==="wifi" && reply.subCategory==="Not able to connect OneJaipuria") return handleWifiTicketFlow(reply.subCategory);
+  return {
+    categoryId:reply.categoryId,
+    categoryLabel:reply.categoryLabel,
+    subCategory:reply.subCategory,
+    notes:`AI Chatbot troubleshooting shown:\n${reply.title}\n${reply.steps.map((step,index)=>`${index+1}. ${step}`).join("\n")}`,
+    description:`${reply.subCategory}\n\nTroubleshooting shown:\n${reply.steps.map((step,index)=>`${index+1}. ${step}`).join("\n")}`
+  };
+}
+
 function getTicketFlowPrompt(step, draft={}) {
   const prompts={
     name:"Please enter your name.",
@@ -2930,9 +3019,9 @@ function getTicketFlowPrompt(step, draft={}) {
   return prompts[step] || "";
 }
 
-function handleMenuSelection(userText) {
+function handleMenuSelection(userText, activeCategoryId=null) {
   const raw=String(userText || "").trim();
-  const text=raw.toLowerCase().replace(/[?.!]+$/g,"").replace(/\s+/g," ");
+  const text=normalizeHelpdeskText(raw);
   if(!text) return null;
   if(["hi","hello","hey","help","menu","start"].includes(text)) {
     return {type:"menu",text:"Please choose an IT helpdesk option:",menu:getHelpdeskMenu()};
@@ -2940,17 +3029,25 @@ function handleMenuSelection(userText) {
   if(["escalate","esc","talk to it","talk to support","it support","support"].includes(text)) {
     return {type:"escalate",text:"Your issue has been marked for IT Support escalation. Please share your name, system/location, and issue details."};
   }
-  const number=Number(text);
-  const selectedByNumber=Number.isInteger(number) ? HELPDESK_MENU_ITEMS[number-1] : null;
-  const selected=selectedByNumber || HELPDESK_MENU_ITEMS.find(item=>item.aliases.includes(text));
+  const subCategory=activeCategoryId ? findSubCategorySelection(text, activeCategoryId) : findSubCategorySelection(text);
+  if(subCategory) return getSubCategoryTroubleshooting(subCategory.categoryId, subCategory.subCategory);
+  const selected=findMainCategorySelection(text);
   if(!selected) return null;
   if(selected.id==="ai") return {type:"ai",aiPrompt:"Talk to AI"};
-  if(selected.id==="escalate") {
-    return {type:"escalate",text:"Your issue has been marked for IT Support escalation. Please share your name, system/location, and issue details."};
-  }
-  return selected.id==="wifi"
-    ? {type:"steps",categoryId:selected.id,categoryLabel:selected.label,...getWifiSteps()}
-    : {type:"steps",categoryId:selected.id,categoryLabel:selected.label,...getCategorySteps(selected.id)};
+  return getSubCategoryMenu(selected.id);
+}
+
+function isMainMenuResponse(response) {
+  return response?.type==="menu" && !response.menuType;
+}
+
+function isSubMenuResponse(response) {
+  return response?.type==="menu" && response.menuType==="sub";
+}
+
+function findCategoryFromSubMenu(response) {
+  if(isSubMenuResponse(response)) return response.categoryId;
+  return null;
 }
 
 function AIHelpdeskChat({session,onCreateTicket}) {
@@ -2958,6 +3055,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
   const [input,setInput]=useState("");
   const [loading,setLoading]=useState(false);
   const [ticketFlow,setTicketFlow]=useState(null);
+  const [activeCategoryId,setActiveCategoryId]=useState(null);
   const [lastHelpdeskContext,setLastHelpdeskContext]=useState(null);
   const [messages,setMessages]=useState([
     {id:"welcome",role:"assistant",text:"Hello! How may I help you today?",at:Date.now()}
@@ -2982,6 +3080,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       location:"Not provided",
       category:ticketCategory,
       categoryLabel,
+      subCategory:context?.subCategory || categoryLabel,
       description:context?.description || `${categoryLabel} issue reported from AI Chatbot.\n\n${context?.notes || "Troubleshooting context was not available."}`,
       priority:"Medium",
       source:"AI Chatbot",
@@ -3019,6 +3118,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
         mobile:draft.mobile,
         location:"Not provided",
         category:draft.category,
+        subCategory:draft.subCategory,
         description:draft.description,
         priority:"Medium",
         source:"AI Chatbot",
@@ -3047,6 +3147,20 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Great! Happy to help.",at:Date.now()}]);
       return;
     }
+    if(normalized==="menu") {
+      setActiveCategoryId(null);
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",at:Date.now(),type:"menu",text:"Please choose an IT helpdesk option:",menu:getHelpdeskMenu()}]);
+      return;
+    }
+    if(normalized==="back") {
+      if(activeCategoryId) {
+        setActiveCategoryId(null);
+        setMessages(prev=>[...prev,{id:genToken(),role:"assistant",at:Date.now(),type:"menu",text:"Please choose an IT helpdesk option:",menu:getHelpdeskMenu()}]);
+      } else {
+        setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"You are already at the main menu. Type menu to view categories.",at:Date.now()}]);
+      }
+      return;
+    }
     if(normalized==="no" || ["escalate","esc","talk to it","talk to support","it support","support"].includes(normalized)) {
       startTicketFlow();
       return;
@@ -3054,21 +3168,18 @@ function AIHelpdeskChat({session,onCreateTicket}) {
     if(detectWifiIssue(clean)) {
       const wifiReply=getWifiTroubleshooting();
       setLastHelpdeskContext(handleWifiTicketFlow());
+      setActiveCategoryId(null);
       setMessages(prev=>[...prev,{id:genToken(),role:"assistant",at:Date.now(),...wifiReply}]);
       return;
     }
-    const localReply=handleMenuSelection(clean);
+    const localReply=handleMenuSelection(clean, activeCategoryId);
     const wantsAi=["ai","ask ai","talk to ai"].includes(clean.toLowerCase().trim());
     if(localReply && localReply.type!=="ai" && !wantsAi) {
+      if(isMainMenuResponse(localReply)) setActiveCategoryId(null);
+      if(isSubMenuResponse(localReply)) setActiveCategoryId(findCategoryFromSubMenu(localReply));
       if(localReply.type==="steps") {
-        setLastHelpdeskContext(localReply.categoryId==="wifi"
-          ? handleWifiTicketFlow()
-          : {
-            categoryId:localReply.categoryId,
-            categoryLabel:localReply.categoryLabel,
-            notes:`AI Chatbot troubleshooting shown:\n${localReply.title}\n${localReply.steps.map((step,index)=>`${index+1}. ${step}`).join("\n")}`,
-            description:`${localReply.categoryLabel} issue reported from AI Chatbot.`
-          });
+        setActiveCategoryId(null);
+        setLastHelpdeskContext(getTicketContextFromTroubleshooting(localReply));
       }
       setMessages(prev=>[...prev,{id:genToken(),role:"assistant",at:Date.now(),...localReply}]);
       return;
@@ -3125,6 +3236,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
                           </div>
                         ))}
                       </div>
+                      {m.hint&&<div className="ai-helpdesk-menu-hint">{m.hint}</div>}
                     </div>
                   )}
                   {m.type==="steps"&&(
@@ -4687,6 +4799,7 @@ const handleNewTicket = async (form) => {
       mobile: form.mobile || "",
       location: form.location || "",
       category: form.category,
+      subCategory: form.subCategory || "",
       description: form.description,
       priority: form.priority || "Medium",
       source: form.source || "Portal",
