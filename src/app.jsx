@@ -1453,13 +1453,19 @@ textarea:focus{
 .ai-helpdesk-bubble{max-width:82%;border-radius:16px;padding:10px 12px;font-size:13px;line-height:1.45;border:1px solid rgba(255,255,255,.1);box-shadow:0 10px 28px rgba(0,0,0,.2)}
 .ai-helpdesk-bubble.user{background:linear-gradient(135deg,rgba(99,102,241,.48),rgba(6,182,212,.25));color:#fff;border-top-right-radius:5px}
 .ai-helpdesk-bubble.bot{background:rgba(255,255,255,.075);color:#e2e8f0;border-top-left-radius:5px}
-.ai-helpdesk-quick{display:flex;gap:8px;overflow-x:auto;padding:10px 12px;border-top:1px solid rgba(255,255,255,.08);background:rgba(8,13,28,.72)}
-.ai-helpdesk-quick button{flex:0 0 auto;border:1px solid rgba(125,211,252,.22);border-radius:999px;background:rgba(14,165,233,.11);color:#bae6fd;padding:7px 10px;font-size:11px;font-weight:800;white-space:nowrap}
-.ai-helpdesk-quick button:hover{background:rgba(14,165,233,.2);box-shadow:0 0 18px rgba(6,182,212,.18)}
+.ai-helpdesk-menu-card,.ai-helpdesk-steps-card{min-width:min(292px,100%);border-radius:14px;background:linear-gradient(180deg,rgba(15,23,42,.7),rgba(15,23,42,.46));border:1px solid rgba(125,211,252,.18);overflow:hidden}
+.ai-helpdesk-card-title{padding:10px 11px;font-weight:900;color:#f8fafc;background:rgba(14,165,233,.11);border-bottom:1px solid rgba(125,211,252,.14)}
+.ai-helpdesk-menu-list{display:grid;gap:6px;padding:9px}
+.ai-helpdesk-menu-item{display:flex;align-items:center;gap:9px;border-radius:11px;background:rgba(255,255,255,.065);border:1px solid rgba(255,255,255,.08);padding:8px 9px;color:#e2e8f0}
+.ai-helpdesk-menu-item span{width:24px;height:24px;border-radius:8px;background:rgba(16,185,129,.18);color:#a7f3d0;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;flex-shrink:0}
+.ai-helpdesk-menu-item strong{font-size:12px;line-height:1.25}
+.ai-helpdesk-steps-card ol{margin:0;padding:10px 12px 4px 30px}
+.ai-helpdesk-steps-card li{margin:0 0 7px;padding-left:2px;color:#e2e8f0}
+.ai-helpdesk-card-footer{margin:8px 10px 10px;border-radius:12px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.18);padding:9px 10px;white-space:pre-wrap;color:#bbf7d0;font-weight:800;font-size:12px}
 .ai-helpdesk-input{display:flex;gap:8px;padding:12px;border-top:1px solid rgba(255,255,255,.08);background:rgba(10,10,20,.94);backdrop-filter:blur(18px);flex-shrink:0}
 .ai-helpdesk-input input{min-width:0}.ai-helpdesk-input .glow-btn{padding:10px 13px;font-size:12px}
 .ai-typing{display:flex;align-items:center;gap:5px;color:rgba(226,232,240,.68)!important;font-style:italic}.ai-typing span{width:5px;height:5px;border-radius:50%;background:#67e8f9;display:inline-block;animation:pulse 1s infinite}.ai-typing span:nth-child(2){animation-delay:.15s}.ai-typing span:nth-child(3){animation-delay:.3s}
-@media (max-width:768px){.ai-helpdesk-wrap{right:10px;bottom:132px}.ai-helpdesk-panel{width:calc(100vw - 20px);height:calc(100dvh - 176px);border-radius:18px!important}.ai-helpdesk-bubble{max-width:88%}.ai-helpdesk-button{padding:10px 13px;font-size:12px}.ai-helpdesk-quick{padding-bottom:8px}.ai-helpdesk-input{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}}
+@media (max-width:768px){.ai-helpdesk-wrap{right:10px;bottom:132px}.ai-helpdesk-panel{width:calc(100vw - 20px);height:calc(100dvh - 176px);border-radius:18px!important}.ai-helpdesk-bubble{max-width:90%}.ai-helpdesk-button{padding:10px 13px;font-size:12px}.ai-helpdesk-input{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}}
 @media (max-width:480px){.ai-helpdesk-wrap{right:8px;bottom:126px}.ai-helpdesk-panel{width:calc(100vw - 16px);height:calc(100dvh - 164px)}.ai-helpdesk-head{padding:12px}.ai-helpdesk-messages{padding:12px}.ai-helpdesk-input .glow-btn{min-width:58px}}`;
 
 // ── TOAST ─────────────────────────────────────────────────────────────────
@@ -2780,16 +2786,98 @@ function AdminPortalFeedbackPage({portalFeedback,setPortalFeedback,toast}) {
   );
 }
 
+const HELPDESK_MENU_ITEMS=[
+  {id:"wifi",label:"WiFi",aliases:["wifi","wi-fi","wifi issue","wi fi","onejaipuria","one jaipuria"]},
+  {id:"printer",label:"Printer",aliases:["printer","printer issue","printing","print"]},
+  {id:"moodle",label:"Moodle / LMS",aliases:["moodle","lms","moodle issue","lms issue","learning management system"]},
+  {id:"internet",label:"Internet",aliases:["internet","internet issue","network","browsing"]},
+  {id:"laptop",label:"Laptop",aliases:["laptop","laptop issue","notebook"]},
+  {id:"desktop",label:"Desktop",aliases:["desktop","desktop issue","pc","computer"]},
+  {id:"ms-office",label:"MS Office",aliases:["ms office","office","microsoft office","word","excel","powerpoint"]},
+  {id:"email",label:"Email",aliases:["email","mail","outlook","email issue"]},
+  {id:"login",label:"Login Issue",aliases:["login","login issue","password","signin","sign in","account"]},
+  {id:"resources",label:"Other IT Resources",aliases:["other it resources","it resources","resources","other"]},
+  {id:"ai",label:"Talk to AI",aliases:["ai","ask ai","talk to ai","assistant"]},
+  {id:"escalate",label:"Escalate to IT",aliases:["escalate","escalate to it","talk to it","it support","support"]}
+];
+
+function getHelpdeskMenu() {
+  return HELPDESK_MENU_ITEMS.map((item,index)=>({number:index+1,id:item.id,label:item.label}));
+}
+
+function getWifiSteps() {
+  return {
+    title:"How to connect OneJaipuria WiFi",
+    steps:[
+      "First connect your laptop/mobile with your mobile hotspot.",
+      "Open your default browser such as Chrome, Edge, or Firefox.",
+      "Open this URL: https://tinyurl.com/jimjwifi",
+      "Click on \"Join Now\".",
+      "Download the configuration file.",
+      "Run the downloaded file.",
+      "Click \"Next\".",
+      "Select your Jaipuria email account.",
+      "Complete the setup.",
+      "After successful setup, connect to OneJaipuria WiFi.",
+      "If it still does not connect, restart WiFi and try again.",
+      "If issue continues, escalate to IT Support."
+    ],
+    footer:"Do you want AI assistance for this issue? Type AI.\nDo you want to escalate this to IT Support? Type ESCALATE."
+  };
+}
+
+function getCategorySteps(category) {
+  const normalized=String(category || "").toLowerCase();
+  const categoryMap={
+    printer:{title:"Printer troubleshooting",steps:["Confirm the printer is powered on and showing ready.","Check that your laptop/desktop is connected to the campus network.","Restart the printer queue or try printing a test page.","If paper, toner, or access errors appear, note the exact message."]},
+    moodle:{title:"Moodle / LMS troubleshooting",steps:["Check your internet connection and reopen Moodle/LMS in a fresh browser tab.","Clear browser cache or try Chrome, Edge, or Firefox.","Verify that you are using your Jaipuria email/login credentials.","Capture the error message or course name if the issue continues."]},
+    internet:{title:"Internet troubleshooting",steps:["Check whether WiFi or LAN is connected.","Restart WiFi or unplug/replug the LAN cable.","Try opening another website in a fresh browser window.","Restart the device if the network shows connected but pages do not load."]},
+    laptop:{title:"Laptop troubleshooting",steps:["Restart the laptop and check whether the issue repeats.","Confirm charger, battery, keyboard, touchpad, and display behavior.","Run pending OS updates only if you have enough time and battery.","Note any error message, noise, heating, or application that triggers the issue."]},
+    desktop:{title:"Desktop troubleshooting",steps:["Check power cable, monitor cable, keyboard, mouse, and LAN cable.","Restart the system once if it is responsive.","Confirm whether the issue is with display, login, internet, or a specific application.","Note the system location and any error shown on screen."]},
+    "ms-office":{title:"MS Office troubleshooting",steps:["Close and reopen Word, Excel, PowerPoint, or Outlook.","Check whether your Jaipuria account is signed in and licensed.","Try opening the file from local storage if it fails from email/cloud.","Restart the device if Office keeps freezing or asking for activation."]},
+    email:{title:"Email troubleshooting",steps:["Check internet connectivity and open email in a browser.","Confirm you are using your Jaipuria email address.","Reset browser cache or try another browser/device.","Note any Outlook, password, MFA, or mailbox error message."]},
+    login:{title:"Login issue troubleshooting",steps:["Confirm the username/email is typed correctly.","Check Caps Lock and try resetting the password if available.","Try signing in from a different browser or private window.","Capture the exact login error for IT Support."]},
+    resources:{title:"Other IT Resources",steps:["Identify the exact resource, portal, software, or device you need help with.","Check whether the issue happens on one device or multiple devices.","Restart the app/browser and try again once.","Keep your system/location and error details ready for support."]}
+  };
+  const fallback={title:"IT troubleshooting",steps:["Restart the device or application once.","Check internet connectivity and login status.","Note the exact error message and when it occurs.","Try again from another browser or device if available."]};
+  const flow=categoryMap[normalized] || fallback;
+  return {
+    ...flow,
+    footer:"Do you want AI assistance for this issue? Type AI.\nDo you want to escalate this to IT Support? Type ESCALATE."
+  };
+}
+
+function handleMenuSelection(userText) {
+  const raw=String(userText || "").trim();
+  const text=raw.toLowerCase().replace(/[?.!]+$/g,"").replace(/\s+/g," ");
+  if(!text) return null;
+  if(["hi","hello","hey","help","menu","start"].includes(text)) {
+    return {type:"menu",text:"Please choose an IT helpdesk option:",menu:getHelpdeskMenu()};
+  }
+  if(["escalate","esc","talk to it","talk to support","it support","support"].includes(text)) {
+    return {type:"escalate",text:"Your issue has been marked for IT Support escalation. Please share your name, system/location, and issue details."};
+  }
+  const number=Number(text);
+  const selectedByNumber=Number.isInteger(number) ? HELPDESK_MENU_ITEMS[number-1] : null;
+  const selected=selectedByNumber || HELPDESK_MENU_ITEMS.find(item=>item.aliases.includes(text));
+  if(!selected) return null;
+  if(selected.id==="ai") return {type:"ai",aiPrompt:"Talk to AI"};
+  if(selected.id==="escalate") {
+    return {type:"escalate",text:"Your issue has been marked for IT Support escalation. Please share your name, system/location, and issue details."};
+  }
+  return selected.id==="wifi"
+    ? {type:"steps",...getWifiSteps()}
+    : {type:"steps",...getCategorySteps(selected.id)};
+}
+
 function AIHelpdeskChat({session}) {
   const [open,setOpen]=useState(false);
   const [input,setInput]=useState("");
   const [loading,setLoading]=useState(false);
-  const [testingApi,setTestingApi]=useState(false);
   const [messages,setMessages]=useState([
     {id:"welcome",role:"assistant",text:"Hello! How may I help you today?",at:Date.now()}
   ]);
   const endRef=useRef(null);
-  const quickReplies=["Login Issue","WiFi Issue","Moodle Issue","Printer Issue","MS Office Issue"];
 
   useEffect(()=>{
     if(open) endRef.current?.scrollIntoView({behavior:"smooth",block:"end"});
@@ -2803,14 +2891,21 @@ function AIHelpdeskChat({session}) {
     const userMessage={id:genToken(),role:"user",text:clean,at:Date.now()};
     setMessages(prev=>[...prev,userMessage]);
     setInput("");
+    const localReply=handleMenuSelection(clean);
+    const wantsAi=["ai","ask ai","talk to ai"].includes(clean.toLowerCase().trim());
+    if(localReply && localReply.type!=="ai" && !wantsAi) {
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",at:Date.now(),...localReply}]);
+      return;
+    }
+    const aiMessage=localReply?.aiPrompt || clean;
     setLoading(true);
     try {
-      console.log("Calling AI chat API", { message: clean });
+      console.log("Calling AI chat API", { message: aiMessage });
       const response=await fetch("/api/chat",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         cache:"no-store",
-        body:JSON.stringify({message:clean,user:{name:session?.name || session?.email || "Portal User",email:session?.email || ""}})
+        body:JSON.stringify({message:aiMessage,user:{name:session?.name || session?.email || "Portal User",email:session?.email || ""}})
       });
       const data=await response.json().catch(()=>({reply:"",error:"INVALID_JSON_RESPONSE"}));
       console.log("AI chat API response", { status:response.status, ok:response.ok, data });
@@ -2823,42 +2918,6 @@ function AIHelpdeskChat({session}) {
       setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:errorText,at:Date.now(),error:true}]);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const escalate=()=>{
-    setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"I have forwarded this issue to IT Support Team.",at:Date.now()}]);
-  };
-
-  const testAiApi=async()=>{
-    if(testingApi) return;
-    setTestingApi(true);
-    try {
-      const response=await fetch("/api/test",{cache:"no-store"});
-      const data=await response.json().catch(()=>({success:false,error:"INVALID_JSON_RESPONSE"}));
-      console.log("AI test API response", {status:response.status, ok:response.ok, data});
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`API test response: ${JSON.stringify(data)}`,at:Date.now()}]);
-    } catch (error) {
-      console.error("AI test API failed:",error);
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`API test failed: ${error.message}`,at:Date.now(),error:true}]);
-    } finally {
-      setTestingApi(false);
-    }
-  };
-
-  const testGeminiKey=async()=>{
-    if(testingApi) return;
-    setTestingApi(true);
-    try {
-      const response=await fetch("/api/key-test",{cache:"no-store"});
-      const data=await response.json().catch(()=>({hasKey:false,error:"INVALID_JSON_RESPONSE"}));
-      console.log("OpenRouter key test response", {status:response.status, ok:response.ok, data});
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`OpenRouter key test: hasKey=${Boolean(data.hasKey)}, keyLength=${data.keyLength || 0}`,at:Date.now()}]);
-    } catch (error) {
-      console.error("OpenRouter key test failed:",error);
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`OpenRouter key test failed: ${error.message}`,at:Date.now(),error:true}]);
-    } finally {
-      setTestingApi(false);
     }
   };
 
@@ -2879,7 +2938,29 @@ function AIHelpdeskChat({session}) {
             {messages.map(m=>(
               <div key={m.id} className={`ai-helpdesk-row ${m.role==='user'?'user':'bot'}`}>
                 <div className={`ai-helpdesk-bubble ${m.role==='user'?'user':'bot'}`}>
-                  <div style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{m.text}</div>
+                  {m.type==="menu"&&(
+                    <div className="ai-helpdesk-menu-card">
+                      <div className="ai-helpdesk-card-title">{m.text}</div>
+                      <div className="ai-helpdesk-menu-list">
+                        {m.menu.map(item=>(
+                          <div key={item.id} className="ai-helpdesk-menu-item">
+                            <span>{item.number}</span>
+                            <strong>{item.label}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {m.type==="steps"&&(
+                    <div className="ai-helpdesk-steps-card">
+                      <div className="ai-helpdesk-card-title">{m.title}</div>
+                      <ol>
+                        {m.steps.map((step,index)=><li key={`${m.id}-${index}`}>{step}</li>)}
+                      </ol>
+                      <div className="ai-helpdesk-card-footer">{m.footer}</div>
+                    </div>
+                  )}
+                  {m.type!=="menu"&&m.type!=="steps"&&<div style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{m.text}</div>}
                   <div style={{fontSize:10,color:'rgba(226,232,240,.38)',marginTop:5,textAlign:m.role==='user'?'right':'left'}}>{fmtDate(m.at)}</div>
                 </div>
               </div>
@@ -2892,15 +2973,8 @@ function AIHelpdeskChat({session}) {
             <div ref={endRef}/>
           </div>
 
-          <div className="ai-helpdesk-quick">
-            {quickReplies.map(q=><button key={q} type="button" onClick={()=>sendMessage(q)} disabled={loading}>{q}</button>)}
-            <button type="button" onClick={escalate} disabled={loading}>Escalate to IT</button>
-            <button type="button" onClick={testAiApi} disabled={testingApi}>{testingApi?"Testing...":"Test AI API"}</button>
-            <button type="button" onClick={testGeminiKey} disabled={testingApi}>Key Test</button>
-          </div>
-
           <div className="ai-helpdesk-input">
-            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}} placeholder="Ask about WiFi, Moodle, printer, login..." />
+            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}} placeholder="Type hi, menu, WiFi, AI, or ESCALATE..." />
             <button className="glow-btn" type="button" onClick={()=>sendMessage()} disabled={loading||!input.trim()}>Send</button>
           </div>
         </div>
