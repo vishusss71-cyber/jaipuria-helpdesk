@@ -2822,7 +2822,7 @@ function getWifiSteps() {
       "If it still does not connect, restart WiFi and try again.",
       "If issue continues, escalate to IT Support."
     ],
-    footer:"Is your issue resolved? Type YES or NO.\nDo you want AI assistance for this issue? Type AI.\nDo you want to escalate this to IT Support? Type ESCALATE."
+    footer:"Is your issue resolved? Type YES or NO."
   };
 }
 
@@ -2843,7 +2843,7 @@ function getCategorySteps(category) {
   const flow=categoryMap[normalized] || fallback;
   return {
     ...flow,
-    footer:"Is your issue resolved? Type YES or NO.\nDo you want AI assistance for this issue? Type AI.\nDo you want to escalate this to IT Support? Type ESCALATE."
+    footer:"Is your issue resolved? Type YES or NO."
   };
 }
 
@@ -2867,24 +2867,11 @@ function getHelpdeskCategoryLabel(categoryId) {
   return HELPDESK_MENU_ITEMS.find(item=>item.id===categoryId)?.label || "Other IT Resources";
 }
 
-function resolveTicketCategory(value, fallback="other") {
-  const text=String(value || "").trim().toLowerCase();
-  if(!text || text==="ok" || text==="yes") return fallback;
-  const matched=CATEGORIES.find(category=>category.id===text || category.label.toLowerCase()===text || category.label.toLowerCase().includes(text));
-  if(matched) return matched.id;
-  const menuMatch=HELPDESK_MENU_ITEMS.find(item=>item.aliases.includes(text) || item.label.toLowerCase()===text);
-  return menuMatch ? getTicketCategoryFromHelpdesk(menuMatch.id) : fallback;
-}
-
 function getTicketFlowPrompt(step, draft={}) {
   const prompts={
     name:"Please enter your name.",
     email:"Please enter your email.",
-    dept:"Please enter your Department / Program.",
-    location:"Please enter your Location / Room / Lab.",
-    category:`Issue category is ${draft.categoryLabel || "Other IT Resources"}. Type OK to keep it, or type another category.`,
-    description:"Please describe the issue in detail.",
-    priority:"Please choose priority: Low / Medium / High."
+    mobile:"Please enter your mobile number."
   };
   return prompts[step] || "";
 }
@@ -2936,11 +2923,12 @@ function AIHelpdeskChat({session,onCreateTicket}) {
     const draft={
       name:"",
       email:"",
-      dept:"",
-      location:"",
+      mobile:"",
+      dept:"Not provided",
+      location:"Not provided",
       category:ticketCategory,
       categoryLabel,
-      description:"",
+      description:`${categoryLabel} issue reported from AI Chatbot.\n\n${context?.notes || "Troubleshooting context was not available."}`,
       priority:"Medium",
       source:"AI Chatbot",
       notes:context?.notes || ""
@@ -2959,19 +2947,8 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Please enter a valid email address.",at:Date.now(),error:true}]);
       return true;
     }
-    if(step==="priority" && !["low","medium","high"].includes(value.toLowerCase())) {
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Please type Low, Medium, or High.",at:Date.now(),error:true}]);
-      return true;
-    }
-    if(step==="category") {
-      draft.category=resolveTicketCategory(value,draft.category);
-      draft.categoryLabel=CATEGORIES.find(c=>c.id===draft.category)?.label || draft.categoryLabel;
-    } else if(step==="priority") {
-      draft.priority=value.charAt(0).toUpperCase()+value.slice(1).toLowerCase();
-    } else {
-      draft[step]=value;
-    }
-    const steps=["name","email","dept","location","category","description","priority"];
+    draft[step]=value;
+    const steps=["name","email","mobile"];
     const nextStep=steps[steps.indexOf(step)+1];
     if(nextStep) {
       setTicketFlow({step:nextStep,draft});
@@ -2984,12 +2961,12 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       const ticket=await Promise.resolve(onCreateTicket?.({
         name:draft.name,
         email:draft.email,
-        dept:draft.dept,
-        mobile:"",
-        location:draft.location,
+        dept:"Not provided",
+        mobile:draft.mobile,
+        location:"Not provided",
         category:draft.category,
         description:draft.description,
-        priority:draft.priority,
+        priority:"Medium",
         source:"AI Chatbot",
         notes:draft.notes
       }));
@@ -2997,7 +2974,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`Your ticket has been generated successfully. Ticket ID: ${ticket.id}. Our IT Support Team will contact you soon.`,at:Date.now(),type:"ticket-success"}]);
     } catch (error) {
       console.error("Chatbot ticket creation failed:",error);
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`Ticket creation failed: ${error?.message || "Please try again from the portal ticket form."}`,at:Date.now(),error:true}]);
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Ticket could not be created right now. Please try again or contact IT Support.",at:Date.now(),error:true}]);
     } finally {
       setLoading(false);
     }
