@@ -1461,6 +1461,11 @@ textarea:focus{
 .ai-helpdesk-menu-item strong{font-size:12px;line-height:1.25}
 .ai-helpdesk-steps-card ol{margin:0;padding:10px 12px 4px 30px}
 .ai-helpdesk-steps-card li{margin:0 0 7px;padding-left:2px;color:#e2e8f0}
+.ai-helpdesk-causes{margin:6px 10px 8px;border-radius:12px;background:rgba(15,23,42,.58);border:1px solid rgba(255,255,255,.08);padding:9px 10px;color:#cbd5e1;font-size:12px}
+.ai-helpdesk-causes div{font-weight:900;color:#f8fafc;margin-bottom:6px}
+.ai-helpdesk-causes ul{margin:0;padding-left:18px}.ai-helpdesk-causes li{margin:0 0 5px;color:#cbd5e1}
+.ai-helpdesk-url{display:block;margin:6px 10px 8px;border-radius:10px;background:rgba(14,165,233,.12);border:1px solid rgba(125,211,252,.2);padding:8px 9px;color:#7dd3fc;font-size:12px;font-weight:900;text-decoration:none;overflow-wrap:anywhere}
+.ai-helpdesk-url:hover{background:rgba(14,165,233,.2);color:#bae6fd}
 .ai-helpdesk-card-footer{margin:8px 10px 10px;border-radius:12px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.18);padding:9px 10px;white-space:pre-wrap;color:#bbf7d0;font-weight:800;font-size:12px}
 .ai-helpdesk-input{display:flex;gap:8px;padding:12px;border-top:1px solid rgba(255,255,255,.08);background:rgba(10,10,20,.94);backdrop-filter:blur(18px);flex-shrink:0}
 .ai-helpdesk-input input{min-width:0}.ai-helpdesk-input .glow-btn{padding:10px 13px;font-size:12px}
@@ -2805,25 +2810,74 @@ function getHelpdeskMenu() {
   return HELPDESK_MENU_ITEMS.map((item,index)=>({number:index+1,id:item.id,label:item.label}));
 }
 
-function getWifiSteps() {
+const wifiKnowledgeBase={
+  category:"WiFi",
+  ticketCategory:"wifi",
+  priority:"Medium",
+  title:"OneJaipuria WiFi not connecting",
+  keywords:[
+    "wifi not working",
+    "onejaipuria issue",
+    "onejaipuria wifi",
+    "internet not connecting",
+    "laptop wifi issue",
+    "mobile wifi issue",
+    "wifi setup",
+    "wifi configuration",
+    "wifi certificate",
+    "campus wifi"
+  ],
+  steps:[
+    "First connect your laptop/mobile with your mobile hotspot.",
+    "Open your default browser such as Chrome, Edge, or Firefox.",
+    "Open: https://tinyurl.com/jimjwifi",
+    "Click on \"Join Now\" and download the configuration file.",
+    "Run the downloaded file.",
+    "Click \"Next\".",
+    "Select your Jaipuria email account.",
+    "Complete setup.",
+    "Connect to OneJaipuria WiFi.",
+    "Restart WiFi if required."
+  ],
+  commonCauses:[
+    "Old or missing WiFi certificate",
+    "Wrong Jaipuria email selected",
+    "Browser blocked download",
+    "WiFi adapter disabled",
+    "Old WiFi profile conflict"
+  ],
+  url:"https://tinyurl.com/jimjwifi"
+};
+
+function detectWifiIssue(userText) {
+  const text=String(userText || "").toLowerCase().replace(/\s+/g," ").trim();
+  return wifiKnowledgeBase.keywords.some(keyword=>text.includes(keyword));
+}
+
+function getWifiTroubleshooting() {
   return {
-    title:"How to connect OneJaipuria WiFi",
-    steps:[
-      "First connect your laptop/mobile with your mobile hotspot.",
-      "Open your default browser such as Chrome, Edge, or Firefox.",
-      "Open this URL: https://tinyurl.com/jimjwifi",
-      "Click on \"Join Now\".",
-      "Download the configuration file.",
-      "Run the downloaded file.",
-      "Click \"Next\".",
-      "Select your Jaipuria email account.",
-      "Complete the setup.",
-      "After successful setup, connect to OneJaipuria WiFi.",
-      "If it still does not connect, restart WiFi and try again.",
-      "If issue continues, escalate to IT Support."
-    ],
+    type:"steps",
+    categoryId:"wifi",
+    categoryLabel:wifiKnowledgeBase.category,
+    title:wifiKnowledgeBase.title,
+    steps:wifiKnowledgeBase.steps,
+    commonCauses:wifiKnowledgeBase.commonCauses,
+    url:wifiKnowledgeBase.url,
     footer:"Is your issue resolved? Type YES or NO."
   };
+}
+
+function handleWifiTicketFlow() {
+  return {
+    categoryId:"wifi",
+    categoryLabel:wifiKnowledgeBase.category,
+    notes:`AI Chatbot troubleshooting shown:\n${wifiKnowledgeBase.title}\n${wifiKnowledgeBase.steps.map((step,index)=>`${index+1}. ${step}`).join("\n")}\n\nCommon Causes:\n${wifiKnowledgeBase.commonCauses.map(cause=>`- ${cause}`).join("\n")}`,
+    description:wifiKnowledgeBase.title
+  };
+}
+
+function getWifiSteps() {
+  return getWifiTroubleshooting();
 }
 
 function getCategorySteps(category) {
@@ -2928,7 +2982,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       location:"Not provided",
       category:ticketCategory,
       categoryLabel,
-      description:`${categoryLabel} issue reported from AI Chatbot.\n\n${context?.notes || "Troubleshooting context was not available."}`,
+      description:context?.description || `${categoryLabel} issue reported from AI Chatbot.\n\n${context?.notes || "Troubleshooting context was not available."}`,
       priority:"Medium",
       source:"AI Chatbot",
       notes:context?.notes || ""
@@ -2997,15 +3051,24 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       startTicketFlow();
       return;
     }
+    if(detectWifiIssue(clean)) {
+      const wifiReply=getWifiTroubleshooting();
+      setLastHelpdeskContext(handleWifiTicketFlow());
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",at:Date.now(),...wifiReply}]);
+      return;
+    }
     const localReply=handleMenuSelection(clean);
     const wantsAi=["ai","ask ai","talk to ai"].includes(clean.toLowerCase().trim());
     if(localReply && localReply.type!=="ai" && !wantsAi) {
       if(localReply.type==="steps") {
-        setLastHelpdeskContext({
-          categoryId:localReply.categoryId,
-          categoryLabel:localReply.categoryLabel,
-          notes:`AI Chatbot troubleshooting shown:\n${localReply.title}\n${localReply.steps.map((step,index)=>`${index+1}. ${step}`).join("\n")}`
-        });
+        setLastHelpdeskContext(localReply.categoryId==="wifi"
+          ? handleWifiTicketFlow()
+          : {
+            categoryId:localReply.categoryId,
+            categoryLabel:localReply.categoryLabel,
+            notes:`AI Chatbot troubleshooting shown:\n${localReply.title}\n${localReply.steps.map((step,index)=>`${index+1}. ${step}`).join("\n")}`,
+            description:`${localReply.categoryLabel} issue reported from AI Chatbot.`
+          });
       }
       setMessages(prev=>[...prev,{id:genToken(),role:"assistant",at:Date.now(),...localReply}]);
       return;
@@ -3070,6 +3133,15 @@ function AIHelpdeskChat({session,onCreateTicket}) {
                       <ol>
                         {m.steps.map((step,index)=><li key={`${m.id}-${index}`}>{step}</li>)}
                       </ol>
+                      {m.commonCauses&&(
+                        <div className="ai-helpdesk-causes">
+                          <div>Common Causes:</div>
+                          <ul>
+                            {m.commonCauses.map((cause,index)=><li key={`${m.id}-cause-${index}`}>{cause}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      {m.url&&<a className="ai-helpdesk-url" href={m.url} target="_blank" rel="noreferrer">{m.url}</a>}
                       <div className="ai-helpdesk-card-footer">{m.footer}</div>
                     </div>
                   )}
