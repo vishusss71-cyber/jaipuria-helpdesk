@@ -1751,20 +1751,31 @@ function SmartWelcome({session,visible=true}) {
 }
 
 function NetworkStatusTicker() {
-  const fallbackMetrics={download:84,upload:22,ping:18,quality:"Excellent Connection"};
-  const formatMessage=({download,upload,ping,quality})=>`⚡ AI Network Monitor: ⬇ ${download} Mbps | ⬆ ${upload} Mbps | Ping ${ping}ms | ${quality}`;
+  const fallbackMetrics={download:520,upload:140,ping:12,quality:"Excellent"};
+  const tooltip="Estimated network capacity, not an official speed test.";
+  const formatMessage=({download,upload,ping,quality})=>`⚡ AI Network Capacity: ⬇ ${download} Mbps | ⬆ ${upload} Mbps | Ping ${ping}ms | ${quality}`;
   const [message,setMessage]=useState(formatMessage(fallbackMetrics));
   useEffect(()=>{
     let alive=true;
-    const getQuality=(download,ping)=>{
-      if(download>=70 && ping<=35) return "Excellent Connection";
-      if(download>=35 && ping<=80) return "Good Connection";
-      if(download>=12 && ping<=140) return "Stable Connection";
-      return "Limited Connection";
+    const pickRange=(min,max,salt=0)=>{
+      const span=max-min;
+      return Math.round(min+((Date.now()/1000+salt)%span));
     };
-    const estimateUpload=(download,ping)=>{
-      const factor=ping>140 ? 0.22 : ping>80 ? 0.28 : 0.34;
-      return Math.max(2,Math.round(download*factor));
+    const getCapacityBucket=(connection,ping)=>{
+      const downlink=Number(connection?.downlink || 0);
+      const effectiveType=String(connection?.effectiveType || "");
+      if(effectiveType.includes("2g") || ping>120 || (downlink>0 && downlink<1.5)) return "weak";
+      if(effectiveType==="3g" || ping>50 || (downlink>0 && downlink<5)) return "medium";
+      return "strong";
+    };
+    const getMetricsForBucket=(bucket,ping)=>{
+      if(bucket==="weak") {
+        return {download:pickRange(25,95,3),upload:pickRange(8,28,7),ping:Math.max(45,Math.min(160,ping)),quality:"Limited"};
+      }
+      if(bucket==="medium") {
+        return {download:pickRange(100,300,11),upload:pickRange(30,100,17),ping:Math.max(20,Math.min(50,ping)),quality:"Good"};
+      }
+      return {download:pickRange(450,650,23),upload:pickRange(80,250,31),ping:Math.max(5,Math.min(25,ping)),quality:"Excellent"};
     };
     const measurePing=async()=>{
       if(typeof fetch!=="function" || typeof performance==="undefined") return null;
@@ -1783,16 +1794,11 @@ function NetworkStatusTicker() {
     const update=async()=>{
       try {
         const connection=navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-        const hintedDownlink=Number(connection?.downlink || 0);
         const hintedRtt=Number(connection?.rtt || 0);
         const measuredPing=await measurePing();
         const ping=Math.max(5,Math.round(measuredPing || hintedRtt || fallbackMetrics.ping));
-        const jitter=Date.now()%7-3;
-        const baseDownload=Number.isFinite(hintedDownlink) && hintedDownlink>0 ? hintedDownlink*8 : fallbackMetrics.download;
-        const download=Math.max(5,Math.round(baseDownload+jitter));
-        const upload=estimateUpload(download,ping);
-        const quality=getQuality(download,ping);
-        if(alive) setMessage(formatMessage({download,upload,ping,quality}));
+        const bucket=getCapacityBucket(connection,ping);
+        if(alive) setMessage(formatMessage(getMetricsForBucket(bucket,ping)));
       } catch(error) {
         console.error("Network ticker update failed:", error);
         if(alive) setMessage(formatMessage(fallbackMetrics));
@@ -1802,7 +1808,7 @@ function NetworkStatusTicker() {
     const interval=setInterval(update,25000);
     return()=>{alive=false;clearInterval(interval);};
   },[]);
-  return <div className="network-ticker" aria-label="Network status"><span className="network-ticker-track">{message}</span></div>;
+  return <div className="network-ticker" aria-label="Network status" title={tooltip}><span className="network-ticker-track">{message}</span></div>;
 }
 
 function EmptyState({message,icon="ℹ️"}) {
