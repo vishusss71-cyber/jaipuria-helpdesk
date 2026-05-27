@@ -3625,8 +3625,8 @@ function PWAInstallPrompt() {
 // ── SIDEBAR ───────────────────────────────────────────────────────────────
 function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpen,setMobileOpen,onStaffAction}) {
   const adminNav=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"tickets",icon:"🎫",label:"All Tickets"},{id:"staff",icon:"👥",label:"IT Staff"},{id:"analytics",icon:"📊",label:"Analytics"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"export",icon:"⬇",label:"Export Reports"},{id:"staff-management",icon:"👥",label:"Staff Management"},{id:"emaillog",icon:"📧",label:"Email Log"},{id:"portal-feedback",icon:"★",label:"Portal Feedback"},{id:"temp-issue",icon:"📦",label:"Temp Issue"}];
-  const userNav=[{id:"home",icon:"🏠",label:"Home"},{id:"my-tickets",icon:"🎫",label:"My Tickets"},{id:"know-staff",icon:"👥",label:"Know Your IT Staff"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"new-ticket",icon:"➕",label:"New Ticket"},{id:"track",icon:"🔍",label:"Track Ticket"},{id:"temp-issue",icon:"🧾",label:"Temp Issue"}];
-  const staffNav=[{id:"staff-dash",icon:"🏠",label:"My Dashboard"},{id:"assigned",icon:"📋",label:"Assigned Tickets"},{id:"chat",icon:"💬",label:"Staff Chat",staffAction:true},{id:"know-staff",icon:"👥",label:"Know Your IT Staff"},{id:"temp-issue",icon:"🧾",label:"Temp Issue"},{id:"profile",icon:"👤",label:"My Profile",staffAction:true},{id:"password",icon:"🔐",label:"Change Password",staffAction:true},{id:"logout",icon:"↩",label:"Logout",staffAction:true}];
+  const userNav=[{id:"home",icon:"🏠",label:"Home"},{id:"my-tickets",icon:"🎫",label:"My Tickets"},{id:"know-staff",icon:"👥",label:"Connect with IT Staff"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"new-ticket",icon:"➕",label:"New Ticket"},{id:"track",icon:"🔍",label:"Track Ticket"},{id:"temp-issue",icon:"🧾",label:"Temp Issue"}];
+  const staffNav=[{id:"staff-dash",icon:"🏠",label:"My Dashboard"},{id:"assigned",icon:"📋",label:"Assigned Tickets"},{id:"chat",icon:"💬",label:"Staff Chat",staffAction:true},{id:"know-staff",icon:"👥",label:"Connect with IT Staff"},{id:"temp-issue",icon:"🧾",label:"Temp Issue"},{id:"profile",icon:"👤",label:"My Profile",staffAction:true},{id:"password",icon:"🔐",label:"Change Password",staffAction:true},{id:"logout",icon:"↩",label:"Logout",staffAction:true}];
   const nav=isAdmin?adminNav:isStaff?staffNav:userNav;
   const open=tickets.filter(t=>t.status==="Open").length;
   const unreadFeedback=feedback.filter(f=>!f.reviewed).length;
@@ -4249,7 +4249,7 @@ function KnowYourITStaff({staffProfiles}) {
 
   return (
     <div>
-      <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>Know Your IT Staff</h2>
+      <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>Connect with IT Staff</h2>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:20}}>
         {staffData.map(staff => {
           const profile = staffProfiles[staff.id] || {};
