@@ -2173,26 +2173,16 @@ function TicketCard({ticket,onView}) {
 }
 
 // ── CATEGORY GRID ─────────────────────────────────────────────────────────
-function AIHelpCards({onAskAI,onQuickWifi,onPrinter,onMoodle,onTrack,onSmartTicket}) {
-  const cards=[
-    ["Ask AI","Describe your issue in simple words.","🤖",onAskAI],
-    ["Quick WiFi Fix","Try this quick fix first.","📶",onQuickWifi],
-    ["Printer Help","I can guide printer issues.","🖨️",onPrinter],
-    ["Moodle Help","Get LMS support instantly.","📚",onMoodle],
-    ["Track My Ticket","Know your ticket status.","🔍",onTrack],
-    ["Raise Smart Ticket","I can create a ticket for you.","✨",onSmartTicket],
-  ];
+function AIHelpCards({onSmartTicket}) {
   return (
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:12,marginBottom:24}}>
-      {cards.map(([title,sub,icon,action])=>(
-        <button key={title} type="button" onClick={action} className="glass2" style={{textAlign:"left",padding:"16px 15px",border:"1px solid rgba(125,211,252,.16)",background:"linear-gradient(135deg,rgba(14,165,233,.11),rgba(139,92,246,.08),rgba(255,255,255,.04))",cursor:"pointer"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-            <span className="pulse" style={{width:34,height:34,borderRadius:12,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(14,165,233,.15)",fontSize:18}}>{icon}</span>
-            <span style={{fontSize:13,fontWeight:900,color:"#f8fafc"}}>{title}</span>
-          </div>
-          <div style={{fontSize:12,lineHeight:1.45,color:"rgba(226,232,240,.58)"}}>{sub}</div>
-        </button>
-      ))}
+    <div style={{display:"grid",gridTemplateColumns:"minmax(0,360px)",gap:12,marginBottom:22}}>
+      <button type="button" onClick={onSmartTicket} className="glass2" style={{textAlign:"left",padding:"16px 15px",border:"1px solid rgba(125,211,252,.16)",background:"linear-gradient(135deg,rgba(14,165,233,.11),rgba(139,92,246,.08),rgba(255,255,255,.04))",cursor:"pointer"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+          <span className="pulse" style={{width:34,height:34,borderRadius:12,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(14,165,233,.15)",fontSize:18}}>✨</span>
+          <span style={{fontSize:13,fontWeight:900,color:"#f8fafc"}}>Raise Smart Ticket</span>
+        </div>
+        <div style={{fontSize:12,lineHeight:1.45,color:"rgba(226,232,240,.58)"}}>I can create a ticket for you.</div>
+      </button>
     </div>
   );
 }
@@ -2277,23 +2267,16 @@ function SmartTicketModal({session,onSubmit,onClose,toast}) {
   );
 }
 
-function CategoryGrid({onSelect,onSmartTicket,onNavigate}) {
+function CategoryGrid({onSelect,onSmartTicket}) {
   const [hover,setHover]=useState(null);
   return (
     <div>
       <div className="glass" style={{padding:"22px",marginBottom:18,background:"radial-gradient(circle at 0 0,rgba(14,165,233,.22),transparent 36%),linear-gradient(135deg,rgba(15,23,42,.9),rgba(30,41,59,.78))"}}>
         <div style={{display:"inline-flex",alignItems:"center",gap:8,border:"1px solid rgba(125,211,252,.22)",borderRadius:999,padding:"6px 10px",color:"#7dd3fc",fontSize:12,fontWeight:900,marginBottom:12}}><span className="pulse">✦</span> AI Powered Support</div>
-        <h2 style={{fontFamily:"Syne",fontSize:24,fontWeight:900,color:"#e2e8f0",marginBottom:6}}>Smart IT Helpdesk Portal</h2>
+        <h2 style={{fontFamily:"Syne",fontSize:24,fontWeight:900,color:"#e2e8f0",marginBottom:6}}>IT Helpdesk Portal</h2>
         <p style={{fontSize:14,color:"rgba(226,232,240,0.62)",margin:0}}>Minimum effort support: describe your issue, try a smart fix, and let AI prepare the ticket.</p>
       </div>
-      <AIHelpCards
-        onAskAI={()=>onNavigate?.("ai")}
-        onQuickWifi={()=>onNavigate?.("wifi")}
-        onPrinter={()=>onSelect("printer")}
-        onMoodle={()=>onSelect("erp")}
-        onTrack={()=>onNavigate?.("track")}
-        onSmartTicket={onSmartTicket}
-      />
+      <AIHelpCards onSmartTicket={onSmartTicket} />
       <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:6}}>Raise IT Support Ticket</h2>
       <p style={{fontSize:14,color:"rgba(226,232,240,0.5)",marginBottom:24}}>Select the issue category or let AI create a smart ticket</p>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(145px,1fr))",gap:14}}>
@@ -5699,7 +5682,7 @@ const handleNewTicket = async (form) => {
       return <StaffPanel staffId={session.staffId} tickets={tickets} setTickets={setTickets} toast={toast} onViewTicket={setViewTicketId} permissions={session.permissions} staffProfiles={staffProfiles} staffStatuses={staffStatuses} />;
     }
 
-    if (page === "home") return <CategoryGrid onSelect={cat => setFormCat(cat)} onSmartTicket={()=>setSmartTicketOpen(true)} onNavigate={(target)=>{ if(target==="track") setPage("track"); if(target==="ai") setSmartTicketOpen(true); if(target==="wifi") setFormCat("wifi"); }} />;
+    if (page === "home") return <CategoryGrid onSelect={cat => setFormCat(cat)} onSmartTicket={()=>setSmartTicketOpen(true)} />;
     if (page === "my-tickets") return (
       <div>
         <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>My Tickets</h2>
