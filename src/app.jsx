@@ -1643,37 +1643,6 @@ function Modal({ title, children, onClose, wide=false }) {
   );
 }
 
-function TicketClosureReview({ticket,onConfirmResolved,onStillIssue}) {
-  const [comment,setComment]=useState("");
-  const [showComment,setShowComment]=useState(false);
-  if(!ticket) return null;
-  const submitReopen=()=>{
-    const clean=comment.trim();
-    if(!clean) return;
-    onStillIssue(clean);
-  };
-  return (
-    <div className="glass2" style={{padding:"16px",borderColor:"rgba(16,185,129,.3)",background:"rgba(16,185,129,.08)",display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{fontSize:16,fontWeight:900,color:"#fff"}}>Your ticket has been closed. Please confirm if your issue is resolved.</div>
-      {ticket.closingRemarks&&<div style={{fontSize:13,color:"#bbf7d0"}}>Resolution: {ticket.closingRemarks}</div>}
-      {!showComment ? (
-        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-          <button className="glow-btn" type="button" onClick={onConfirmResolved}>Yes, Resolved</button>
-          <button type="button" onClick={()=>setShowComment(true)} style={{background:"rgba(245,158,11,.13)",border:"1px solid rgba(245,158,11,.28)",color:"#fbbf24",padding:"9px 14px",borderRadius:10,fontWeight:900}}>No, Still Issue</button>
-        </div>
-      ) : (
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          <textarea rows={3} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Please describe what issue is still pending." style={{resize:"vertical"}} />
-          <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
-            <button type="button" onClick={()=>setShowComment(false)} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",color:"#e2e8f0",padding:"9px 14px",borderRadius:10,fontWeight:900}}>Cancel</button>
-            <button className="glow-btn" type="button" onClick={submitReopen} disabled={!comment.trim()}>Submit & Reopen</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── STATUS / PRIORITY BADGES ─────────────────────────────────────────────
 function StatusBadge({status}) {
   const c={Open:{bg:"rgba(99,102,241,0.2)",col:"#818cf8"},Assigned:{bg:"rgba(14,165,233,0.2)",col:"#38bdf8"},"In Progress":{bg:"rgba(245,158,11,0.2)",col:"#fbbf24"},Resolved:{bg:"rgba(16,185,129,0.2)",col:"#34d399"},Closed:{bg:"rgba(107,114,128,0.2)",col:"#9ca3af"}}[status]||{bg:"rgba(99,102,241,0.2)",col:"#818cf8"};
@@ -1872,73 +1841,6 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     toast("Comment added","success");
   };
 
-  const confirmUserResolved=async()=>{
-    try {
-      if(!currentTicket){
-        toast("Ticket not found. Please reopen the ticket.", "error");
-        return;
-      }
-      if(!currentTicket.id){
-        toast("Ticket update failed: missing ticket ID.", "error");
-        console.error("Confirm resolved failed: missing ticket id", currentTicket);
-        return;
-      }
-      const now=Date.now();
-      const updated={
-        ...currentTicket,
-        userConfirmedResolved:true,
-        userFeedbackStatus:"resolved",
-        userReviewedAt:now,
-        updatedAt:now,
-        timeline:[...(currentTicket.timeline||[]),{action:"User confirmed resolved",remark:"Issue resolved",at:now,by:currentTicket.email || "User"}]
-      };
-      if(ONLINE_TICKETS_ENABLED) await saveTicket(updated);
-      setTickets(ts=>ts.map(t=>t.id===currentTicket.id?updated:t));
-      toast("Thank you for confirming.","success");
-    } catch(error) {
-      console.error("Confirm resolved failed:", error);
-      toast("Could not confirm this ticket right now. Please try again.","error");
-    }
-  };
-
-  const reopenFromUser=async(reason)=>{
-    try {
-      const clean=String(reason||"").trim();
-      if(!clean){
-        toast("Please describe what issue is still pending.","error");
-        return;
-      }
-      if(!currentTicket){
-        toast("Ticket not found. Please reopen the ticket.", "error");
-        return;
-      }
-      if(!currentTicket.id){
-        toast("Ticket update failed: missing ticket ID.", "error");
-        console.error("Reopen ticket failed: missing ticket id", currentTicket);
-        return;
-      }
-      const now=Date.now();
-      const updated={
-        ...currentTicket,
-        status:"Open",
-        reopenReason:clean,
-        reopenedAt:now,
-        reopenedBy:currentTicket.email || "User",
-        userFeedbackStatus:"still_issue",
-        userReviewedAt:now,
-        updatedAt:now,
-        comments:[...(currentTicket.comments||[]),{text:clean,at:now,by:currentTicket.email || "User"}],
-        timeline:[...(currentTicket.timeline||[]),{action:"Reopened",remark:clean,at:now,by:currentTicket.email || "User"}]
-      };
-      if(ONLINE_TICKETS_ENABLED) await saveTicket(updated);
-      setTickets(ts=>ts.map(t=>t.id===currentTicket.id?updated:t));
-      toast("Ticket reopened","success");
-    } catch(error) {
-      console.error("Reopen ticket failed:", error);
-      toast("Ticket could not be reopened right now. Please try again.","error");
-    }
-  };
-
   const handleCloseTicket=async(remarks)=>{
     const closedAt=Date.now();
     const closedBy = staffName || (isAdmin ? "Admin" : "User");
@@ -2013,10 +1915,6 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
           </div>
         )}
       </div>
-
-      {!isAdmin&&!isStaff&&["Closed","Resolved"].includes(currentTicket.status)&&!currentTicket.userReviewedAt&&(
-        <TicketClosureReview ticket={currentTicket} onConfirmResolved={confirmUserResolved} onStillIssue={reopenFromUser} />
-      )}
 
       {/* Info */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -2264,9 +2162,7 @@ function TicketCard({ticket,onView}) {
         <div>Assigned to: <span style={{color:"#e2e8f0"}}>{ticket.assigneeName || ticket.assignedTo || staffName(ticket.assigneeId)}</span></div>
         <div>Watchers: <span style={{color:"#e2e8f0"}}>{(ticket.watchers||ticket.notifiedStaff||[]).map(w=>w.name).filter(Boolean).join(", ") || "All IT Staff"}</span></div>
         <div>Source: <span style={{color:"#e2e8f0"}}>{ticket.source || "Portal"}</span></div>
-        {ticket.userFeedbackStatus&&<div>User review: <span style={{color:"#e2e8f0"}}>{ticket.userFeedbackStatus}{ticket.reopenReason ? ` · ${ticket.reopenReason}` : ""}</span></div>}
       </div>
-      {["Closed","Resolved"].includes(ticket.status)&&!ticket.userReviewedAt&&<div style={{display:"inline-flex",alignItems:"center",gap:7,marginBottom:10,border:"1px solid rgba(16,185,129,.28)",background:"rgba(16,185,129,.12)",color:"#bbf7d0",borderRadius:999,padding:"5px 9px",fontSize:11,fontWeight:900}}><span className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",display:"inline-block"}}/>Closed - Review pending</div>}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:10}}>
         <PriorityBadge p={ticket.priority}/>
         <span style={{fontSize:11,color:"rgba(226,232,240,0.35)"}}>{timeAgo(ticket.createdAt)}</span>
