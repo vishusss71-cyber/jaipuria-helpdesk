@@ -567,6 +567,26 @@ function isTicketFeedbackUnread(ticket, isAdmin=false, isStaff=false) {
   if(isStaff) return !ticket.feedbackReadByStaff;
   return false;
 }
+function getDisplayName(session) {
+  return session?.name || session?.staff?.name || session?.email?.split("@")[0]?.replace(/[._-]+/g," ") || "there";
+}
+function getGreetingLabel() {
+  const hour=new Date().getHours();
+  if(hour<12) return "Good Morning";
+  if(hour<17) return "Good Afternoon";
+  return "Good Evening";
+}
+function showBrowserNotification(title, body) {
+  try {
+    if(typeof window==="undefined" || !("Notification" in window)) return false;
+    if(Notification.permission!=="granted") return false;
+    new Notification(title, { body, icon:"/pwa-icon-192.png", badge:"/pwa-icon-192.png" });
+    return true;
+  } catch(error) {
+    console.error("Browser notification failed:", error);
+    return false;
+  }
+}
 function genFeedbackId() { return "FDB-"+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,5).toUpperCase(); }
 function satisfactionColor(level) { return SATISFACTION_LEVELS.find(s=>s.id===level)?.color || "#64748b"; }
 function cleanFeedbackRow(f) {
@@ -1520,8 +1540,15 @@ textarea:focus{
 .ai-helpdesk-card-footer{margin:8px 10px 10px;border-radius:12px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.18);padding:9px 10px;white-space:pre-wrap;color:#bbf7d0;font-weight:800;font-size:12px}
 .ai-helpdesk-input{display:flex;gap:8px;padding:12px;border-top:1px solid rgba(255,255,255,.08);background:rgba(10,10,20,.94);backdrop-filter:blur(18px);flex-shrink:0}
 .ai-helpdesk-input input{min-width:0}.ai-helpdesk-input .glow-btn{padding:10px 13px;font-size:12px}
-.ai-typing{display:flex;align-items:center;gap:5px;color:rgba(226,232,240,.68)!important;font-style:italic}.ai-typing span{width:5px;height:5px;border-radius:50%;background:#67e8f9;display:inline-block;animation:pulse 1s infinite}.ai-typing span:nth-child(2){animation-delay:.15s}.ai-typing span:nth-child(3){animation-delay:.3s}
-@media (max-width:768px){.ai-helpdesk-wrap{right:10px;bottom:132px}.ai-helpdesk-panel{width:calc(100vw - 20px);height:calc(100dvh - 176px);border-radius:18px!important}.ai-helpdesk-bubble{max-width:90%}.ai-helpdesk-button{padding:10px 13px;font-size:12px}.ai-helpdesk-input{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}}
+.ai-helpdesk-quick{display:flex;gap:7px;flex-wrap:wrap;padding:10px 12px 0;border-top:1px solid rgba(255,255,255,.07);background:rgba(10,10,20,.9)}
+.ai-helpdesk-chip{border:1px solid rgba(125,211,252,.18);border-radius:999px;background:rgba(255,255,255,.06);color:#dbeafe;padding:7px 9px;font-size:11px;font-weight:900;transition:transform .18s ease,background .18s ease,border-color .18s ease;white-space:nowrap}
+.ai-helpdesk-chip:hover{transform:translateY(-1px);background:rgba(14,165,233,.12);border-color:rgba(125,211,252,.34)}
+.ai-helpdesk-chip:active{transform:scale(.97)}
+.ai-typing{display:flex;align-items:center;gap:6px;color:rgba(226,232,240,.74)!important;font-style:italic}.ai-typing span{width:5px;height:5px;border-radius:50%;background:#67e8f9;display:inline-block;animation:pulse 1s infinite}.ai-typing span:nth-child(2){animation-delay:.15s}.ai-typing span:nth-child(3){animation-delay:.3s}
+.theme-glow{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden;background:radial-gradient(circle at 14% 18%,rgba(37,99,235,.08),transparent 30%),radial-gradient(circle at 82% 8%,rgba(139,92,246,.07),transparent 32%),radial-gradient(circle at 70% 86%,rgba(6,182,212,.06),transparent 34%);animation:themeGlowShift 14s ease-in-out infinite alternate}
+@keyframes themeGlowShift{from{filter:hue-rotate(0deg);opacity:.72;transform:scale(1)}to{filter:hue-rotate(12deg);opacity:.95;transform:scale(1.03)}}
+.app-sidebar,.app-main{position:relative;z-index:1}
+@media (max-width:768px){.ai-helpdesk-wrap{right:10px;bottom:132px}.ai-helpdesk-panel{width:calc(100vw - 20px);height:calc(100dvh - 176px);border-radius:18px!important}.ai-helpdesk-bubble{max-width:90%}.ai-helpdesk-button{padding:10px 13px;font-size:12px}.ai-helpdesk-input{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}.ai-helpdesk-chip{font-size:10px;padding:6px 8px}}
 @media (max-width:480px){.ai-helpdesk-wrap{right:8px;bottom:126px}.ai-helpdesk-panel{width:calc(100vw - 16px);height:calc(100dvh - 164px)}.ai-helpdesk-head{padding:12px}.ai-helpdesk-messages{padding:12px}.ai-helpdesk-input .glow-btn{min-width:58px}}`;
 
 // ── TOAST ─────────────────────────────────────────────────────────────────
@@ -1665,8 +1692,13 @@ function StatusBadge({status}) {
   return <span className="tag" style={{background:c.bg,color:c.col}}>● {status}</span>;
 }
 function PriorityBadge({p}) {
-  const c={Low:"#94a3b8",Medium:"#fbbf24",High:"#f97316",Critical:"#ef4444"}[p]||"#94a3b8";
-  return <span className="tag" style={{background:`${c}20`,color:c}}>▲ {p}</span>;
+  const styles={
+    Low:{bg:"rgba(16,185,129,.16)",col:"#86efac",border:"rgba(16,185,129,.28)"},
+    Medium:{bg:"rgba(245,158,11,.18)",col:"#fbbf24",border:"rgba(245,158,11,.32)"},
+    High:{bg:"rgba(239,68,68,.18)",col:"#f87171",border:"rgba(239,68,68,.34)"},
+    Critical:{bg:"rgba(220,38,38,.22)",col:"#fecaca",border:"rgba(248,113,113,.42)"}
+  }[p]||{bg:"rgba(148,163,184,.16)",col:"#cbd5e1",border:"rgba(148,163,184,.24)"};
+  return <span className="tag" style={{background:styles.bg,color:styles.col,border:`1px solid ${styles.border}`}}>▲ {p}</span>;
 }
 
 // ── SLA TIMER ─────────────────────────────────────────────────────────────
@@ -1704,6 +1736,20 @@ function StatCard({label,value,icon,color,sub,onClick}) {
       {sub&&<div style={{fontSize:12,color:"rgba(226,232,240,0.4)"}}>{sub}</div>}
     </div>
   );
+}
+
+function SmartWelcome({session}) {
+  const name=getDisplayName(session);
+  return (
+    <div className="glass" style={{padding:"18px 20px",marginBottom:18,background:"linear-gradient(135deg,rgba(14,165,233,.13),rgba(139,92,246,.1),rgba(255,255,255,.04))",border:"1px solid rgba(125,211,252,.16)"}}>
+      <h2 style={{fontFamily:"Syne",fontSize:"clamp(20px,4vw,26px)",fontWeight:900,color:"#f8fafc",marginBottom:5,lineHeight:1.18}}>{getGreetingLabel()}, {name} 👋</h2>
+      <p style={{fontSize:14,color:"rgba(226,232,240,.62)",margin:0}}>How can IT Helpdesk assist you today?</p>
+    </div>
+  );
+}
+
+function EmptyState({message,icon="ℹ️"}) {
+  return <div className="glass2" style={{gridColumn:"1/-1",padding:"28px 18px",textAlign:"center",color:"rgba(226,232,240,.64)",borderStyle:"dashed"}}><div style={{fontSize:34,marginBottom:8}}>{icon}</div><div style={{fontSize:14,fontWeight:800}}>{message}</div></div>;
 }
 
 // ── AUDIT TIMELINE ────────────────────────────────────────────────────────
@@ -1927,7 +1973,13 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     }));
 
     toast(closedByStatusChange ? "Ticket closed" : auditAction,"success");
-    if(closedTicket) notifyTicketClosed(closedTicket, isAdmin?"Admin":staffName||"IT Support", remark);
+    if(closedTicket) {
+      notifyTicketClosed(closedTicket, isAdmin?"Admin":staffName||"IT Support", remark);
+      showBrowserNotification("Ticket closed", `${closedTicket.id} has been closed/resolved.`);
+    }
+    if(updatedTicket && isClosedTicket(currentTicket) && changes.status && !isClosedTicket(updatedTicket)) {
+      showBrowserNotification("Ticket reopened", `${updatedTicket.id} has been reopened.`);
+    }
     return updatedTicket;
   };
   const addComment=()=>{
@@ -2012,6 +2064,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     if(closedTicket){
       toast("Ticket closed", "success");
       notifyTicketClosed(closedTicket, closedBy, remarks);
+      showBrowserNotification("Ticket closed", `${closedTicket.id} has been closed/resolved.`);
     }
   };
 
@@ -2447,10 +2500,11 @@ function SmartTicketModal({session,onSubmit,onClose,toast}) {
   );
 }
 
-function CategoryGrid({onSelect,onSmartTicket}) {
+function CategoryGrid({onSelect,onSmartTicket,session}) {
   const [hover,setHover]=useState(null);
   return (
     <div>
+      <SmartWelcome session={session} />
       <div className="glass" style={{padding:"22px",marginBottom:18,background:"radial-gradient(circle at 0 0,rgba(14,165,233,.22),transparent 36%),linear-gradient(135deg,rgba(15,23,42,.9),rgba(30,41,59,.78))"}}>
         <div style={{display:"inline-flex",alignItems:"center",gap:8,border:"1px solid rgba(125,211,252,.22)",borderRadius:999,padding:"6px 10px",color:"#7dd3fc",fontSize:12,fontWeight:900,marginBottom:12}}><span className="pulse">✦</span> AI Powered Support</div>
         <h2 style={{fontFamily:"Syne",fontSize:24,fontWeight:900,color:"#e2e8f0",marginBottom:6}}>IT Helpdesk Portal</h2>
@@ -3652,6 +3706,30 @@ function AIHelpdeskChat({session,onCreateTicket}) {
     }
   };
 
+  const handleQuickAction=(action)=>{
+    if(loading) return;
+    if(action==="wifi") {
+      const wifiReply=getWifiTroubleshooting();
+      setLastHelpdeskContext(handleWifiTicketFlow());
+      setActiveCategoryId(null);
+      setMessages(prev=>[...prev,{id:genToken(),role:"user",text:"Fix WiFi",at:Date.now()},{id:genToken(),role:"assistant",at:Date.now(),...wifiReply}]);
+      return;
+    }
+    if(action==="ticket") {
+      setMessages(prev=>[...prev,{id:genToken(),role:"user",text:"Raise Ticket",at:Date.now()}]);
+      startTicketFlow();
+      return;
+    }
+    if(action==="track") {
+      setMessages(prev=>[...prev,{id:genToken(),role:"user",text:"Track Ticket",at:Date.now()},{id:genToken(),role:"assistant",text:"Please open My Tickets or Track Ticket from the portal menu to check your ticket status. You can also type your ticket ID in Track Ticket.",at:Date.now()}]);
+      return;
+    }
+    if(action==="it") {
+      setMessages(prev=>[...prev,{id:genToken(),role:"user",text:"Talk to IT",at:Date.now()}]);
+      startTicketFlow();
+    }
+  };
+
   return (
     <div className="ai-helpdesk-wrap">
       {open&&(
@@ -3708,10 +3786,17 @@ function AIHelpdeskChat({session,onCreateTicket}) {
             ))}
             {loading&&(
               <div className="ai-helpdesk-row bot">
-                <div className="ai-helpdesk-bubble bot ai-typing"><span></span><span></span><span></span>Jaipuria Helpdesk AI is typing...</div>
+                <div className="ai-helpdesk-bubble bot ai-typing">AI is analyzing your issue... <span></span><span></span><span></span></div>
               </div>
             )}
             <div ref={endRef}/>
+          </div>
+
+          <div className="ai-helpdesk-quick">
+            <button type="button" className="ai-helpdesk-chip" onClick={()=>handleQuickAction("wifi")}>Fix WiFi</button>
+            <button type="button" className="ai-helpdesk-chip" onClick={()=>handleQuickAction("ticket")}>Raise Ticket</button>
+            <button type="button" className="ai-helpdesk-chip" onClick={()=>handleQuickAction("track")}>Track Ticket</button>
+            <button type="button" className="ai-helpdesk-chip" onClick={()=>handleQuickAction("it")}>Talk to IT</button>
           </div>
 
           <div className="ai-helpdesk-input">
@@ -3800,6 +3885,31 @@ function PWAInstallPrompt() {
       </div>
     </div>
   );
+}
+
+function NotificationButton({toast,enabled,setEnabled}) {
+  const enable=async()=>{
+    try {
+      if(typeof window==="undefined" || !("Notification" in window)) {
+        toast("Browser notifications are not supported on this device.","info");
+        return;
+      }
+      const permission=await Notification.requestPermission();
+      if(permission==="granted") {
+        setEnabled(true);
+        toast("Notifications enabled","success");
+        showBrowserNotification("Jaipuria IT Helpdesk", "Notifications are enabled.");
+      } else {
+        setEnabled(false);
+        toast("Notifications permission was not enabled.","info");
+      }
+    } catch(error) {
+      console.error("Notification permission failed:", error);
+      toast("Notifications could not be enabled on this browser.","error");
+    }
+  };
+  if(enabled) return <span style={{fontSize:12,color:"#86efac",fontWeight:800,whiteSpace:"nowrap"}}>Notifications On</span>;
+  return <button type="button" onClick={enable} style={{background:"rgba(14,165,233,.1)",border:"1px solid rgba(125,211,252,.24)",color:"#bae6fd",padding:"6px 10px",borderRadius:999,fontSize:12,fontWeight:900,whiteSpace:"nowrap"}}>Enable Notifications</button>;
 }
 // ── SIDEBAR ───────────────────────────────────────────────────────────────
 function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpen,setMobileOpen,onStaffAction,feedbackPendingCount=0}) {
@@ -4217,7 +4327,7 @@ function Landing({onLogin,tickets=[]}) {
   );
 }
 // ── TICKETS TABLE ─────────────────────────────────────────────────────────
-function TicketsTable({tickets,onView,isAdmin,onDelete}) {
+function TicketsTable({tickets,onView,isAdmin,onDelete,emptyKind=""}) {
   const [search,setSearch]=useState("");
   const [filterStatus,setFilterStatus]=useState("All");
   const [filterPriority,setFilterPriority]=useState("All");
@@ -4243,7 +4353,12 @@ function TicketsTable({tickets,onView,isAdmin,onDelete}) {
             {isAdmin&&<button onClick={e=>{e.stopPropagation();onDelete(t.id);}} style={{position:"absolute",top:10,right:10,background:"rgba(239,68,68,0.15)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",width:26,height:26,borderRadius:6,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>🗑</button>}
           </div>
         ))}
-        {filtered.length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>🎫</div><div>No tickets found</div></div>}
+        {filtered.length===0&&(
+          <EmptyState
+            icon={filterStatus==="Open" ? "🎉" : "🎫"}
+            message={filterStatus==="Open" || emptyKind==="Open" ? "No open tickets. Everything looks good." : filterStatus==="Closed" || emptyKind==="Closed" ? "No closed tickets yet." : "No tickets found."}
+          />
+        )}
       </div>
     </div>
   );
@@ -4280,6 +4395,7 @@ function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions,s
   const resolved=myTickets.filter(t=>t.status==="Resolved"||t.status==="Closed").length;
   return (
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
+      <SmartWelcome session={{name:staff?.name}} />
       <div className="glass" style={{padding:"24px",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
         <StaffAvatar staff={staff} profiles={staffProfiles} statuses={staffStatuses} size={56} showStatus />
         <div style={{flex:1}}>
@@ -5093,6 +5209,7 @@ export default function App() {
   const [staffStatuses, setStaffStatuses] = useState(() => DB.get("staff_statuses", {}));
   const [staffPanel, setStaffPanel] = useState(null);
   const [staffMenuOpen, setStaffMenuOpen] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted");
   useEffect(() => {
     let alive = true;
     const loadTickets = async () => {
@@ -5356,6 +5473,7 @@ const handleNewTicket = async (form) => {
       await sendTicketEmail(newTicket, { name: newTicket.name, email: newTicket.email });
       emailTicketCreated(newTicket, assignee);
       notifyTicketCreated(newTicket);
+      showBrowserNotification("Ticket created", `${newTicket.id} has been created successfully.`);
 
       toast("Ticket created successfully", "success");
       return newTicket;
@@ -5799,6 +5917,7 @@ const handleNewTicket = async (form) => {
 
         return (
           <div style={{display:"flex",flexDirection:"column",gap:24}}>
+            <SmartWelcome session={session} />
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
               <div>
                 <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Admin Dashboard</h2>
@@ -5844,7 +5963,7 @@ const handleNewTicket = async (form) => {
                 </div>
               </>
             ) : (
-              <TicketsTable tickets={filteredDashboardTickets} onView={setViewTicketId} isAdmin onDelete={handleDeleteTicket} />
+              <TicketsTable tickets={filteredDashboardTickets} onView={setViewTicketId} isAdmin onDelete={handleDeleteTicket} emptyKind={dashboardFilter.type} />
             )}
           </div>
         );
@@ -5889,10 +6008,11 @@ const handleNewTicket = async (form) => {
       return <StaffPanel staffId={session.staffId} tickets={tickets} setTickets={setTickets} toast={toast} onViewTicket={setViewTicketId} permissions={session.permissions} staffProfiles={staffProfiles} staffStatuses={staffStatuses} />;
     }
 
-    if (page === "home") return <CategoryGrid onSelect={cat => setFormCat(cat)} onSmartTicket={()=>setSmartTicketOpen(true)} />;
+    if (page === "home") return <CategoryGrid onSelect={cat => setFormCat(cat)} onSmartTicket={()=>setSmartTicketOpen(true)} session={session} />;
     if (page === "my-tickets") return (
       <div>
         <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>My Tickets</h2>
+        {userFeedbackPendingCount===0&&<div className="glass2" style={{padding:"12px 14px",marginBottom:14,color:"#bbf7d0",borderColor:"rgba(16,185,129,.22)",background:"rgba(16,185,129,.07)",fontSize:13,fontWeight:800}}>No pending feedback. You're all caught up.</div>}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
           {myTickets.map(t => <TicketCard key={t.id} ticket={t} onView={setViewTicketId} showFeedbackPending={isTicketFeedbackPending(t)} />)}
           {myTickets.length === 0 && <div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>🎫</div><div>No tickets yet</div><button className="glow-btn" style={{marginTop:16}} onClick={() => setPage("home")}>Raise Ticket</button></div>}
@@ -5918,6 +6038,7 @@ const handleNewTicket = async (form) => {
   return (
     <>
       <style>{CSS}</style>
+      <div className="theme-glow" />
       <div className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
         <Sidebar current={page} onChange={setPage} isAdmin={isAdmin} isStaff={isStaff} tickets={tickets} feedback={feedback} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onStaffAction={handleStaffMenuAction} feedbackPendingCount={userFeedbackPendingCount} />
         <div className="app-main" style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
@@ -5940,6 +6061,7 @@ const handleNewTicket = async (form) => {
             <div className="header-actions" style={{display:"flex",gap:10,alignItems:"center"}}>
               <div className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#10b981"}} />
               <span style={{fontSize:12,color:"rgba(226,232,240,0.4)"}}>Live</span>
+              <NotificationButton toast={toast} enabled={notificationsEnabled} setEnabled={setNotificationsEnabled} />
               {!isStaff&&<button onClick={logoutUser} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",padding:"6px 14px",borderRadius:8,fontSize:13}}>Logout</button>}
             </div>
           </div>
