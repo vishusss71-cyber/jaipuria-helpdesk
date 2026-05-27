@@ -86,6 +86,12 @@ function normalizeTicket(ticket = {}) {
     reopenedBy: ticket.reopenedBy || "",
     closedAt: ticket.closedAt ?? null,
     closingRemarks: ticket.closingRemarks || "",
+    userFeedbackRating: Number(ticket.userFeedbackRating || 0),
+    userFeedbackComment: ticket.userFeedbackComment || "",
+    userFeedbackAt: ticket.userFeedbackAt || null,
+    feedbackStatus: ticket.feedbackStatus || "",
+    feedbackReadByAdmin: Boolean(ticket.feedbackReadByAdmin),
+    feedbackReadByStaff: Boolean(ticket.feedbackReadByStaff),
   };
 }
 
@@ -552,6 +558,15 @@ function statusColor(status) { return {Open:"#6366f1",Assigned:"#0ea5e9","In Pro
 function priorityColor(priority) { return {Low:"#64748b",Medium:"#f59e0b",High:"#f97316",Critical:"#ef4444"}[priority] || "#64748b"; }
 function categoryLabel(id) { return CATEGORIES.find(c=>c.id===id)?.label || id || "—"; }
 function staffName(id) { return STAFF_BASE.find(s=>s.id===Number(id))?.name || "Unassigned"; }
+function isClosedTicket(ticket) { return ["Closed","Resolved"].includes(ticket?.status); }
+function hasTicketFeedback(ticket) { return Boolean(ticket?.feedbackSubmitted || ticket?.feedbackStatus === "Submitted" || ticket?.userFeedbackAt); }
+function isTicketFeedbackPending(ticket) { return isClosedTicket(ticket) && !hasTicketFeedback(ticket); }
+function isTicketFeedbackUnread(ticket, isAdmin=false, isStaff=false) {
+  if(ticket?.feedbackStatus !== "Submitted") return false;
+  if(isAdmin) return !ticket.feedbackReadByAdmin;
+  if(isStaff) return !ticket.feedbackReadByStaff;
+  return false;
+}
 function genFeedbackId() { return "FDB-"+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,5).toUpperCase(); }
 function satisfactionColor(level) { return SATISFACTION_LEVELS.find(s=>s.id===level)?.color || "#64748b"; }
 function cleanFeedbackRow(f) {
@@ -1767,6 +1782,45 @@ function CloseTicketDialog({ticket,onClose,onConfirm}) {
   );
 }
 
+function TicketFeedbackSection({ticket,onSubmit,toast}) {
+  const [rating,setRating]=useState(Number(ticket?.userFeedbackRating || 0));
+  const [comment,setComment]=useState(ticket?.userFeedbackComment || "");
+  const [saving,setSaving]=useState(false);
+  if(!ticket || !isTicketFeedbackPending(ticket)) return null;
+  const submit=async()=>{
+    if(!rating){
+      toast("Please select a rating from 1 to 5.","error");
+      return;
+    }
+    setSaving(true);
+    try {
+      await Promise.resolve(onSubmit({rating,comment:comment.trim()}));
+    } catch(error) {
+      console.error("Ticket feedback submit failed:", error);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="glass2" style={{padding:"16px",borderColor:"rgba(16,185,129,.28)",background:"rgba(16,185,129,.08)",display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{fontSize:16,fontWeight:900,color:"#fff"}}>Your ticket has been closed. Please share your feedback.</div>
+      <div>
+        <div style={{fontSize:12,color:"rgba(226,232,240,.58)",marginBottom:8,fontWeight:800}}>Rating</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {[1,2,3,4,5].map(value=>(
+            <button key={value} type="button" onClick={()=>setRating(value)} style={{width:38,height:38,borderRadius:10,border:`1px solid ${rating===value?"rgba(16,185,129,.55)":"rgba(255,255,255,.12)"}`,background:rating===value?"rgba(16,185,129,.18)":"rgba(255,255,255,.06)",color:rating===value?"#bbf7d0":"#e2e8f0",fontWeight:900,cursor:"pointer"}}>{value}</button>
+          ))}
+        </div>
+      </div>
+      <textarea rows={3} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Optional comment" style={{resize:"vertical"}} />
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+        <button type="button" onClick={()=>toast("No problem. Feedback reminder will stay in My Tickets.","info")} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",color:"#e2e8f0",padding:"9px 14px",borderRadius:10,fontWeight:900}}>Later</button>
+        <button className="glow-btn" type="button" onClick={submit} disabled={saving}>{saving?"Submitting...":"Submit Feedback"}</button>
+      </div>
+    </div>
+  );
+}
+
 // ── TICKET DETAIL ─────────────────────────────────────────────────────────
 function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staffId,staffName,toast,staffProfiles={},staffStatuses={}}) {
   const ticket=tickets.find(t=>t.id===ticketId)||null;
@@ -1816,6 +1870,12 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         updated.userConfirmedResolved=false;
         updated.userFeedbackStatus="";
         updated.userReviewedAt=null;
+        updated.userFeedbackRating=0;
+        updated.userFeedbackComment="";
+        updated.userFeedbackAt=null;
+        updated.feedbackStatus="";
+        updated.feedbackReadByAdmin=false;
+        updated.feedbackReadByStaff=false;
         closedByStatusChange=true;
         closedTicket=updated;
       }
@@ -1842,6 +1902,59 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     toast("Comment added","success");
   };
 
+  useEffect(()=>{
+    if(!currentTicket?.id || !isTicketFeedbackUnread(currentTicket,isAdmin,isStaff)) return;
+    const now=Date.now();
+    const updated={
+      ...currentTicket,
+      feedbackReadByAdmin:isAdmin ? true : currentTicket.feedbackReadByAdmin,
+      feedbackReadByStaff:isStaff ? true : currentTicket.feedbackReadByStaff,
+      feedbackReadAt:now,
+      feedbackReadBy:isAdmin ? "Admin" : staffName || "IT Staff",
+      updatedAt:now
+    };
+    setTickets(ts=>ts.map(t=>t.id===currentTicket.id?updated:t));
+    if(ONLINE_TICKETS_ENABLED) saveTicket(updated).catch(error=>console.error("Feedback read update failed:", error));
+  },[currentTicket?.id,currentTicket?.feedbackStatus,currentTicket?.feedbackReadByAdmin,currentTicket?.feedbackReadByStaff,isAdmin,isStaff,staffName,setTickets]);
+
+  const submitTicketFeedback=async({rating,comment})=>{
+    try {
+      if(!currentTicket){
+        toast("Ticket not found. Please reopen the ticket.","error");
+        return;
+      }
+      if(!currentTicket.id){
+        toast("Feedback could not be saved: missing ticket ID.","error");
+        console.error("Ticket feedback submit failed: missing ticket id", currentTicket);
+        return;
+      }
+      if(!isClosedTicket(currentTicket)){
+        toast("Feedback is available after the ticket is closed.","error");
+        return;
+      }
+      const now=Date.now();
+      const updated={
+        ...currentTicket,
+        userFeedbackRating:Number(rating),
+        userFeedbackComment:comment || "",
+        userFeedbackAt:now,
+        feedbackStatus:"Submitted",
+        feedbackSubmitted:true,
+        feedbackReadByAdmin:false,
+        feedbackReadByStaff:false,
+        updatedAt:now,
+        timeline:[...(currentTicket.timeline||[]),{action:"Feedback submitted",remark:`Rating: ${rating}/5`,at:now,by:currentTicket.email || "User"}]
+      };
+      if(ONLINE_TICKETS_ENABLED) await saveTicket(updated);
+      setTickets(ts=>ts.map(t=>t.id===currentTicket.id?updated:t));
+      toast("Feedback submitted. Thank you.","success");
+    } catch(error) {
+      console.error("Ticket feedback submit failed:", error);
+      toast("Feedback could not be submitted right now. Please try again.","error");
+      throw error;
+    }
+  };
+
   const handleCloseTicket=async(remarks)=>{
     const closedAt=Date.now();
     const closedBy = staffName || (isAdmin ? "Admin" : "User");
@@ -1849,7 +1962,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
       if(t.status==="Closed") return t;
-      const updated={...t,status:"Closed",closedAt,closingRemarks:remarks,resolutionTime:closedAt-t.createdAt,updatedAt:closedAt,feedbackSubmitted:false,userConfirmedResolved:false,userFeedbackStatus:"",userReviewedAt:null,
+      const updated={...t,status:"Closed",closedAt,closingRemarks:remarks,resolutionTime:closedAt-t.createdAt,updatedAt:closedAt,feedbackSubmitted:false,userConfirmedResolved:false,userFeedbackStatus:"",userReviewedAt:null,userFeedbackRating:0,userFeedbackComment:"",userFeedbackAt:null,feedbackStatus:"",feedbackReadByAdmin:false,feedbackReadByStaff:false,
         timeline:[...(t.timeline||[]),{action:"Closed",remark:remarks,at:closedAt,by:closedBy}]};
       closedTicket = updated;
       return updated;
@@ -1916,6 +2029,24 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
           </div>
         )}
       </div>
+
+      {!isAdmin&&!isStaff&&isTicketFeedbackPending(currentTicket)&&(
+        <TicketFeedbackSection ticket={currentTicket} onSubmit={submitTicketFeedback} toast={toast} />
+      )}
+
+      {(isAdmin||isStaff)&&currentTicket.feedbackStatus==="Submitted"&&(
+        <div className="glass2" style={{padding:"16px",borderColor:"rgba(16,185,129,.24)",background:"rgba(16,185,129,.07)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",marginBottom:10,flexWrap:"wrap"}}>
+            <div style={{fontSize:13,fontWeight:900,color:"#bbf7d0"}}>User Feedback</div>
+            {isTicketFeedbackUnread(currentTicket,isAdmin,isStaff)&&<span className="tag" style={{background:"rgba(16,185,129,.16)",color:"#86efac"}}>New feedback</span>}
+          </div>
+          <div style={{fontSize:13,color:"rgba(226,232,240,.78)",lineHeight:1.6}}>
+            <div>Rating: <span style={{color:"#fff",fontWeight:900}}>{currentTicket.userFeedbackRating || "—"}/5</span></div>
+            {currentTicket.userFeedbackComment&&<div>Comment: <span style={{color:"#fff"}}>{currentTicket.userFeedbackComment}</span></div>}
+            <div style={{color:"rgba(226,232,240,.45)",fontSize:12,marginTop:4}}>Submitted: {fmtDate(currentTicket.userFeedbackAt)}</div>
+          </div>
+        </div>
+      )}
 
       {/* Info */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -2143,8 +2274,10 @@ function TicketForm({userEmail,initialCategory,onSubmit,onCancel,toast}) {
 }
 
 // ── TICKET CARD ───────────────────────────────────────────────────────────
-function TicketCard({ticket,onView}) {
+function TicketCard({ticket,onView,showFeedbackPending=false,showFeedbackUnread=false}) {
   const cat=CATEGORIES.find(c=>c.id===ticket.category);
+  const feedbackPending=showFeedbackPending && isTicketFeedbackPending(ticket);
+  const unreadFeedback=showFeedbackUnread && ticket.feedbackStatus==="Submitted";
   return (
     <div className="glass2" style={{padding:"16px 18px",cursor:"pointer",transition:"all .2s"}}
       onClick={()=>onView(ticket.id)}
@@ -2164,6 +2297,12 @@ function TicketCard({ticket,onView}) {
         <div>Watchers: <span style={{color:"#e2e8f0"}}>{(ticket.watchers||ticket.notifiedStaff||[]).map(w=>w.name).filter(Boolean).join(", ") || "All IT Staff"}</span></div>
         <div>Source: <span style={{color:"#e2e8f0"}}>{ticket.source || "Portal"}</span></div>
       </div>
+      {(feedbackPending||unreadFeedback)&&(
+        <div style={{display:"inline-flex",alignItems:"center",gap:7,marginBottom:10,border:"1px solid rgba(16,185,129,.28)",background:"rgba(16,185,129,.12)",color:"#bbf7d0",borderRadius:999,padding:"5px 9px",fontSize:11,fontWeight:900}}>
+          <span className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",display:"inline-block"}}/>
+          {feedbackPending ? "Closed - Feedback Pending" : "New feedback"}
+        </div>
+      )}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:10}}>
         <PriorityBadge p={ticket.priority}/>
         <span style={{fontSize:11,color:"rgba(226,232,240,0.35)"}}>{timeAgo(ticket.createdAt)}</span>
@@ -3623,7 +3762,7 @@ function PWAInstallPrompt() {
   );
 }
 // ── SIDEBAR ───────────────────────────────────────────────────────────────
-function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpen,setMobileOpen,onStaffAction}) {
+function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpen,setMobileOpen,onStaffAction,feedbackPendingCount=0}) {
   const adminNav=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"tickets",icon:"🎫",label:"All Tickets"},{id:"staff",icon:"👥",label:"IT Staff"},{id:"analytics",icon:"📊",label:"Analytics"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"export",icon:"⬇",label:"Export Reports"},{id:"staff-management",icon:"👥",label:"Staff Management"},{id:"emaillog",icon:"📧",label:"Email Log"},{id:"portal-feedback",icon:"★",label:"Portal Feedback"},{id:"temp-issue",icon:"📦",label:"Temp Issue"}];
   const userNav=[{id:"home",icon:"🏠",label:"Home"},{id:"my-tickets",icon:"🎫",label:"My Tickets"},{id:"know-staff",icon:"👥",label:"Connect with IT Staff"},{id:"feedback",icon:"★",label:"IT Feedback"},{id:"new-ticket",icon:"➕",label:"New Ticket"},{id:"track",icon:"🔍",label:"Track Ticket"},{id:"temp-issue",icon:"🧾",label:"Temp Issue"}];
   const staffNav=[{id:"staff-dash",icon:"🏠",label:"My Dashboard"},{id:"assigned",icon:"📋",label:"Assigned Tickets"},{id:"chat",icon:"💬",label:"Staff Chat",staffAction:true},{id:"know-staff",icon:"👥",label:"Connect with IT Staff"},{id:"temp-issue",icon:"🧾",label:"Temp Issue"},{id:"profile",icon:"👤",label:"My Profile",staffAction:true},{id:"password",icon:"🔐",label:"Change Password",staffAction:true},{id:"logout",icon:"↩",label:"Logout",staffAction:true}];
@@ -3654,6 +3793,7 @@ function Sidebar({current,onChange,isAdmin,isStaff,tickets,feedback=[],mobileOpe
               borderLeft:current===item.id?"3px solid #6366f1":"3px solid transparent",
             }}>
               <span style={{fontSize:18}}>{item.icon}</span><span style={{flex:1}}>{item.label}</span>
+              {item.id==="my-tickets"&&feedbackPendingCount>0&&<span title="Closed tickets pending feedback" className="pulse" style={{width:9,height:9,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 4px rgba(34,197,94,.12)",display:"inline-block"}}/>}
               {item.id==="tickets"&&open>0&&<span style={{background:"rgba(239,68,68,0.2)",color:"#f87171",fontSize:11,padding:"2px 8px",borderRadius:20,fontWeight:600}}>{open}</span>}
               {item.id==="feedback"&&isAdmin&&unreadFeedback>0&&<span style={{background:"rgba(245,158,11,0.2)",color:"#fbbf24",fontSize:11,padding:"2px 8px",borderRadius:20,fontWeight:600}}>{unreadFeedback}</span>}
             </button>
@@ -4059,7 +4199,7 @@ function TicketsTable({tickets,onView,isAdmin,onDelete}) {
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:12}}>
         {filtered.map(t=>(
           <div key={t.id} style={{position:"relative"}}>
-            <TicketCard ticket={t} onView={onView}/>
+            <TicketCard ticket={t} onView={onView} showFeedbackUnread={isAdmin&&isTicketFeedbackUnread(t,true,false)}/>
             {isAdmin&&<button onClick={e=>{e.stopPropagation();onDelete(t.id);}} style={{position:"absolute",top:10,right:10,background:"rgba(239,68,68,0.15)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",width:26,height:26,borderRadius:6,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>🗑</button>}
           </div>
         ))}
@@ -4117,7 +4257,7 @@ function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions,s
       </div>
       <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>Assigned Tickets</h3>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
-        {[...myTickets].sort((a,b)=>b.createdAt-a.createdAt).map(t=><TicketCard key={t.id} ticket={t} onView={onViewTicket}/>)}
+        {[...myTickets].sort((a,b)=>b.createdAt-a.createdAt).map(t=><TicketCard key={t.id} ticket={t} onView={onViewTicket} showFeedbackUnread={isTicketFeedbackUnread(t,false,true)}/>)}
         {myTickets.length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>✅</div><div>No tickets assigned yet</div></div>}
       </div>
     </div>
@@ -5546,6 +5686,7 @@ const handleNewTicket = async (form) => {
   const isAdmin = session.type === "admin";
   const isStaff = session.type === "staff";
   const myTickets = isAdmin || isStaff ? tickets : tickets.filter(t => t.email === session.email);
+  const userFeedbackPendingCount = !isAdmin && !isStaff ? myTickets.filter(isTicketFeedbackPending).length : 0;
   const quickAssignTicket = tickets.find(t => t.id === quickAssignTicketId);
   const linkedFeedbackTicket = tickets.find(t => t.id === feedbackTicketId);
   const pendingFeedbackTicket = null;
@@ -5650,7 +5791,7 @@ const handleNewTicket = async (form) => {
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
                   {tickets.slice(0,6).map(t => (
                     <div key={t.id} style={{position:"relative"}}>
-                      <TicketCard ticket={t} onView={setViewTicketId} />
+                      <TicketCard ticket={t} onView={setViewTicketId} showFeedbackUnread={isTicketFeedbackUnread(t,true,false)} />
                       <button
                         onClick={e=>{e.stopPropagation();setQuickAssignTicketId(t.id);}}
                         style={{position:"absolute",right:12,bottom:12,background:"rgba(99,102,241,0.92)",border:"1px solid rgba(255,255,255,0.18)",color:"#fff",padding:"7px 12px",borderRadius:8,fontSize:12,fontWeight:700,boxShadow:"0 10px 24px rgba(99,102,241,0.25)"}}
@@ -5713,7 +5854,7 @@ const handleNewTicket = async (form) => {
       <div>
         <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>My Tickets</h2>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
-          {myTickets.map(t => <TicketCard key={t.id} ticket={t} onView={setViewTicketId} />)}
+          {myTickets.map(t => <TicketCard key={t.id} ticket={t} onView={setViewTicketId} showFeedbackPending={isTicketFeedbackPending(t)} />)}
           {myTickets.length === 0 && <div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>🎫</div><div>No tickets yet</div><button className="glow-btn" style={{marginTop:16}} onClick={() => setPage("home")}>Raise Ticket</button></div>}
         </div>
       </div>
@@ -5738,7 +5879,7 @@ const handleNewTicket = async (form) => {
     <>
       <style>{CSS}</style>
       <div className="app-shell" style={{display:"flex",minHeight:"100vh"}}>
-        <Sidebar current={page} onChange={setPage} isAdmin={isAdmin} isStaff={isStaff} tickets={tickets} feedback={feedback} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onStaffAction={handleStaffMenuAction} />
+        <Sidebar current={page} onChange={setPage} isAdmin={isAdmin} isStaff={isStaff} tickets={tickets} feedback={feedback} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onStaffAction={handleStaffMenuAction} feedbackPendingCount={userFeedbackPendingCount} />
         <div className="app-main" style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
           <div className="app-header" style={{padding:"14px 24px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(10,10,20,0.9)",backdropFilter:"blur(20px)",position:"sticky",top:0,zIndex:10}}>
             <div className="header-identity" style={{display:"flex",alignItems:"center",gap:12,position:"relative"}}>
