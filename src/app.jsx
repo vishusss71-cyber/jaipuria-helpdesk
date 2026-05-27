@@ -1806,10 +1806,50 @@ function TicketFeedbackSection({ticket,onSubmit,toast}) {
       <div style={{fontSize:16,fontWeight:900,color:"#fff"}}>Your ticket has been closed. Please share your feedback.</div>
       <div>
         <div style={{fontSize:12,color:"rgba(226,232,240,.58)",marginBottom:8,fontWeight:800}}>Rating</div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {[1,2,3,4,5].map(value=>(
-            <button key={value} type="button" onClick={()=>setRating(value)} style={{width:38,height:38,borderRadius:10,border:`1px solid ${rating===value?"rgba(16,185,129,.55)":"rgba(255,255,255,.12)"}`,background:rating===value?"rgba(16,185,129,.18)":"rgba(255,255,255,.06)",color:rating===value?"#bbf7d0":"#e2e8f0",fontWeight:900,cursor:"pointer"}}>{value}</button>
-          ))}
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+          {[1,2,3,4,5].map(value=>{
+            const selected=rating===value;
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={()=>setRating(value)}
+                onMouseEnter={e=>{if(!selected){e.currentTarget.style.transform="translateY(-2px) scale(1.04)";e.currentTarget.style.borderColor="rgba(125,211,252,.35)";}}}
+                onMouseLeave={e=>{if(!selected){e.currentTarget.style.transform="translateY(0) scale(1)";e.currentTarget.style.borderColor="rgba(255,255,255,.12)";}}}
+                onMouseDown={e=>{e.currentTarget.style.transform=selected?"scale(1.1)":"scale(.97)";}}
+                onMouseUp={e=>{e.currentTarget.style.transform=selected?"scale(1.16)":"scale(1.04)";}}
+                aria-pressed={selected}
+                style={{
+                  minWidth:selected?62:42,
+                  height:selected?50:42,
+                  borderRadius:14,
+                  border:`1px solid ${selected?"rgba(125,211,252,.72)":"rgba(255,255,255,.12)"}`,
+                  background:selected
+                    ?"linear-gradient(135deg,#2563eb 0%,#7c3aed 48%,#06b6d4 100%)"
+                    :"rgba(255,255,255,.06)",
+                  color:selected?"#fff":"#e2e8f0",
+                  fontSize:selected?20:15,
+                  fontWeight:selected?1000:900,
+                  cursor:"pointer",
+                  transform:selected?"scale(1.16)":"scale(1)",
+                  transition:"transform .2s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease, color .2s ease, min-width .2s ease, height .2s ease",
+                  boxShadow:selected
+                    ?"0 0 0 4px rgba(14,165,233,.16), 0 14px 34px rgba(79,70,229,.42), 0 0 24px rgba(34,211,238,.28)"
+                    :"0 6px 16px rgba(0,0,0,.16)",
+                  display:"inline-flex",
+                  flexDirection:"column",
+                  alignItems:"center",
+                  justifyContent:"center",
+                  gap:1,
+                  position:"relative",
+                  WebkitTapHighlightColor:"transparent"
+                }}
+              >
+                <span style={{lineHeight:1}}>{value}</span>
+                {selected&&<span style={{fontSize:9,fontWeight:900,letterSpacing:.2,lineHeight:1,color:"rgba(255,255,255,.9)"}}>✓ Selected</span>}
+              </button>
+            );
+          })}
         </div>
       </div>
       <textarea rows={3} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Optional comment" style={{resize:"vertical"}} />
