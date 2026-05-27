@@ -92,6 +92,17 @@ function normalizeTicket(ticket = {}) {
     feedbackStatus: ticket.feedbackStatus || "",
     feedbackReadByAdmin: Boolean(ticket.feedbackReadByAdmin),
     feedbackReadByStaff: Boolean(ticket.feedbackReadByStaff),
+    remoteSupportRequested: Boolean(ticket.remoteSupportRequested),
+    remoteSupportTool: ticket.remoteSupportTool || "",
+    remoteSupportId: ticket.remoteSupportId || "",
+    remoteSupportNote: ticket.remoteSupportNote || "",
+    remoteSupportRequestedAt: ticket.remoteSupportRequestedAt || null,
+    aiSummary: ticket.aiSummary || "",
+    suggestedAction: ticket.suggestedAction || "",
+    escalated: Boolean(ticket.escalated),
+    escalationLevel: Number(ticket.escalationLevel || 0),
+    escalatedAt: ticket.escalatedAt || null,
+    escalationHistory: Array.isArray(ticket.escalationHistory) ? ticket.escalationHistory : [],
   };
 }
 
@@ -149,6 +160,41 @@ async function deleteTicket(ticketId) {
   if (!ONLINE_TICKETS_ENABLED || !ticketId) return;
   const res = await fetch(`${FIRESTORE_BASE_URL}/tickets/${encodeURIComponent(ticketId)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`, { method: "DELETE" });
   if (!res.ok && res.status !== 404) throw new Error(`Firestore ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
+}
+
+function genIncidentId() { return "INC-"+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,5).toUpperCase(); }
+function normalizeIncident(entry = {}) {
+  return {
+    ...entry,
+    id: entry.id || genIncidentId(),
+    title: entry.title || "",
+    message: entry.message || "",
+    severity: ["Info","Warning","Critical"].includes(entry.severity) ? entry.severity : "Info",
+    active: entry.active !== false,
+    expiryAt: entry.expiryAt || null,
+    createdAt: entry.createdAt || Date.now(),
+    updatedAt: entry.updatedAt || Date.now(),
+  };
+}
+async function fetchIncidents() {
+  if (!ONLINE_TICKETS_ENABLED) return [];
+  const res = await fetch(`${FIRESTORE_BASE_URL}/incidents?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
+  if (!res.ok) throw new Error(`Firestore incidents ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
+  const data = await res.json();
+  return (data.documents || [])
+    .map(doc => normalizeIncident({ id: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+async function saveIncident(entry) {
+  if (!ONLINE_TICKETS_ENABLED) throw new Error("Firestore is not configured. Check Vercel env vars and redeploy.");
+  const incident = normalizeIncident(entry);
+  const res = await fetch(`${FIRESTORE_BASE_URL}/incidents/${encodeURIComponent(incident.id)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: toFirestoreFields(incident) }),
+  });
+  if (!res.ok) throw new Error(`Firestore incident save ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
+  return incident;
 }
 
 function normalizeFeedback(entry = {}) {
@@ -566,6 +612,49 @@ function isTicketFeedbackUnread(ticket, isAdmin=false, isStaff=false) {
   if(isAdmin) return !ticket.feedbackReadByAdmin;
   if(isStaff) return !ticket.feedbackReadByStaff;
   return false;
+}
+function getEscalationInfo(ticket, now = Date.now()) {
+  if(!ticket || isClosedTicket(ticket)) return { overdue:false, level:0, label:"" };
+  const thresholds = { High:4, Critical:4, Medium:24, Low:48 };
+  const hours = thresholds[ticket.priority] || 24;
+  const createdAt = Number(ticket.createdAt || now);
+  const elapsed = Math.max(0, now - createdAt);
+  const thresholdMs = hours * 3600000;
+  if(elapsed <= thresholdMs) return { overdue:false, level:0, label:"" };
+  const level = elapsed > thresholdMs * 3 ? 3 : elapsed > thresholdMs * 2 ? 2 : 1;
+  const label = level === 3 ? "Overdue L3 - Admin attention" : level === 2 ? "Overdue L2 - All IT staff" : "Overdue L1 - Staff reminder";
+  return { overdue:true, level, label, overdueBy: elapsed - thresholdMs, thresholdHours: hours };
+}
+function getAiTicketFallback(form = {}) {
+  const source = String(form.issueSummary || form.description || form.subCategory || "IT support request").trim();
+  return {
+    aiSummary: source.length > 180 ? `${source.slice(0, 177)}...` : source,
+    suggestedAction: form.recommendedAction || "Review the issue details and proceed with standard troubleshooting."
+  };
+}
+async function generateTicketAiSummary(form = {}) {
+  const fallback = getAiTicketFallback(form);
+  try {
+    const prompt = `Create a concise IT helpdesk staff summary. Return JSON only with keys aiSummary and suggestedAction.\nCategory: ${categoryLabel(form.category)}\nSub-category: ${form.subCategory || "Not provided"}\nPriority: ${form.priority || "Medium"}\nIssue: ${form.description || form.issueSummary || ""}`;
+    const response = await fetch("/api/chat", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      cache:"no-store",
+      body:JSON.stringify({message:prompt,user:{name:form.name || "Portal User",email:form.email || ""}})
+    });
+    if(!response.ok) throw new Error(`AI summary endpoint failed: ${response.status}`);
+    const data = await response.json().catch(()=>({reply:""}));
+    const reply = String(data?.reply || "");
+    const jsonText = reply.match(/\{[\s\S]*\}/)?.[0] || "";
+    const parsed = jsonText ? JSON.parse(jsonText) : {};
+    return {
+      aiSummary: String(parsed.aiSummary || parsed.summary || fallback.aiSummary).slice(0, 240),
+      suggestedAction: String(parsed.suggestedAction || parsed.recommendedAction || fallback.suggestedAction).slice(0, 320)
+    };
+  } catch(error) {
+    console.error("AI ticket summary failed:", error);
+    return fallback;
+  }
 }
 function getDisplayName(session) {
   return session?.name || session?.staff?.name || session?.email?.split("@")[0]?.replace(/[._-]+/g," ") || "there";
@@ -1540,6 +1629,10 @@ textarea:focus{
 .ai-helpdesk-card-footer{margin:8px 10px 10px;border-radius:12px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.18);padding:9px 10px;white-space:pre-wrap;color:#bbf7d0;font-weight:800;font-size:12px}
 .ai-helpdesk-input{display:flex;gap:8px;padding:12px;border-top:1px solid rgba(255,255,255,.08);background:rgba(10,10,20,.94);backdrop-filter:blur(18px);flex-shrink:0}
 .ai-helpdesk-input input{min-width:0}.ai-helpdesk-input .glow-btn{padding:10px 13px;font-size:12px}
+.mic-btn{width:42px;min-width:42px;height:42px;border-radius:13px;border:1px solid rgba(125,211,252,.2);background:rgba(14,165,233,.12)!important;color:#bae6fd!important;display:inline-flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;box-shadow:0 10px 24px rgba(6,182,212,.12)}
+.mic-btn:hover{transform:translateY(-2px);border-color:rgba(34,211,238,.52)!important;box-shadow:0 16px 36px rgba(6,182,212,.2)}
+.mic-btn.listening{background:linear-gradient(135deg,#ef4444,#8b5cf6,#06b6d4)!important;color:#fff!important;animation:micGlow 1.1s ease-in-out infinite;box-shadow:0 0 0 6px rgba(239,68,68,.12),0 0 30px rgba(34,211,238,.34)}
+@keyframes micGlow{0%,100%{transform:scale(1);filter:saturate(1)}50%{transform:scale(1.08);filter:saturate(1.3)}}
 .ai-typing{display:flex;align-items:center;gap:6px;color:rgba(226,232,240,.74)!important;font-style:italic}.ai-typing span{width:5px;height:5px;border-radius:50%;background:#67e8f9;display:inline-block;animation:pulse 1s infinite}.ai-typing span:nth-child(2){animation-delay:.15s}.ai-typing span:nth-child(3){animation-delay:.3s}
 .theme-glow{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden;background:radial-gradient(circle at 14% 18%,rgba(37,99,235,.08),transparent 30%),radial-gradient(circle at 82% 8%,rgba(139,92,246,.07),transparent 32%),radial-gradient(circle at 70% 86%,rgba(6,182,212,.06),transparent 34%);animation:themeGlowShift 14s ease-in-out infinite alternate}
 @keyframes themeGlowShift{from{filter:hue-rotate(0deg);opacity:.72;transform:scale(1)}to{filter:hue-rotate(12deg);opacity:.95;transform:scale(1.03)}}
@@ -1547,9 +1640,15 @@ textarea:focus{
 @keyframes smartWelcomeFade{0%,82%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-8px)}}
 .network-ticker{min-width:0;max-width:min(560px,42vw);overflow:hidden;border:1px solid rgba(125,211,252,.16);border-radius:999px;background:linear-gradient(135deg,rgba(14,165,233,.1),rgba(139,92,246,.08),rgba(6,182,212,.08));box-shadow:0 0 20px rgba(6,182,212,.12);padding:6px 0;color:#bae6fd;font-size:11px;font-weight:900;white-space:nowrap}
 .network-ticker-track{display:inline-block;padding-left:100%;animation:networkTicker 18s linear infinite}
+.incident-banner{margin:14px 24px 0;border-radius:14px;border:1px solid rgba(125,211,252,.22);overflow:hidden;box-shadow:0 18px 44px rgba(0,0,0,.24),0 0 24px rgba(6,182,212,.12)}
+.incident-banner.info{background:linear-gradient(135deg,rgba(14,165,233,.18),rgba(37,99,235,.12))}
+.incident-banner.warning{background:linear-gradient(135deg,rgba(245,158,11,.2),rgba(249,115,22,.12))}
+.incident-banner.critical{background:linear-gradient(135deg,rgba(239,68,68,.24),rgba(147,51,234,.12))}
+.incident-track{display:inline-block;white-space:nowrap;padding:10px 16px;color:#f8fafc;font-size:13px;font-weight:900;animation:incidentMarquee 22s linear infinite;text-shadow:0 0 18px rgba(255,255,255,.18)}
+@keyframes incidentMarquee{from{transform:translateX(18%)}to{transform:translateX(-100%)}}
 @keyframes networkTicker{from{transform:translateX(0)}to{transform:translateX(-100%)}}
 .app-sidebar,.app-main{position:relative;z-index:1}
-@media (max-width:768px){.ai-helpdesk-wrap{right:10px;bottom:132px}.ai-helpdesk-panel{width:calc(100vw - 20px);height:calc(100dvh - 176px);border-radius:18px!important}.ai-helpdesk-bubble{max-width:90%}.ai-helpdesk-button{padding:10px 13px;font-size:12px}.ai-helpdesk-input{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}.network-ticker{order:3;flex-basis:100%;max-width:100%;font-size:10px}.network-ticker span{display:inline-block!important}}
+@media (max-width:768px){.ai-helpdesk-wrap{right:10px;bottom:132px}.ai-helpdesk-panel{width:calc(100vw - 20px);height:calc(100dvh - 176px);border-radius:18px!important}.ai-helpdesk-bubble{max-width:90%}.ai-helpdesk-button{padding:10px 13px;font-size:12px}.ai-helpdesk-input{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}.network-ticker{order:3;flex-basis:100%;max-width:100%;font-size:10px}.network-ticker span{display:inline-block!important}.incident-banner{margin:10px 12px 0}.incident-track{font-size:12px;padding:9px 12px}.mic-btn{width:38px;min-width:38px;height:38px}}
 @media (max-width:480px){.ai-helpdesk-wrap{right:8px;bottom:126px}.ai-helpdesk-panel{width:calc(100vw - 16px);height:calc(100dvh - 164px)}.ai-helpdesk-head{padding:12px}.ai-helpdesk-messages{padding:12px}.ai-helpdesk-input .glow-btn{min-width:58px}}`;
 
 // ── TOAST ─────────────────────────────────────────────────────────────────
@@ -1811,6 +1910,96 @@ function NetworkStatusTicker() {
   return <div className="network-ticker" aria-label="Network status" title={tooltip}><span className="network-ticker-track">{message}</span></div>;
 }
 
+function CampusIncidentBanner({incidents=[]}) {
+  const active = (incidents || []).filter(incident => incident.active && (!incident.expiryAt || Number(incident.expiryAt) > Date.now()));
+  if(!active.length) return null;
+  const text = active.map(incident => `${incident.severity}: ${incident.title} - ${incident.message}`).join("     |     ");
+  const severity = active.some(i=>i.severity==="Critical") ? "critical" : active.some(i=>i.severity==="Warning") ? "warning" : "info";
+  return (
+    <div className={`incident-banner ${severity}`} title="Campus IT incident update">
+      <span className="incident-track">⚡ Campus Incident: {text}</span>
+    </div>
+  );
+}
+
+function IncidentManager({incidents,onSave,toast}) {
+  const empty={title:"",message:"",severity:"Info",active:true,expiryAt:""};
+  const [form,setForm]=useState(empty);
+  const [saving,setSaving]=useState(false);
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const edit=incident=>setForm({
+    ...incident,
+    expiryAt: incident.expiryAt ? new Date(Number(incident.expiryAt)).toISOString().slice(0,16) : ""
+  });
+  const submit=async()=>{
+    if(!form.title.trim() || !form.message.trim()) {
+      toast("Incident title and message are required.","error");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave({
+        ...form,
+        title:form.title.trim(),
+        message:form.message.trim(),
+        active:Boolean(form.active),
+        expiryAt:form.expiryAt ? new Date(form.expiryAt).getTime() : null,
+        updatedAt:Date.now(),
+        createdAt:form.createdAt || Date.now()
+      });
+      setForm(empty);
+    } catch(error) {
+      console.error("Incident save failed:", error);
+      toast("Incident could not be saved.","error");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const disable=incident=>onSave({...incident,active:false,updatedAt:Date.now()}).catch(error=>{
+    console.error("Incident disable failed:", error);
+    toast("Incident could not be disabled.","error");
+  });
+  return (
+    <div className="glass" style={{padding:"18px",display:"grid",gap:14}}>
+      <div>
+        <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:900,color:"#e2e8f0"}}>Campus Incident Banner</h3>
+        <p style={{fontSize:12,color:"rgba(226,232,240,.52)",marginTop:4}}>Create a small portal-wide alert for maintenance or campus IT incidents.</p>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <input value={form.title} onChange={e=>set("title",e.target.value)} placeholder="Title, e.g. Moodle maintenance" />
+        <select value={form.severity} onChange={e=>set("severity",e.target.value)}>
+          {["Info","Warning","Critical"].map(item=><option key={item}>{item}</option>)}
+        </select>
+        <input value={form.message} onChange={e=>set("message",e.target.value)} placeholder="Message shown to users" />
+        <input type="datetime-local" value={form.expiryAt || ""} onChange={e=>set("expiryAt",e.target.value)} />
+      </div>
+      <label style={{display:"inline-flex",gap:8,alignItems:"center",fontSize:13,color:"#e2e8f0",fontWeight:800}}>
+        <input type="checkbox" checked={Boolean(form.active)} onChange={e=>set("active",e.target.checked)} style={{width:"auto"}} /> Active
+      </label>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+        <button type="button" onClick={()=>setForm(empty)} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",color:"#e2e8f0",padding:"9px 14px",borderRadius:10,fontWeight:800}}>Clear</button>
+        <button className="glow-btn" type="button" onClick={submit} disabled={saving}>{saving ? "Saving..." : form.id ? "Update Incident" : "Create Incident"}</button>
+      </div>
+      <div style={{display:"grid",gap:8}}>
+        {(incidents || []).slice(0,5).map(incident=>(
+          <div key={incident.id} className="glass2" style={{padding:"12px",display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:900,color:"#fff"}}>{incident.title} <span className="tag" style={{fontSize:10}}>{incident.severity}</span></div>
+              <div style={{fontSize:12,color:"rgba(226,232,240,.58)",marginTop:3}}>{incident.message}</div>
+              <div style={{fontSize:11,color:incident.active?"#86efac":"#cbd5e1",marginTop:3}}>{incident.active ? "Active" : "Disabled"}{incident.expiryAt ? ` · Expires ${fmtDate(incident.expiryAt)}` : ""}</div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button type="button" onClick={()=>edit(incident)} style={{background:"rgba(14,165,233,.12)",border:"1px solid rgba(125,211,252,.22)",color:"#bae6fd",padding:"7px 10px",borderRadius:9,fontWeight:800}}>Edit</button>
+              {incident.active&&<button type="button" onClick={()=>disable(incident)} style={{background:"rgba(239,68,68,.12)",border:"1px solid rgba(239,68,68,.25)",color:"#fecaca",padding:"7px 10px",borderRadius:9,fontWeight:800}}>Disable</button>}
+            </div>
+          </div>
+        ))}
+        {!incidents.length&&<EmptyState message="No campus incidents configured." icon="⚡" />}
+      </div>
+    </div>
+  );
+}
+
 function EmptyState({message,icon="ℹ️"}) {
   return <div className="glass2" style={{gridColumn:"1/-1",padding:"28px 18px",textAlign:"center",color:"rgba(226,232,240,.64)",borderStyle:"dashed"}}><div style={{fontSize:34,marginBottom:8}}>{icon}</div><div style={{fontSize:14,fontWeight:800}}>{message}</div></div>;
 }
@@ -1970,6 +2159,50 @@ function TicketFeedbackSection({ticket,onSubmit,toast}) {
   );
 }
 
+function RemoteSupportDialog({ticket,onClose,onSubmit,toast}) {
+  const [tool,setTool]=useState(ticket?.remoteSupportTool || "AnyDesk");
+  const [remoteId,setRemoteId]=useState(ticket?.remoteSupportId || "");
+  const [note,setNote]=useState(ticket?.remoteSupportNote || "");
+  const [saving,setSaving]=useState(false);
+  const submit=async()=>{
+    if(!ticket?.id) {
+      toast("Ticket not found. Please reopen the ticket.","error");
+      console.error("Remote support request failed: missing ticket", ticket);
+      return;
+    }
+    if(!remoteId.trim()) {
+      toast("Please enter your remote support ID.","error");
+      return;
+    }
+    setSaving(true);
+    try {
+      await Promise.resolve(onSubmit({tool,remoteId:remoteId.trim(),note:note.trim()}));
+      onClose();
+    } catch(error) {
+      console.error("Remote support request failed:", error);
+      toast("Remote support request could not be saved.","error");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div className="glass2" style={{padding:"14px",borderColor:"rgba(245,158,11,.28)",background:"rgba(245,158,11,.08)",color:"#fde68a",fontSize:13,fontWeight:800}}>
+        Only share remote access ID with official IT staff.
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div><label style={{fontSize:12,color:"rgba(226,232,240,.58)",display:"block",marginBottom:6}}>Remote Support Tool</label><select value={tool} onChange={e=>setTool(e.target.value)}><option>AnyDesk</option><option>TeamViewer</option></select></div>
+        <div><label style={{fontSize:12,color:"rgba(226,232,240,.58)",display:"block",marginBottom:6}}>Remote ID</label><input value={remoteId} onChange={e=>setRemoteId(e.target.value)} placeholder="Enter AnyDesk/TeamViewer ID" /></div>
+      </div>
+      <div><label style={{fontSize:12,color:"rgba(226,232,240,.58)",display:"block",marginBottom:6}}>Optional Note</label><textarea rows={3} value={note} onChange={e=>setNote(e.target.value)} placeholder="Best time to connect or short note" style={{resize:"vertical"}} /></div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
+        <button type="button" onClick={onClose} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",color:"#e2e8f0",padding:"9px 14px",borderRadius:10,fontWeight:800}}>Cancel</button>
+        <button className="glow-btn" type="button" onClick={submit} disabled={saving}>{saving ? "Saving..." : "Submit Remote Request"}</button>
+      </div>
+    </div>
+  );
+}
+
 // ── TICKET DETAIL ─────────────────────────────────────────────────────────
 function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staffId,staffName,toast,staffProfiles={},staffStatuses={}}) {
   const ticket=tickets.find(t=>t.id===ticketId)||null;
@@ -1977,6 +2210,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
   const [editStatus,setEditStatus]=useState(ticket?.status || "Open");
   const [editAssignee,setEditAssignee]=useState(ticket?.assigneeId || STAFF_BASE[0]?.id || 1);
   const [showClose,setShowClose]=useState(false);
+  const [showRemoteSupport,setShowRemoteSupport]=useState(false);
   const currentTicket=ticket;
 
   useEffect(()=>{
@@ -2131,6 +2365,35 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     }
   };
 
+  const submitRemoteSupport=async({tool,remoteId,note})=>{
+    if(!currentTicket?.id) {
+      toast("Ticket update failed: missing ticket ID.","error");
+      console.error("Remote support request failed: missing ticket id", currentTicket);
+      return;
+    }
+    const now=Date.now();
+    const updated={
+      ...currentTicket,
+      remoteSupportRequested:true,
+      remoteSupportTool:tool,
+      remoteSupportId:remoteId,
+      remoteSupportNote:note,
+      remoteSupportRequestedAt:now,
+      updatedAt:now,
+      timeline:[...(currentTicket.timeline||[]),{action:"Remote support requested",remark:`${tool}: ${remoteId}`,at:now,by:currentTicket.email || currentTicket.name || "User"}]
+    };
+    try {
+      if(ONLINE_TICKETS_ENABLED) await saveTicket(updated);
+      setTickets(ts=>ts.map(t=>t.id===currentTicket.id?updated:t));
+      toast("Remote support request saved.","success");
+      showBrowserNotification("Remote support requested", `${updated.id} needs remote support.`);
+    } catch(error) {
+      console.error("Remote support request save failed:", error);
+      toast("Remote support request could not be saved.","error");
+      throw error;
+    }
+  };
+
   if(!currentTicket) {
     return (
       <div className="glass2" style={{padding:"16px",borderColor:"rgba(239,68,68,.28)",background:"rgba(239,68,68,.08)",color:"#fecaca"}}>
@@ -2151,6 +2414,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
   );
 
   return (
+    <>
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       {/* Header */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
@@ -2164,6 +2428,8 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           <StatusBadge status={currentTicket.status}/>
           <PriorityBadge p={currentTicket.priority}/>
+          {currentTicket.remoteSupportRequested&&<span className="tag" style={{background:"rgba(14,165,233,.14)",color:"#bae6fd"}}>Remote Support Requested</span>}
+          {!isAdmin&&!isStaff&&!isClosedTicket(currentTicket)&&<button className="glow-btn" type="button" onClick={()=>setShowRemoteSupport(true)} style={{padding:"7px 14px",fontSize:13}}>Request Remote Support</button>}
           {canClose&&<button className="success-btn" onClick={()=>setShowClose(true)} style={{padding:"7px 16px",fontSize:13}}>✅ Close Ticket</button>}
         </div>
       </div>
@@ -2216,6 +2482,28 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         <div style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:8}}>DESCRIPTION</div>
         <p style={{fontSize:14,lineHeight:1.7,color:"rgba(226,232,240,0.8)"}}>{currentTicket.description}</p>
       </div>
+
+      {(currentTicket.aiSummary || currentTicket.suggestedAction)&&(
+        <div className="glass2" style={{padding:"16px",borderColor:"rgba(125,211,252,.22)",background:"rgba(14,165,233,.07)"}}>
+          <div style={{fontSize:12,color:"#7dd3fc",fontWeight:900,marginBottom:8}}>AI TICKET SUMMARY FOR STAFF</div>
+          {currentTicket.aiSummary&&<div style={{fontSize:14,color:"#fff",fontWeight:800,lineHeight:1.5}}>{currentTicket.aiSummary}</div>}
+          {currentTicket.suggestedAction&&<div style={{fontSize:13,color:"rgba(226,232,240,.72)",lineHeight:1.55,marginTop:7}}><b>Suggested action:</b> {currentTicket.suggestedAction}</div>}
+        </div>
+      )}
+
+      {currentTicket.remoteSupportRequested&&(
+        <div className="glass2" style={{padding:"16px",borderColor:"rgba(14,165,233,.24)",background:"rgba(14,165,233,.08)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap",marginBottom:8}}>
+            <div style={{fontSize:13,fontWeight:900,color:"#bae6fd"}}>Remote Support Requested</div>
+            <span className="tag">{fmtDate(currentTicket.remoteSupportRequestedAt)}</span>
+          </div>
+          <div style={{fontSize:13,color:"rgba(226,232,240,.76)",lineHeight:1.6}}>
+            <div>Tool: <b>{currentTicket.remoteSupportTool || "—"}</b></div>
+            <div>Remote ID: <b>{currentTicket.remoteSupportId || "—"}</b></div>
+            {currentTicket.remoteSupportNote&&<div>Note: {currentTicket.remoteSupportNote}</div>}
+          </div>
+        </div>
+      )}
 
       {/* Assigned To */}
       {assignee&&<div className="glass" style={{padding:"16px 18px",display:"flex",gap:14,alignItems:"center"}}>
@@ -2384,6 +2672,12 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         </div>
       </div>
     </div>
+    {showRemoteSupport&&(
+      <Modal title="Request Remote Support" onClose={()=>setShowRemoteSupport(false)}>
+        <RemoteSupportDialog ticket={currentTicket} onClose={()=>setShowRemoteSupport(false)} onSubmit={submitRemoteSupport} toast={toast} />
+      </Modal>
+    )}
+    </>
   );
 }
 
@@ -2434,8 +2728,9 @@ function TicketCard({ticket,onView,showFeedbackPending=false,showFeedbackUnread=
   const cat=CATEGORIES.find(c=>c.id===ticket.category);
   const feedbackPending=showFeedbackPending && isTicketFeedbackPending(ticket);
   const unreadFeedback=showFeedbackUnread && ticket.feedbackStatus==="Submitted";
+  const escalation=getEscalationInfo(ticket);
   return (
-    <div className="glass2" style={{padding:"16px 18px",cursor:"pointer",transition:"all .2s"}}
+    <div className="glass2" style={{padding:"16px 18px",cursor:"pointer",transition:"all .2s",borderColor:escalation.overdue?"rgba(239,68,68,.46)":undefined,boxShadow:escalation.overdue?"0 18px 46px rgba(239,68,68,.16),0 0 30px rgba(249,115,22,.12)":undefined}}
       onClick={()=>onView(ticket.id)}
       onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(99,102,241,0.4)";e.currentTarget.style.background="rgba(255,255,255,0.08)";}}
       onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.1)";e.currentTarget.style.background="rgba(255,255,255,0.06)";}}>
@@ -2448,6 +2743,7 @@ function TicketCard({ticket,onView,showFeedbackPending=false,showFeedbackUnread=
       </div>
       <div style={{fontSize:13,color:"rgba(226,232,240,0.7)",marginBottom:8,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{ticket.description}</div>
       <div style={{fontSize:12,color:"#93c5fd",marginBottom:8}}>AI status: {getTicketStatusExplanation(ticket.status)}</div>
+      {ticket.aiSummary&&<div style={{fontSize:12,color:"#bae6fd",marginBottom:8,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}><b>AI Summary:</b> {ticket.aiSummary}</div>}
       <div style={{display:"grid",gap:4,marginBottom:10,fontSize:11,color:"rgba(226,232,240,.46)"}}>
         <div>Assigned to: <span style={{color:"#e2e8f0"}}>{ticket.assigneeName || ticket.assignedTo || staffName(ticket.assigneeId)}</span></div>
         <div>Watchers: <span style={{color:"#e2e8f0"}}>{(ticket.watchers||ticket.notifiedStaff||[]).map(w=>w.name).filter(Boolean).join(", ") || "All IT Staff"}</span></div>
@@ -2459,6 +2755,10 @@ function TicketCard({ticket,onView,showFeedbackPending=false,showFeedbackUnread=
           {feedbackPending ? "Closed - Feedback Pending" : "New feedback"}
         </div>
       )}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:(ticket.remoteSupportRequested||escalation.overdue)?10:0}}>
+        {ticket.remoteSupportRequested&&<span className="tag" style={{background:"rgba(14,165,233,.14)",color:"#bae6fd",fontSize:11}}>Remote Support Requested</span>}
+        {escalation.overdue&&<span className="tag" style={{background:"rgba(239,68,68,.17)",color:"#fecaca",fontSize:11}}>Overdue · L{escalation.level}</span>}
+      </div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:10}}>
         <PriorityBadge p={ticket.priority}/>
         <span style={{fontSize:11,color:"rgba(226,232,240,0.35)"}}>{timeAgo(ticket.createdAt)}</span>
@@ -2489,6 +2789,36 @@ function SmartTicketModal({session,onSubmit,onClose,toast}) {
   const [resolution,setResolution]=useState(null);
   const [ready,setReady]=useState(false);
   const [loading,setLoading]=useState(false);
+  const [listening,setListening]=useState(false);
+
+  const startVoiceInput=()=>{
+    try {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if(!SpeechRecognition) {
+        toast("Voice input is not supported on this browser.","info");
+        return;
+      }
+      const recognition = new SpeechRecognition();
+      recognition.lang = "en-IN";
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.onstart = () => setListening(true);
+      recognition.onerror = error => {
+        console.error("Smart ticket voice input failed:", error);
+        toast("Voice input could not capture audio. Please try again.","error");
+      };
+      recognition.onresult = event => {
+        const transcript = event.results?.[0]?.[0]?.transcript || "";
+        if(transcript) setIssue(prev=>`${prev ? `${prev} ` : ""}${transcript}`.trim());
+      };
+      recognition.onend = () => setListening(false);
+      recognition.start();
+    } catch(error) {
+      console.error("Smart ticket voice input failed:", error);
+      setListening(false);
+      toast("Voice input is not supported on this browser.","info");
+    }
+  };
 
   const analyze=()=>{
     if(!issue.trim()){toast("Describe your issue in simple words.","error");return;}
@@ -2531,7 +2861,10 @@ function SmartTicketModal({session,onSubmit,onClose,toast}) {
         <div style={{fontSize:18,fontWeight:900,color:"#fff",marginBottom:6}}>Describe your issue in simple words.</div>
         <div style={{fontSize:13,color:"rgba(226,232,240,.62)"}}>I can create a ticket for you after a quick fix check.</div>
       </div>
-      <textarea rows={3} value={issue} onChange={e=>setIssue(e.target.value)} placeholder="Example: OneJaipuria WiFi is not connecting on my laptop" style={{resize:"vertical"}}/>
+      <div style={{display:"flex",gap:8,alignItems:"stretch"}}>
+        <textarea rows={3} value={issue} onChange={e=>setIssue(e.target.value)} placeholder={listening ? "Listening..." : "Example: OneJaipuria WiFi is not connecting on my laptop"} style={{resize:"vertical",flex:1}}/>
+        <button type="button" className={`mic-btn ${listening ? "listening" : ""}`} onClick={startVoiceInput} title={listening ? "Listening..." : "Use voice input"} aria-label="Use voice input">🎙</button>
+      </div>
       <button className="glow-btn" type="button" onClick={analyze}>Analyze with AI</button>
       {summary&&(
         <div className="glass2" style={{padding:"16px",display:"grid",gap:10}}>
@@ -3618,6 +3951,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
   const [ticketFlow,setTicketFlow]=useState(null);
   const [activeCategoryId,setActiveCategoryId]=useState(null);
   const [lastHelpdeskContext,setLastHelpdeskContext]=useState(null);
+  const [listening,setListening]=useState(false);
   const [messages,setMessages]=useState([
     {id:"welcome",role:"assistant",text:"Hello! How may I help you today?",at:Date.now()}
   ]);
@@ -3628,6 +3962,35 @@ function AIHelpdeskChat({session,onCreateTicket}) {
   },[messages.length,loading,open]);
 
   const buildPrompt=(question)=>`You are Jaipuria Helpdesk AI, a friendly IT support assistant for Jaipuria Institute of Management. Answer only campus IT/helpdesk questions such as login issues, WiFi, Moodle/LMS, Echo360 lecture capture, printers, MS Office, email, laptop/software troubleshooting, and general IT support. Give concise, practical steps. If the question cannot be answered confidently, reply exactly: I have forwarded this issue to IT Support Team.\n\nUser: ${question}`;
+
+  const startVoiceInput=()=>{
+    try {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if(!SpeechRecognition) {
+        setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Voice input is not supported on this browser.",at:Date.now(),error:true}]);
+        return;
+      }
+      const recognition = new SpeechRecognition();
+      recognition.lang = "en-IN";
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.onstart = () => setListening(true);
+      recognition.onerror = error => {
+        console.error("Chatbot voice input failed:", error);
+        setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Voice input could not capture audio. Please try again.",at:Date.now(),error:true}]);
+      };
+      recognition.onresult = event => {
+        const transcript = event.results?.[0]?.[0]?.transcript || "";
+        if(transcript) setInput(prev=>`${prev ? `${prev} ` : ""}${transcript}`.trim());
+      };
+      recognition.onend = () => setListening(false);
+      recognition.start();
+    } catch(error) {
+      console.error("Chatbot voice input failed:", error);
+      setListening(false);
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Voice input is not supported on this browser.",at:Date.now(),error:true}]);
+    }
+  };
 
   const startTicketFlow=(context=lastHelpdeskContext)=>{
     const categoryId=context?.categoryId || "resources";
@@ -3832,7 +4195,8 @@ function AIHelpdeskChat({session,onCreateTicket}) {
           </div>
 
           <div className="ai-helpdesk-input">
-            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}} placeholder="Type hi, menu, WiFi, AI, or ESCALATE..." />
+            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}} placeholder={listening ? "Listening..." : "Type hi, menu, WiFi, AI, or ESCALATE..."} />
+            <button type="button" className={`mic-btn ${listening ? "listening" : ""}`} onClick={startVoiceInput} title={listening ? "Listening..." : "Use voice input"} aria-label="Use voice input">🎙</button>
             <button className="glow-btn" type="button" onClick={()=>sendMessage()} disabled={loading||!input.trim()}>Send</button>
           </div>
         </div>
@@ -5226,6 +5590,8 @@ export default function App() {
   const [portalFeedback, setPortalFeedback] = useState([]);
   const [portalFeedbackLoaded, setPortalFeedbackLoaded] = useState(false);
   const [showPortalFeedback, setShowPortalFeedback] = useState(false);
+  const [incidents, setIncidents] = useState([]);
+  const [incidentsLoaded, setIncidentsLoaded] = useState(false);
   const [tempIssues, setTempIssues] = useState([]);
   const [tempIssuesLoaded, setTempIssuesLoaded] = useState(false);
   const [tempIssueFilters, setTempIssueFilters] = useState({ status:"All", staff:"All", item:"All", search:"", from:"", to:"" });
@@ -5300,6 +5666,24 @@ export default function App() {
   }, []);
   useEffect(() => {
     let alive = true;
+    const loadIncidents = async () => {
+      try {
+        const onlineIncidents = await fetchIncidents();
+        if (alive) {
+          setIncidents(onlineIncidents);
+          setIncidentsLoaded(true);
+        }
+      } catch (error) {
+        console.error("Online incidents load failed:", error);
+        if (alive) setIncidentsLoaded(true);
+      }
+    };
+    loadIncidents();
+    const interval = setInterval(loadIncidents, 30000);
+    return () => { alive = false; clearInterval(interval); };
+  }, []);
+  useEffect(() => {
+    let alive = true;
     const loadTempIssues = async () => {
       try {
         const onlineTempIssues = await fetchTempIssues();
@@ -5338,6 +5722,26 @@ export default function App() {
     if (!ticketsLoaded || !ONLINE_TICKETS_ENABLED) return;
     saveTickets(tickets).catch(error => console.error("Online ticket sync failed:", error));
   }, [tickets, ticketsLoaded]);
+  useEffect(() => {
+    if (!ticketsLoaded) return;
+    const now=Date.now();
+    let changed=false;
+    const updated=tickets.map(ticket=>{
+      const info=getEscalationInfo(ticket, now);
+      if(!info.overdue) return ticket;
+      if(ticket.escalated && Number(ticket.escalationLevel)===info.level) return ticket;
+      changed=true;
+      return {
+        ...ticket,
+        escalated:true,
+        escalationLevel:info.level,
+        escalatedAt:now,
+        escalationHistory:[...(ticket.escalationHistory||[]),{level:info.level,at:now,remark:info.label}],
+        updatedAt:ticket.updatedAt || now
+      };
+    });
+    if(changed) setTickets(updated);
+  }, [ticketsLoaded, tickets.map(t=>`${t.id}:${t.status}:${t.priority}:${t.escalationLevel}`).join("|")]);
   useEffect(() => DB.set("staff_profiles", staffProfiles), [staffProfiles]);
   useEffect(() => DB.set("staff_statuses", staffStatuses), [staffStatuses]);
   useEffect(() => {
@@ -5435,6 +5839,18 @@ export default function App() {
       throw error;
     }
   };
+  const handleSaveIncident = async (entry) => {
+    try {
+      const incident = await saveIncident(entry);
+      setIncidents(prev => [incident, ...prev.filter(item => item.id !== incident.id)].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)));
+      toast("Campus incident updated","success");
+      return incident;
+    } catch (error) {
+      console.error("Incident save failed:", error);
+      toast(`Incident save failed: ${error?.message || "Firestore error"}`, "error");
+      throw error;
+    }
+  };
   const handleDeleteTicket = async (id) => {
     try {
       await deleteTicket(id);
@@ -5456,6 +5872,7 @@ const handleNewTicket = async (form) => {
 
   const now = Date.now();
   const allStaffWatchers = STAFF_BASE.map(staff => ({ id: staff.id, name: staff.name, email: staff.email, role: staff.role }));
+  const aiTicketSummary = await generateTicketAiSummary(form);
 
   const newTicket = {
       id: genId(),
@@ -5472,6 +5889,8 @@ const handleNewTicket = async (form) => {
       assignmentGroup: form.assignmentGroup || getAssignmentGroup(form.category),
       issueSummary: form.issueSummary || "",
       recommendedAction: form.recommendedAction || "",
+      aiSummary: aiTicketSummary.aiSummary,
+      suggestedAction: aiTicketSummary.suggestedAction,
       notes: form.notes || "",
       status: "Assigned",
       assigneeId: assignee.id,
@@ -5484,6 +5903,15 @@ const handleNewTicket = async (form) => {
       closedAt: null,
       feedbackSubmitted: false,
       closingRemarks: "",
+      remoteSupportRequested: false,
+      remoteSupportTool: "",
+      remoteSupportId: "",
+      remoteSupportNote: "",
+      remoteSupportRequestedAt: null,
+      escalated: false,
+      escalationLevel: 0,
+      escalatedAt: null,
+      escalationHistory: [],
       comments: [],
       timeline: [
         {
@@ -5954,6 +6382,7 @@ const handleNewTicket = async (form) => {
                   : dashboardFilter.type === "Closed"
                     ? tickets.filter(t => t.status === "Closed")
                     : tickets;
+        const escalatedTickets = tickets.filter(t => getEscalationInfo(t).overdue).sort((a,b)=>getEscalationInfo(b).level-getEscalationInfo(a).level || (b.createdAt||0)-(a.createdAt||0));
 
         return (
           <div style={{display:"flex",flexDirection:"column",gap:24}}>
@@ -5977,6 +6406,20 @@ const handleNewTicket = async (form) => {
                   style={{cursor: 'pointer'}}
                 />
               ))}
+            </div>
+            <IncidentManager incidents={incidents} onSave={handleSaveIncident} toast={toast} />
+            <div className="glass" style={{padding:"18px",display:"grid",gap:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                <div>
+                  <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:900,color:"#e2e8f0"}}>Escalated Tickets</h3>
+                  <p style={{fontSize:12,color:"rgba(226,232,240,.52)",marginTop:4}}>Overdue tickets are highlighted for staff/admin follow-up.</p>
+                </div>
+                <span className="tag" style={{background:"rgba(239,68,68,.16)",color:"#fecaca"}}>{escalatedTickets.length} overdue</span>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+                {escalatedTickets.slice(0,6).map(ticket=><TicketCard key={ticket.id} ticket={ticket} onView={setViewTicketId} showFeedbackUnread={isTicketFeedbackUnread(ticket,true,false)} />)}
+                {escalatedTickets.length===0&&<EmptyState message="No escalated tickets right now." icon="✅" />}
+              </div>
             </div>
             {dashboardFilter.type !== "Total" && (
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:14,flexWrap:'wrap'}}>
@@ -6106,6 +6549,7 @@ const handleNewTicket = async (form) => {
               {!isStaff&&<button onClick={logoutUser} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",padding:"6px 14px",borderRadius:8,fontSize:13}}>Logout</button>}
             </div>
           </div>
+          <CampusIncidentBanner incidents={incidents} />
           <div className="app-content" style={{padding:"24px 28px",flex:1,overflowY:"auto"}}>{renderPage()}</div>
         </div>
       </div>
