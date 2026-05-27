@@ -1638,17 +1638,14 @@ textarea:focus{
 @keyframes themeGlowShift{from{filter:hue-rotate(0deg);opacity:.72;transform:scale(1)}to{filter:hue-rotate(12deg);opacity:.95;transform:scale(1.03)}}
 .smart-welcome-once{animation:smartWelcomeFade 5s ease forwards}
 @keyframes smartWelcomeFade{0%,82%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-8px)}}
-.network-ticker{min-width:0;max-width:min(560px,42vw);overflow:hidden;border:1px solid rgba(125,211,252,.16);border-radius:999px;background:linear-gradient(135deg,rgba(14,165,233,.1),rgba(139,92,246,.08),rgba(6,182,212,.08));box-shadow:0 0 20px rgba(6,182,212,.12);padding:6px 0;color:#bae6fd;font-size:11px;font-weight:900;white-space:nowrap}
-.network-ticker-track{display:inline-block;padding-left:100%;animation:networkTicker 18s linear infinite}
 .incident-banner{margin:14px 24px 0;border-radius:14px;border:1px solid rgba(125,211,252,.22);overflow:hidden;box-shadow:0 18px 44px rgba(0,0,0,.24),0 0 24px rgba(6,182,212,.12)}
 .incident-banner.info{background:linear-gradient(135deg,rgba(14,165,233,.18),rgba(37,99,235,.12))}
 .incident-banner.warning{background:linear-gradient(135deg,rgba(245,158,11,.2),rgba(249,115,22,.12))}
 .incident-banner.critical{background:linear-gradient(135deg,rgba(239,68,68,.24),rgba(147,51,234,.12))}
 .incident-track{display:inline-block;white-space:nowrap;padding:10px 16px;color:#f8fafc;font-size:13px;font-weight:900;animation:incidentMarquee 22s linear infinite;text-shadow:0 0 18px rgba(255,255,255,.18)}
 @keyframes incidentMarquee{from{transform:translateX(18%)}to{transform:translateX(-100%)}}
-@keyframes networkTicker{from{transform:translateX(0)}to{transform:translateX(-100%)}}
 .app-sidebar,.app-main{position:relative;z-index:1}
-@media (max-width:768px){.ai-helpdesk-wrap{right:10px;bottom:132px}.ai-helpdesk-panel{width:calc(100vw - 20px);height:calc(100dvh - 176px);border-radius:18px!important}.ai-helpdesk-bubble{max-width:90%}.ai-helpdesk-button{padding:10px 13px;font-size:12px}.ai-helpdesk-input{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}.network-ticker{order:3;flex-basis:100%;max-width:100%;font-size:10px}.network-ticker span{display:inline-block!important}.incident-banner{margin:10px 12px 0}.incident-track{font-size:12px;padding:9px 12px}.mic-btn{width:38px;min-width:38px;height:38px}}
+@media (max-width:768px){.ai-helpdesk-wrap{right:10px;bottom:132px}.ai-helpdesk-panel{width:calc(100vw - 20px);height:calc(100dvh - 176px);border-radius:18px!important}.ai-helpdesk-bubble{max-width:90%}.ai-helpdesk-button{padding:10px 13px;font-size:12px}.ai-helpdesk-input{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}.incident-banner{margin:10px 12px 0}.incident-track{font-size:12px;padding:9px 12px}.mic-btn{width:38px;min-width:38px;height:38px}}
 @media (max-width:480px){.ai-helpdesk-wrap{right:8px;bottom:126px}.ai-helpdesk-panel{width:calc(100vw - 16px);height:calc(100dvh - 164px)}.ai-helpdesk-head{padding:12px}.ai-helpdesk-messages{padding:12px}.ai-helpdesk-input .glow-btn{min-width:58px}}`;
 
 // ── TOAST ─────────────────────────────────────────────────────────────────
@@ -1847,67 +1844,6 @@ function SmartWelcome({session,visible=true}) {
       <p style={{fontSize:14,color:"rgba(226,232,240,.62)",margin:0}}>How can IT Helpdesk assist you today?</p>
     </div>
   );
-}
-
-function NetworkStatusTicker() {
-  const fallbackMetrics={download:520,upload:140,ping:12,quality:"Excellent"};
-  const tooltip="Estimated network capacity, not an official speed test.";
-  const formatMessage=({download,upload,ping,quality})=>`⚡ AI Network Capacity: ⬇ ${download} Mbps | ⬆ ${upload} Mbps | Ping ${ping}ms | ${quality}`;
-  const [message,setMessage]=useState(formatMessage(fallbackMetrics));
-  useEffect(()=>{
-    let alive=true;
-    const pickRange=(min,max,salt=0)=>{
-      const span=max-min;
-      return Math.round(min+((Date.now()/1000+salt)%span));
-    };
-    const getCapacityBucket=(connection,ping)=>{
-      const downlink=Number(connection?.downlink || 0);
-      const effectiveType=String(connection?.effectiveType || "");
-      if(effectiveType.includes("2g") || ping>120 || (downlink>0 && downlink<1.5)) return "weak";
-      if(effectiveType==="3g" || ping>50 || (downlink>0 && downlink<5)) return "medium";
-      return "strong";
-    };
-    const getMetricsForBucket=(bucket,ping)=>{
-      if(bucket==="weak") {
-        return {download:pickRange(25,95,3),upload:pickRange(8,28,7),ping:Math.max(45,Math.min(160,ping)),quality:"Limited"};
-      }
-      if(bucket==="medium") {
-        return {download:pickRange(100,300,11),upload:pickRange(30,100,17),ping:Math.max(20,Math.min(50,ping)),quality:"Good"};
-      }
-      return {download:pickRange(450,650,23),upload:pickRange(80,250,31),ping:Math.max(5,Math.min(25,ping)),quality:"Excellent"};
-    };
-    const measurePing=async()=>{
-      if(typeof fetch!=="function" || typeof performance==="undefined") return null;
-      const controller=new AbortController();
-      const timer=setTimeout(()=>controller.abort(),1800);
-      const start=performance.now();
-      try {
-        await fetch(`/manifest.json?net=${Date.now()}`, {method:"HEAD",cache:"no-store",signal:controller.signal});
-        return Math.max(1,Math.round(performance.now()-start));
-      } catch {
-        return null;
-      } finally {
-        clearTimeout(timer);
-      }
-    };
-    const update=async()=>{
-      try {
-        const connection=navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-        const hintedRtt=Number(connection?.rtt || 0);
-        const measuredPing=await measurePing();
-        const ping=Math.max(5,Math.round(measuredPing || hintedRtt || fallbackMetrics.ping));
-        const bucket=getCapacityBucket(connection,ping);
-        if(alive) setMessage(formatMessage(getMetricsForBucket(bucket,ping)));
-      } catch(error) {
-        console.error("Network ticker update failed:", error);
-        if(alive) setMessage(formatMessage(fallbackMetrics));
-      }
-    };
-    update();
-    const interval=setInterval(update,25000);
-    return()=>{alive=false;clearInterval(interval);};
-  },[]);
-  return <div className="network-ticker" aria-label="Network status" title={tooltip}><span className="network-ticker-track">{message}</span></div>;
 }
 
 function CampusIncidentBanner({incidents=[]}) {
@@ -6562,7 +6498,6 @@ const handleNewTicket = async (form) => {
             <div className="header-actions" style={{display:"flex",gap:10,alignItems:"center"}}>
               <div className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#10b981"}} />
               <span style={{fontSize:12,color:"rgba(226,232,240,0.4)"}}>Live</span>
-              <NetworkStatusTicker />
               <NotificationButton toast={toast} enabled={notificationsEnabled} setEnabled={setNotificationsEnabled} />
               {!isStaff&&<button onClick={logoutUser} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",padding:"6px 14px",borderRadius:8,fontSize:13}}>Logout</button>}
             </div>
