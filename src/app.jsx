@@ -490,6 +490,7 @@ const CATEGORIES = [
   { id:"biometric", label:"Biometric Issue", icon:"🔐", color:"#f97316", bg:"rgba(249,115,22,0.15)" },
   { id:"cctv", label:"CCTV Issue", icon:"📹", color:"#06b6d4", bg:"rgba(6,182,212,0.15)" },
   { id:"erp", label:"LMS/Moodle Issue", icon:"📊", color:"#84cc16", bg:"rgba(132,204,22,0.15)" },
+  { id:"echo360", label:"Echo360 Lecture Capture System", icon:"🎥", color:"#22d3ee", bg:"rgba(34,211,238,0.15)" },
   { id:"network", label:"Network Problem", icon:"🔌", color:"#a855f7", bg:"rgba(168,85,247,0.15)" },
   { id:"hardware", label:"Hardware Damage", icon:"🔧", color:"#dc2626", bg:"rgba(220,38,38,0.15)" },
   { id:"asset", label:"New IT Asset Request", icon:"📦", color:"#0891b2", bg:"rgba(8,145,178,0.15)" },
@@ -2980,6 +2981,7 @@ const HELPDESK_MENU_ITEMS=[
   {id:"ms-office",label:"MS Office",aliases:["ms office","office","microsoft office","word","excel","powerpoint"]},
   {id:"email",label:"Email",aliases:["email","mail","outlook","email issue"]},
   {id:"login",label:"Login Issue",aliases:["login","login issue","password","signin","sign in","account"]},
+  {id:"echo360",label:"Echo360 Lecture Capture System",aliases:["echo360","echo 360","lecture capture","recording issue","classroom recording","lecture not uploaded","capture device","lecture playback"]},
   {id:"resources",label:"Other IT Resources",aliases:["other it resources","it resources","resources","other"]},
   {id:"ai",label:"Talk to AI",aliases:["ai","ask ai","talk to ai","assistant"]}
 ];
@@ -2998,6 +3000,7 @@ const HELPDESK_SUBCATEGORIES={
   "ms-office":["Office license expired","Word/Excel/PowerPoint not opening","Outlook login issue","Teams login issue","OneDrive sync issue","Office activation issue","Other MS Office issue"],
   email:["Email login issue","Password reset issue","Email not sending","Email not receiving","Outlook configuration issue","Mailbox full","Attachment issue","Other email issue"],
   login:["Portal login issue","Laptop/Desktop login password forgot","Moodle login issue","Email login issue","MS Teams login issue","Other login issue"],
+  echo360:["Lecture recording not starting","Lecture recording missing","Audio not recording","Video not recording","Echo360 login issue","Lecture not uploaded","Classroom capture device offline","Recording quality issue","Echo360 playback issue","Faculty access issue","Student unable to view recording","Other Echo360 issue"],
   resources:["Projector issue","Smart classroom issue","Biometric issue","CCTV request","Software access request","New system/peripheral request","Other IT request"]
 };
 
@@ -3084,6 +3087,7 @@ function getCategorySteps(category) {
     "ms-office":{title:"MS Office troubleshooting",steps:["Close and reopen Word, Excel, PowerPoint, or Outlook.","Check whether your Jaipuria account is signed in and licensed.","Try opening the file from local storage if it fails from email/cloud.","Restart the device if Office keeps freezing or asking for activation."]},
     email:{title:"Email troubleshooting",steps:["Check internet connectivity and open email in a browser.","Confirm you are using your Jaipuria email address.","Reset browser cache or try another browser/device.","Note any Outlook, password, MFA, or mailbox error message."]},
     login:{title:"Login issue troubleshooting",steps:["Confirm the username/email is typed correctly.","Check Caps Lock and try resetting the password if available.","Try signing in from a different browser or private window.","Capture the exact login error for IT Support."]},
+    echo360:{title:"Echo360 Lecture Capture System troubleshooting",steps:["Confirm the classroom capture device is powered on and connected.","Check the lecture schedule, room mapping, and faculty access.","Restart the Echo360 capture device or playback browser once if available.","Note the lecture name, classroom, date, time, and exact recording/playback issue."]},
     resources:{title:"Other IT Resources",steps:["Identify the exact resource, portal, software, or device you need help with.","Check whether the issue happens on one device or multiple devices.","Restart the app/browser and try again once.","Keep your system/location and error details ready for support."]}
   };
   const fallback={title:"IT troubleshooting",steps:["Restart the device or application once.","Check internet connectivity and login status.","Note the exact error message and when it occurs.","Try again from another browser or device if available."]};
@@ -3105,6 +3109,7 @@ function getTicketCategoryFromHelpdesk(categoryId) {
     "ms-office":"software",
     email:"email",
     login:"password",
+    echo360:"echo360",
     resources:"other"
   };
   return categoryMap[categoryId] || "other";
@@ -3154,6 +3159,23 @@ function findSubCategorySelection(userText, categoryId=null) {
 }
 
 function getBasicTroubleshootingSteps(categoryLabel, subCategory) {
+  const echo360Steps={
+    "Lecture recording not starting":["Check classroom capture device power.","Verify internet connection in the classroom.","Restart the Echo360 capture device.","Check lecture schedule mapping.","Try manual recording start."],
+    "Lecture recording missing":["Confirm the correct course, section, and lecture date in Echo360.","Check whether the recording is still processing or unpublished.","Verify the classroom and schedule mapping.","Ask faculty to refresh the Echo360 course page.","Note the lecture date, time, classroom, and course code for IT Support."],
+    "Audio not recording":["Check classroom microphone power and mute status.","Verify the correct audio input is selected on the capture device.","Restart the capture device if audio is not detected.","Run a short test recording if available.","Report the classroom, microphone type, and lecture time if issue continues."],
+    "Video not recording":["Check camera power and cable connection.","Confirm the camera lens is not blocked and the source is selected.","Restart the Echo360 capture device.","Verify the classroom capture profile includes video.","Capture the room, date, and schedule details for IT Support."],
+    "Echo360 login issue":["Confirm you are using your Jaipuria email account.","Try signing in from Chrome, Edge, or Firefox.","Clear browser cache or use a private window.","Check whether Moodle/LMS access opens the correct Echo360 link.","Share the exact login error if it continues."],
+    "Lecture not uploaded":["Check whether the recording is still processing.","Verify internet connectivity from the classroom capture device.","Confirm the schedule and course mapping are correct.","Refresh the Echo360 course section after a few minutes.","Report lecture date, time, room, and course details if upload is delayed."],
+    "Classroom capture device offline":["Check device power and network cable.","Restart the classroom capture device if accessible.","Confirm classroom internet is working.","Check whether only one room or multiple rooms are affected.","Escalate with classroom number and device status."],
+    "Recording quality issue":["Check microphone distance, camera view, and classroom lighting.","Confirm there is no background noise near the microphone.","Restart the capture device before the next recording.","Try playback in another browser to rule out streaming issues.","Share a sample lecture link and timestamp with IT Support."],
+    "Echo360 playback issue":["Refresh the page and try another browser.","Check internet speed and disable VPN/proxy if used.","Clear browser cache or try private window.","Confirm the recording is published and visible to your role.","Share the recording link and error message if playback still fails."],
+    "Faculty access issue":["Confirm the faculty member is mapped to the correct course.","Check access through Moodle/LMS and Echo360 directly.","Sign out and sign back in with Jaipuria email.","Ask the course admin to verify role/access mapping.","Share faculty email, course, and section details if unresolved."],
+    "Student unable to view recording":["Confirm the recording is published for students.","Check whether the student is enrolled in the correct course/section.","Ask the student to try another browser or private window.","Verify the Echo360 link opens from Moodle/LMS.","Share student email, course, and recording link if unresolved."],
+    "Other Echo360 issue":["Identify the exact Echo360 feature or classroom device affected.","Try refreshing the browser or restarting the capture/playback device once.","Check whether the issue affects one user, one classroom, or multiple users.","Keep course, room, lecture date, and screenshot details ready.","Escalate to IT Support if the issue continues."]
+  };
+  if(categoryLabel==="Echo360 Lecture Capture System" || echo360Steps[subCategory]) {
+    return echo360Steps[subCategory] || echo360Steps["Other Echo360 issue"];
+  }
   return [
     `Confirm the exact ${categoryLabel} issue: ${subCategory}.`,
     "Restart the related app, device, or connection once.",
@@ -3194,6 +3216,10 @@ function detectSmartTicketIssue(text) {
     {category:"wifi",subCategory:"Not able to connect OneJaipuria",priority:"Medium",words:["wifi","wi-fi","onejaipuria","certificate","campus wifi"]},
     {category:"printer",subCategory:"Printer showing offline",priority:"Medium",words:["printer","print","scan","toner","paper jam"]},
     {category:"erp",label:"Moodle / LMS",subCategory:"Moodle login issue",priority:"Medium",words:["moodle","lms","course","assignment","quiz"]},
+    {category:"echo360",subCategory:"Lecture not uploaded",priority:"Medium",words:["lecture not uploaded","recording not uploaded","upload missing"]},
+    {category:"echo360",subCategory:"Classroom capture device offline",priority:"Medium",words:["capture device","device offline","classroom capture device"]},
+    {category:"echo360",subCategory:"Echo360 playback issue",priority:"Medium",words:["lecture playback","playback issue","recording playback"]},
+    {category:"echo360",subCategory:"Lecture recording not starting",priority:"Medium",words:["echo360","echo 360","lecture capture","recording issue","classroom recording"]},
     {category:"internet",subCategory:"Internet not working",priority:"High",words:["internet","lan","website","network","ip conflict"]},
     {category:"laptop",subCategory:"Other laptop issue",priority:"Medium",words:["laptop","battery","charging","keyboard","windows"]},
     {category:"desktop",subCategory:"Other desktop issue",priority:"Medium",words:["desktop","monitor","cpu","mouse"]},
@@ -3305,7 +3331,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
     if(open) endRef.current?.scrollIntoView({behavior:"smooth",block:"end"});
   },[messages.length,loading,open]);
 
-  const buildPrompt=(question)=>`You are Jaipuria Helpdesk AI, a friendly IT support assistant for Jaipuria Institute of Management. Answer only campus IT/helpdesk questions such as login issues, WiFi, Moodle/LMS, printers, MS Office, email, laptop/software troubleshooting, and general IT support. Give concise, practical steps. If the question cannot be answered confidently, reply exactly: I have forwarded this issue to IT Support Team.\n\nUser: ${question}`;
+  const buildPrompt=(question)=>`You are Jaipuria Helpdesk AI, a friendly IT support assistant for Jaipuria Institute of Management. Answer only campus IT/helpdesk questions such as login issues, WiFi, Moodle/LMS, Echo360 lecture capture, printers, MS Office, email, laptop/software troubleshooting, and general IT support. Give concise, practical steps. If the question cannot be answered confidently, reply exactly: I have forwarded this issue to IT Support Team.\n\nUser: ${question}`;
 
   const startTicketFlow=(context=lastHelpdeskContext)=>{
     const categoryId=context?.categoryId || "resources";
