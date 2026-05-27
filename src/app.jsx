@@ -489,7 +489,7 @@ const CATEGORIES = [
   { id:"projector", label:"Projector/Smart Board", icon:"📽️", color:"#14b8a6", bg:"rgba(20,184,166,0.15)" },
   { id:"biometric", label:"Biometric Issue", icon:"🔐", color:"#f97316", bg:"rgba(249,115,22,0.15)" },
   { id:"cctv", label:"CCTV Issue", icon:"📹", color:"#06b6d4", bg:"rgba(6,182,212,0.15)" },
-  { id:"erp", label:"ERP/LMS Issue", icon:"📊", color:"#84cc16", bg:"rgba(132,204,22,0.15)" },
+  { id:"erp", label:"LMS/Moodle Issue", icon:"📊", color:"#84cc16", bg:"rgba(132,204,22,0.15)" },
   { id:"network", label:"Network Problem", icon:"🔌", color:"#a855f7", bg:"rgba(168,85,247,0.15)" },
   { id:"hardware", label:"Hardware Damage", icon:"🔧", color:"#dc2626", bg:"rgba(220,38,38,0.15)" },
   { id:"asset", label:"New IT Asset Request", icon:"📦", color:"#0891b2", bg:"rgba(8,145,178,0.15)" },
