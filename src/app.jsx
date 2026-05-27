@@ -850,6 +850,30 @@ function downloadExcel(data, filename) {
   XLSX.writeFile(workbook, filename);
 }
 
+function downloadTicketCsv(tickets = [], filename = "it-helpdesk-tickets.csv") {
+  const headers = ["ticketId","userName","email","mobile","category","subCategory","status","priority","assignedTo","createdAt","closedAt","source"];
+  const escape = value => {
+    const text = value === undefined || value === null ? "" : String(value);
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const rows = (tickets || []).map(ticket => ({
+    ticketId: ticket.id || "",
+    userName: ticket.name || "",
+    email: ticket.email || "",
+    mobile: ticket.mobile || "",
+    category: categoryLabel(ticket.category),
+    subCategory: ticket.subCategory || "",
+    status: ticket.status || "",
+    priority: ticket.priority || "",
+    assignedTo: ticket.assignedTo || ticket.assigneeName || staffName(ticket.assigneeId),
+    createdAt: fmtDate(ticket.createdAt),
+    closedAt: fmtDate(ticket.closedAt),
+    source: ticket.source || "Portal"
+  }));
+  const csv = [headers.join(","), ...rows.map(row => headers.map(header => escape(row[header])).join(","))].join("\r\n");
+  saveAs(new Blob([csv], { type:"text/csv;charset=utf-8" }), filename);
+}
+
 function countBy(items, values, getter) {
   return values.map(value => ({ label: value, value: items.filter(item => getter(item) === value).length }));
 }
@@ -1629,9 +1653,10 @@ textarea:focus{
 .ai-helpdesk-card-footer{margin:8px 10px 10px;border-radius:12px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.18);padding:9px 10px;white-space:pre-wrap;color:#bbf7d0;font-weight:800;font-size:12px}
 .ai-helpdesk-input{display:flex;gap:8px;padding:12px;border-top:1px solid rgba(255,255,255,.08);background:rgba(10,10,20,.94);backdrop-filter:blur(18px);flex-shrink:0}
 .ai-helpdesk-input input{min-width:0}.ai-helpdesk-input .glow-btn{padding:10px 13px;font-size:12px}
-.mic-btn{width:42px;min-width:42px;height:42px;border-radius:13px;border:1px solid rgba(125,211,252,.2);background:rgba(14,165,233,.12)!important;color:#bae6fd!important;display:inline-flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;box-shadow:0 10px 24px rgba(6,182,212,.12)}
+.mic-btn{width:42px;min-width:42px;height:42px;border-radius:13px;border:1px solid rgba(125,211,252,.2);background:rgba(14,165,233,.12)!important;color:#bae6fd!important;display:inline-flex;align-items:center;justify-content:center;gap:7px;font-size:18px;font-weight:900;box-shadow:0 10px 24px rgba(6,182,212,.12);white-space:nowrap;overflow:hidden}
 .mic-btn:hover{transform:translateY(-2px);border-color:rgba(34,211,238,.52)!important;box-shadow:0 16px 36px rgba(6,182,212,.2)}
-.mic-btn.listening{background:linear-gradient(135deg,#ef4444,#8b5cf6,#06b6d4)!important;color:#fff!important;animation:micGlow 1.1s ease-in-out infinite;box-shadow:0 0 0 6px rgba(239,68,68,.12),0 0 30px rgba(34,211,238,.34)}
+.mic-btn.listening{width:auto;min-width:118px;padding:0 12px;background:linear-gradient(135deg,#ef4444,#8b5cf6,#06b6d4)!important;color:#fff!important;animation:micGlow 1.1s ease-in-out infinite;box-shadow:0 0 0 6px rgba(239,68,68,.12),0 0 30px rgba(34,211,238,.34)}
+.mic-btn-text{font-size:11px;font-weight:1000;letter-spacing:.1px}
 @keyframes micGlow{0%,100%{transform:scale(1);filter:saturate(1)}50%{transform:scale(1.08);filter:saturate(1.3)}}
 .ai-typing{display:flex;align-items:center;gap:6px;color:rgba(226,232,240,.74)!important;font-style:italic}.ai-typing span{width:5px;height:5px;border-radius:50%;background:#67e8f9;display:inline-block;animation:pulse 1s infinite}.ai-typing span:nth-child(2){animation-delay:.15s}.ai-typing span:nth-child(3){animation-delay:.3s}
 .theme-glow{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden;background:radial-gradient(circle at 14% 18%,rgba(37,99,235,.08),transparent 30%),radial-gradient(circle at 82% 8%,rgba(139,92,246,.07),transparent 32%),radial-gradient(circle at 70% 86%,rgba(6,182,212,.06),transparent 34%);animation:themeGlowShift 14s ease-in-out infinite alternate}
@@ -1645,7 +1670,7 @@ textarea:focus{
 .incident-track{display:inline-block;white-space:nowrap;padding:10px 16px;color:#f8fafc;font-size:13px;font-weight:900;animation:incidentMarquee 22s linear infinite;text-shadow:0 0 18px rgba(255,255,255,.18)}
 @keyframes incidentMarquee{from{transform:translateX(18%)}to{transform:translateX(-100%)}}
 .app-sidebar,.app-main{position:relative;z-index:1}
-@media (max-width:768px){.ai-helpdesk-wrap{right:10px;bottom:132px}.ai-helpdesk-panel{width:calc(100vw - 20px);height:calc(100dvh - 176px);border-radius:18px!important}.ai-helpdesk-bubble{max-width:90%}.ai-helpdesk-button{padding:10px 13px;font-size:12px}.ai-helpdesk-input{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}.incident-banner{margin:10px 12px 0}.incident-track{font-size:12px;padding:9px 12px}.mic-btn{width:38px;min-width:38px;height:38px}}
+@media (max-width:768px){.ai-helpdesk-wrap{right:10px;bottom:132px}.ai-helpdesk-panel{width:calc(100vw - 20px);height:calc(100dvh - 176px);border-radius:18px!important}.ai-helpdesk-bubble{max-width:90%}.ai-helpdesk-button{padding:10px 13px;font-size:12px}.ai-helpdesk-input{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}.incident-banner{margin:10px 12px 0}.incident-track{font-size:12px;padding:9px 12px}.mic-btn{width:38px;min-width:38px;height:38px}.mic-btn.listening{min-width:102px}}
 @media (max-width:480px){.ai-helpdesk-wrap{right:8px;bottom:126px}.ai-helpdesk-panel{width:calc(100vw - 16px);height:calc(100dvh - 164px)}.ai-helpdesk-head{padding:12px}.ai-helpdesk-messages{padding:12px}.ai-helpdesk-input .glow-btn{min-width:58px}}`;
 
 // ── TOAST ─────────────────────────────────────────────────────────────────
@@ -2180,6 +2205,9 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
       if(nextAssignee){
         updated.assigneeName=nextAssignee.name;
         updated.assignedTo=nextAssignee.name;
+      } else if(Number(changes.assigneeId)===0) {
+        updated.assigneeName="IT Support Team";
+        updated.assignedTo="IT Support Team";
       }
       if(closingNow){
         updated.closedAt=Date.now();
@@ -2527,6 +2555,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
           value={editAssignee}
           onChange={e=>setEditAssignee(Number(e.target.value))}
         >
+          <option value={0}>IT Support Team</option>
           {STAFF_BASE.map(s=>
             <option
               key={s.id}
@@ -2743,9 +2772,42 @@ function SmartTicketModal({session,onSubmit,onClose,toast}) {
   const [ready,setReady]=useState(false);
   const [loading,setLoading]=useState(false);
   const [listening,setListening]=useState(false);
+  const recognitionRef=useRef(null);
+
+  const stopVoiceInput=useCallback(()=>{
+    try {
+      const recognition=recognitionRef.current;
+      if(recognition) {
+        recognition.onstart=null;
+        recognition.onresult=null;
+        recognition.onerror=null;
+        recognition.onend=null;
+        if(typeof recognition.abort==="function") recognition.abort();
+        else if(typeof recognition.stop==="function") recognition.stop();
+      }
+    } catch(error) {
+      console.error("Smart ticket voice stop failed:", error);
+    } finally {
+      recognitionRef.current=null;
+      setListening(false);
+    }
+  },[]);
+
+  useEffect(()=>{
+    const onVisibility=()=>{ if(document.hidden) stopVoiceInput(); };
+    const onBeforeUnload=()=>stopVoiceInput();
+    document.addEventListener("visibilitychange",onVisibility);
+    window.addEventListener("beforeunload",onBeforeUnload);
+    return()=>{
+      document.removeEventListener("visibilitychange",onVisibility);
+      window.removeEventListener("beforeunload",onBeforeUnload);
+      stopVoiceInput();
+    };
+  },[stopVoiceInput]);
 
   const startVoiceInput=()=>{
     try {
+      stopVoiceInput();
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if(!SpeechRecognition) {
         toast("Voice input is not supported on this browser.","info");
@@ -2755,16 +2817,24 @@ function SmartTicketModal({session,onSubmit,onClose,toast}) {
       recognition.lang = "en-IN";
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
+      recognitionRef.current=recognition;
       recognition.onstart = () => setListening(true);
       recognition.onerror = error => {
         console.error("Smart ticket voice input failed:", error);
-        toast("Voice input could not capture audio. Please try again.","error");
+        const message=error?.error==="not-allowed" || error?.error==="permission-denied"
+          ? "Microphone permission was denied. Please allow mic access to use voice input."
+          : "Voice input could not capture audio. Please try again.";
+        toast(message,"error");
+        stopVoiceInput();
       };
       recognition.onresult = event => {
         const transcript = event.results?.[0]?.[0]?.transcript || "";
         if(transcript) setIssue(prev=>`${prev ? `${prev} ` : ""}${transcript}`.trim());
       };
-      recognition.onend = () => setListening(false);
+      recognition.onend = () => {
+        recognitionRef.current=null;
+        setListening(false);
+      };
       recognition.start();
     } catch(error) {
       console.error("Smart ticket voice input failed:", error);
@@ -2816,7 +2886,7 @@ function SmartTicketModal({session,onSubmit,onClose,toast}) {
       </div>
       <div style={{display:"flex",gap:8,alignItems:"stretch"}}>
         <textarea rows={3} value={issue} onChange={e=>setIssue(e.target.value)} placeholder={listening ? "Listening..." : "Example: OneJaipuria WiFi is not connecting on my laptop"} style={{resize:"vertical",flex:1}}/>
-        <button type="button" className={`mic-btn ${listening ? "listening" : ""}`} onClick={startVoiceInput} title={listening ? "Listening..." : "Use voice input"} aria-label="Use voice input">🎙</button>
+        <button type="button" className={`mic-btn ${listening ? "listening" : ""}`} onClick={startVoiceInput} title={listening ? "Listening..." : "Use voice input"} aria-label="Use voice input"><span>🎙️</span>{listening&&<span className="mic-btn-text">Listening...</span>}</button>
       </div>
       <button className="glow-btn" type="button" onClick={analyze}>Analyze with AI</button>
       {summary&&(
@@ -3909,6 +3979,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
     {id:"welcome",role:"assistant",text:"Hello! How may I help you today?",at:Date.now()}
   ]);
   const endRef=useRef(null);
+  const recognitionRef=useRef(null);
 
   useEffect(()=>{
     if(open) endRef.current?.scrollIntoView({behavior:"smooth",block:"end"});
@@ -3916,8 +3987,46 @@ function AIHelpdeskChat({session,onCreateTicket}) {
 
   const buildPrompt=(question)=>`You are Jaipuria Helpdesk AI, a friendly IT support assistant for Jaipuria Institute of Management. Answer only campus IT/helpdesk questions such as login issues, WiFi, Moodle/LMS, Echo360 lecture capture, printers, MS Office, email, laptop/software troubleshooting, and general IT support. Give concise, practical steps. If the question cannot be answered confidently, reply exactly: I have forwarded this issue to IT Support Team.\n\nUser: ${question}`;
 
+  const stopVoiceInput=useCallback(()=>{
+    try {
+      const recognition=recognitionRef.current;
+      if(recognition) {
+        recognition.onstart=null;
+        recognition.onresult=null;
+        recognition.onerror=null;
+        recognition.onend=null;
+        if(typeof recognition.abort==="function") recognition.abort();
+        else if(typeof recognition.stop==="function") recognition.stop();
+      }
+    } catch(error) {
+      console.error("Chatbot voice stop failed:", error);
+    } finally {
+      recognitionRef.current=null;
+      setListening(false);
+    }
+  },[]);
+
+  useEffect(()=>{
+    if(!open) stopVoiceInput();
+  },[open,stopVoiceInput]);
+
+  useEffect(()=>{
+    const onVisibility=()=>{ if(document.hidden) stopVoiceInput(); };
+    const onBeforeUnload=()=>stopVoiceInput();
+    window.addEventListener("pagehide",onBeforeUnload);
+    window.addEventListener("beforeunload",onBeforeUnload);
+    document.addEventListener("visibilitychange",onVisibility);
+    return()=>{
+      window.removeEventListener("pagehide",onBeforeUnload);
+      window.removeEventListener("beforeunload",onBeforeUnload);
+      document.removeEventListener("visibilitychange",onVisibility);
+      stopVoiceInput();
+    };
+  },[stopVoiceInput]);
+
   const startVoiceInput=()=>{
     try {
+      stopVoiceInput();
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if(!SpeechRecognition) {
         setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Voice input is not supported on this browser.",at:Date.now(),error:true}]);
@@ -3927,16 +4036,24 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       recognition.lang = "en-IN";
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
+      recognitionRef.current=recognition;
       recognition.onstart = () => setListening(true);
       recognition.onerror = error => {
         console.error("Chatbot voice input failed:", error);
-        setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Voice input could not capture audio. Please try again.",at:Date.now(),error:true}]);
+        const message=error?.error==="not-allowed" || error?.error==="permission-denied"
+          ? "Microphone permission was denied. Please allow mic access to use voice input."
+          : "Voice input could not capture audio. Please try again.";
+        setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:message,at:Date.now(),error:true}]);
+        stopVoiceInput();
       };
       recognition.onresult = event => {
         const transcript = event.results?.[0]?.[0]?.transcript || "";
         if(transcript) setInput(prev=>`${prev ? `${prev} ` : ""}${transcript}`.trim());
       };
-      recognition.onend = () => setListening(false);
+      recognition.onend = () => {
+        recognitionRef.current=null;
+        setListening(false);
+      };
       recognition.start();
     } catch(error) {
       console.error("Chatbot voice input failed:", error);
@@ -4149,7 +4266,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
 
           <div className="ai-helpdesk-input">
             <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}} placeholder={listening ? "Listening..." : "Type hi, menu, WiFi, AI, or ESCALATE..."} />
-            <button type="button" className={`mic-btn ${listening ? "listening" : ""}`} onClick={startVoiceInput} title={listening ? "Listening..." : "Use voice input"} aria-label="Use voice input">🎙</button>
+            <button type="button" className={`mic-btn ${listening ? "listening" : ""}`} onClick={startVoiceInput} title={listening ? "Listening..." : "Use voice input"} aria-label="Use voice input"><span>🎙️</span>{listening&&<span className="mic-btn-text">Listening...</span>}</button>
             <button className="glow-btn" type="button" onClick={()=>sendMessage()} disabled={loading||!input.trim()}>Send</button>
           </div>
         </div>
@@ -4736,12 +4853,88 @@ function TrackTicket({tickets,onView}) {
   );
 }
 
+const ACTION_TAB_LABELS = {
+  view_all:"View All",
+  assign:"Assign",
+  close:"Closed",
+  export:"Export",
+  manage_users:"Manage Users"
+};
+
+function ActionTabs({permissions=[],active,onSelect}) {
+  const available = ["view_all","assign","close","export","manage_users"].filter(action => permissions.includes(action));
+  if(!available.length) return null;
+  return (
+    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+      {available.map(action=>(
+        <button
+          key={action}
+          type="button"
+          onClick={()=>onSelect(action)}
+          style={{
+            border:"1px solid rgba(125,211,252,.22)",
+            borderRadius:999,
+            padding:"7px 11px",
+            fontSize:12,
+            fontWeight:900,
+            color:active===action ? "#fff" : "#bae6fd",
+            background:active===action ? "linear-gradient(135deg,#2563eb,#8b5cf6,#06b6d4)" : "rgba(14,165,233,.1)",
+            boxShadow:active===action ? "0 12px 30px rgba(37,99,235,.32),0 0 20px rgba(6,182,212,.18)" : "none"
+          }}
+        >
+          {ACTION_TAB_LABELS[action] || action}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ManageUsersPanel() {
+  return (
+    <div className="glass" style={{padding:"18px",display:"grid",gap:14}}>
+      <div>
+        <h3 style={{fontFamily:"Syne",fontSize:17,fontWeight:900,color:"#fff"}}>Manage Users</h3>
+        <p style={{fontSize:12,color:"rgba(226,232,240,.55)",marginTop:4}}>User management module is ready for integration.</p>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10}}>
+        {[{name:"Admin",email:"admin@jaipuria.ac.in",role:"Admin"},...STAFF_BASE.map(staff=>({name:staff.name,email:staff.email,role:staff.role}))].map(user=>(
+          <div key={user.email} className="glass2" style={{padding:"12px"}}>
+            <div style={{fontSize:13,fontWeight:900,color:"#f8fafc"}}>{user.name}</div>
+            <div style={{fontSize:12,color:"rgba(226,232,240,.58)",marginTop:3}}>{user.email}</div>
+            <span className="tag" style={{marginTop:8,fontSize:11}}>{user.role}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function filterActionTickets(action,tickets,baseTickets) {
+  if(action==="view_all") return tickets;
+  if(action==="assign") return tickets.filter(ticket => ["Open","Assigned"].includes(ticket.status) || !ticket.assignedTo || ticket.assignedTo==="IT Support Team");
+  if(action==="close") return tickets.filter(ticket => ["Closed","Resolved"].includes(ticket.status));
+  return baseTickets;
+}
+
 // ── STAFF PANEL ───────────────────────────────────────────────────────────
-function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions,staffProfiles={},staffStatuses={},showWelcome=false}) {
+function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,onQuickAssign,permissions,staffProfiles={},staffStatuses={},showWelcome=false}) {
+  const [activeAction,setActiveAction]=useState("assigned");
   const staff=STAFF_BASE.find(s=>s.id===staffId);
-  const myTickets=tickets.filter(t=>t.assigneeId===staffId || (t.watchers||[]).some(w=>Number(w.id)===Number(staffId)) || (t.notifiedStaff||[]).some(w=>Number(w.id)===Number(staffId)));
+  const visibleTickets=(permissions||[]).includes("view_all")
+    ? tickets
+    : tickets.filter(t=>t.assigneeId===staffId || (t.watchers||[]).some(w=>Number(w.id)===Number(staffId)) || (t.notifiedStaff||[]).some(w=>Number(w.id)===Number(staffId)));
+  const myTickets=filterActionTickets(activeAction, tickets, visibleTickets);
   const active=myTickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
   const resolved=myTickets.filter(t=>t.status==="Resolved"||t.status==="Closed").length;
+  const selectAction=action=>{
+    if(action==="export") {
+      downloadTicketCsv(myTickets.length ? myTickets : visibleTickets);
+      toast("Tickets exported to CSV","success");
+      setActiveAction("export");
+      return;
+    }
+    setActiveAction(action);
+  };
   return (
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       <SmartWelcome session={{name:staff?.name}} visible={showWelcome} />
@@ -4750,9 +4943,7 @@ function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions,s
         <div style={{flex:1}}>
           <div style={{fontFamily:"Syne",fontSize:20,fontWeight:700,color:"#e2e8f0"}}>{staff.name}</div>
           <div style={{fontSize:13,color:"rgba(226,232,240,0.5)"}}>{staff.role} · {staff.email}</div>
-          <div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap"}}>
-            {(permissions||[]).map(p=><span key={p} className="tag" style={{background:"rgba(99,102,241,0.1)",color:"#818cf8",fontSize:11}}>{p}</span>)}
-          </div>
+          <div style={{marginTop:8}}><ActionTabs permissions={permissions} active={activeAction} onSelect={selectAction} /></div>
         </div>
         <div style={{display:"flex",gap:14,textAlign:"center",flexWrap:"wrap"}}>
           {[["Total",myTickets.length,"#818cf8"],["Active",active,"#fbbf24"],["Resolved",resolved,"#34d399"]].map(([l,v,c])=>(
@@ -4760,11 +4951,20 @@ function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions,s
           ))}
         </div>
       </div>
-      <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>Assigned Tickets</h3>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10}}>
-        {[...myTickets].sort((a,b)=>b.createdAt-a.createdAt).map(t=><TicketCard key={t.id} ticket={t} onView={onViewTicket} showFeedbackUnread={isTicketFeedbackUnread(t,false,true)}/>)}
-        {myTickets.length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>✅</div><div>No tickets assigned yet</div></div>}
-      </div>
+      {activeAction==="manage_users" ? <ManageUsersPanel /> : (
+        <>
+          <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>{ACTION_TAB_LABELS[activeAction] || "Assigned Tickets"}</h3>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10}}>
+            {[...myTickets].sort((a,b)=>b.createdAt-a.createdAt).map(t=>(
+              <div key={t.id} style={{position:"relative"}}>
+                <TicketCard ticket={t} onView={onViewTicket} showFeedbackUnread={isTicketFeedbackUnread(t,false,true)}/>
+                {activeAction==="assign"&&(permissions||[]).includes("assign")&&<button onClick={e=>{e.stopPropagation();onQuickAssign?.(t.id);}} style={{position:"absolute",right:10,bottom:10,background:"rgba(99,102,241,0.92)",border:"1px solid rgba(255,255,255,0.18)",color:"#fff",padding:"6px 10px",borderRadius:8,fontSize:11,fontWeight:900}}>Assign</button>}
+              </div>
+            ))}
+            {myTickets.length===0&&<EmptyState icon={activeAction==="close"?"🎫":"✅"} message={activeAction==="close"?"No closed tickets yet.":activeAction==="assign"?"No tickets need assignment right now.":"No tickets found."} />}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -5480,7 +5680,7 @@ setText(cleanText);
   </div>;
 }// ── QUICK ASSIGN DIALOG ───────────────────────────────────────────────────
 function QuickAssignDialog({ticket,onClose,onSave,statuses={}}) {
-  const [assigneeId,setAssigneeId]=useState(ticket?.assigneeId || STAFF_BASE[0]?.id || "");
+  const [assigneeId,setAssigneeId]=useState(ticket?.assignedTo==="IT Support Team" ? "team" : String(ticket?.assigneeId || STAFF_BASE[0]?.id || ""));
   const [remark,setRemark]=useState("");
   const currentAssignee=STAFF_BASE.find(s=>s.id===ticket?.assigneeId);
 
@@ -5500,10 +5700,11 @@ function QuickAssignDialog({ticket,onClose,onSave,statuses={}}) {
 
       <div>
         <label style={{fontSize:12,color:"rgba(226,232,240,0.65)",marginBottom:6,display:"block",fontWeight:600}}>Assign To</label>
-        <select value={assigneeId} onChange={e=>setAssigneeId(Number(e.target.value))}>
-          {STAFF_BASE.map(staff=>(
-            <option key={staff.id} value={staff.id}>{staff.name} ({staff.role}) - {getStaffStatus(staff.id,statuses)}</option>
-          ))}
+          <select value={assigneeId} onChange={e=>setAssigneeId(e.target.value)}>
+            <option value="team">IT Support Team</option>
+            {STAFF_BASE.map(staff=>(
+              <option key={staff.id} value={staff.id}>{staff.name} ({staff.role}) - {getStaffStatus(staff.id,statuses)}</option>
+            ))}
         </select>
       </div>
 
@@ -5514,7 +5715,7 @@ function QuickAssignDialog({ticket,onClose,onSave,statuses={}}) {
 
       <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
         <button onClick={onClose} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",padding:"10px 18px",borderRadius:10,fontSize:14}}>Cancel</button>
-        <button className="glow-btn" style={{padding:"10px 20px",fontSize:14}} onClick={()=>onSave(ticket.id,Number(assigneeId),remark)}>Save Assignment</button>
+        <button className="glow-btn" style={{padding:"10px 20px",fontSize:14}} onClick={()=>onSave(ticket.id,assigneeId,remark)}>Save Assignment</button>
       </div>
     </div>
   );
@@ -5549,6 +5750,7 @@ export default function App() {
   const [tempIssuesLoaded, setTempIssuesLoaded] = useState(false);
   const [tempIssueFilters, setTempIssueFilters] = useState({ status:"All", staff:"All", item:"All", search:"", from:"", to:"" });
   const [dashboardFilter, setDashboardFilter] = useState({ type:"Total", label:"Total" });
+  const [adminActionTab, setAdminActionTab] = useState("view_all");
   const [feedbackTicketId, setFeedbackTicketId] = useState("");
   const [dismissedFeedbackTickets, setDismissedFeedbackTickets] = useState([]);
   const [viewTicketId, setViewTicketId] = useState(null);
@@ -6135,24 +6337,27 @@ const handleNewTicket = async (form) => {
     let assignedTicket = null;
     let newAssignee = null;
     let previousAssignee = null;
+    const assignToTeam = assigneeId === "team" || Number(assigneeId) === 0;
+    const numericAssigneeId = assignToTeam ? 0 : Number(assigneeId);
 
     setTickets(ts => ts.map(t => {
       if (t.id !== ticketId) return t;
-      newAssignee = STAFF_BASE.find(s => s.id === assigneeId);
+      newAssignee = assignToTeam ? { id:0, name:"IT Support Team", role:"IT Support", email:"" } : STAFF_BASE.find(s => s.id === numericAssigneeId);
       previousAssignee = STAFF_BASE.find(s => s.id === t.assigneeId);
       const cleanRemark = remark.trim();
+      const actor = session?.type === "staff" ? session.name || "IT Staff" : "Admin";
       const timelineEntry = {
         action: `Quick assigned to ${newAssignee?.name || "Unassigned"}`,
         remark: cleanRemark,
         at: Date.now(),
-        by: "Admin",
+        by: actor,
       };
       const comments = cleanRemark
-        ? [...(t.comments || []), { text: cleanRemark, at: Date.now(), by: "Admin" }]
+        ? [...(t.comments || []), { text: cleanRemark, at: Date.now(), by: actor }]
         : (t.comments || []);
       assignedTicket = {
         ...t,
-        assigneeId,
+        assigneeId:numericAssigneeId,
         assigneeName:newAssignee?.name || t.assigneeName,
         assignedTo:newAssignee?.name || t.assignedTo,
         status: t.status === "Open" ? "Assigned" : t.status,
@@ -6164,7 +6369,7 @@ const handleNewTicket = async (form) => {
     }));
 
     if (assignedTicket) {
-      emailTicketAssigned(assignedTicket, newAssignee, previousAssignee, "Admin", remark.trim());
+      emailTicketAssigned(assignedTicket, newAssignee, previousAssignee, session?.type === "staff" ? session.name || "IT Staff" : "Admin", remark.trim());
       toast(`Ticket assigned to ${newAssignee?.name || "staff"}`,"success");
     }
     setQuickAssignTicketId(null);
@@ -6320,11 +6525,26 @@ const handleNewTicket = async (form) => {
     </div>
   );
 
+  const handleAdminActionTab = (action) => {
+    if(action==="export") {
+      downloadTicketCsv(tickets);
+      toast("Tickets exported to CSV","success");
+      setAdminActionTab("export");
+      return;
+    }
+    setAdminActionTab(action);
+    if(action==="view_all") setDashboardFilter({ type:"Total", label:"Total" });
+    if(action==="assign") setDashboardFilter({ type:"Assign", label:"Assignment Queue" });
+    if(action==="close") setDashboardFilter({ type:"Closed", label:"Closed / Resolved" });
+  };
+
   const renderPage = () => {
     if (isAdmin) {
       if (page === "dashboard") {
         const filteredDashboardTickets = dashboardFilter.type === "Total"
           ? tickets
+          : dashboardFilter.type === "Assign"
+            ? filterActionTickets("assign", tickets, tickets)
           : dashboardFilter.type === "Open"
             ? tickets.filter(t => t.status === "Open")
             : dashboardFilter.type === "In Progress"
@@ -6334,7 +6554,7 @@ const handleNewTicket = async (form) => {
                 : dashboardFilter.type === "Critical"
                   ? tickets.filter(t => t.priority === "Critical")
                   : dashboardFilter.type === "Closed"
-                    ? tickets.filter(t => t.status === "Closed")
+                    ? tickets.filter(t => t.status === "Closed" || t.status === "Resolved")
                     : tickets;
         const escalatedTickets = tickets.filter(t => getEscalationInfo(t).overdue).sort((a,b)=>getEscalationInfo(b).level-getEscalationInfo(a).level || (b.createdAt||0)-(a.createdAt||0));
 
@@ -6361,6 +6581,14 @@ const handleNewTicket = async (form) => {
                 />
               ))}
             </div>
+            <div className="glass" style={{padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:900,color:"#fff"}}>Admin Actions</div>
+                <div style={{fontSize:12,color:"rgba(226,232,240,.5)",marginTop:3}}>Filter, assign, export, or manage users.</div>
+              </div>
+              <ActionTabs permissions={["view_all","assign","close","export","manage_users"]} active={adminActionTab} onSelect={handleAdminActionTab} />
+            </div>
+            {adminActionTab==="manage_users"&&<ManageUsersPanel />}
             <IncidentManager incidents={incidents} onSave={handleSaveIncident} toast={toast} />
             <div className="glass" style={{padding:"18px",display:"grid",gap:14}}>
               <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap"}}>
@@ -6381,7 +6609,7 @@ const handleNewTicket = async (form) => {
                 <button className="glow-btn" onClick={() => setDashboardFilter({ type: "Total", label: "Total" })}>Show All</button>
               </div>
             )}
-            {dashboardFilter.type === "Total" ? (
+            {dashboardFilter.type === "Total" && adminActionTab!=="manage_users" ? (
               <>
                 <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>Recent Tickets</h3>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10}}>
@@ -6442,7 +6670,7 @@ const handleNewTicket = async (form) => {
     }
 
     if (isStaff && (page === "staff-dash" || page === "assigned")) {
-      return <StaffPanel staffId={session.staffId} tickets={tickets} setTickets={setTickets} toast={toast} onViewTicket={setViewTicketId} permissions={session.permissions} staffProfiles={staffProfiles} staffStatuses={staffStatuses} showWelcome={showSmartWelcome} />;
+      return <StaffPanel staffId={session.staffId} tickets={tickets} setTickets={setTickets} toast={toast} onViewTicket={setViewTicketId} onQuickAssign={setQuickAssignTicketId} permissions={session.permissions} staffProfiles={staffProfiles} staffStatuses={staffStatuses} showWelcome={showSmartWelcome} />;
     }
 
     if (page === "home") return <CategoryGrid onSelect={cat => setFormCat(cat)} onSmartTicket={()=>setSmartTicketOpen(true)} session={session} showWelcome={showSmartWelcome} />;
