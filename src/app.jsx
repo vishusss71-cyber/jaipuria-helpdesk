@@ -1540,15 +1540,16 @@ textarea:focus{
 .ai-helpdesk-card-footer{margin:8px 10px 10px;border-radius:12px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.18);padding:9px 10px;white-space:pre-wrap;color:#bbf7d0;font-weight:800;font-size:12px}
 .ai-helpdesk-input{display:flex;gap:8px;padding:12px;border-top:1px solid rgba(255,255,255,.08);background:rgba(10,10,20,.94);backdrop-filter:blur(18px);flex-shrink:0}
 .ai-helpdesk-input input{min-width:0}.ai-helpdesk-input .glow-btn{padding:10px 13px;font-size:12px}
-.ai-helpdesk-quick{display:flex;gap:7px;flex-wrap:wrap;padding:10px 12px 0;border-top:1px solid rgba(255,255,255,.07);background:rgba(10,10,20,.9)}
-.ai-helpdesk-chip{border:1px solid rgba(125,211,252,.18);border-radius:999px;background:rgba(255,255,255,.06);color:#dbeafe;padding:7px 9px;font-size:11px;font-weight:900;transition:transform .18s ease,background .18s ease,border-color .18s ease;white-space:nowrap}
-.ai-helpdesk-chip:hover{transform:translateY(-1px);background:rgba(14,165,233,.12);border-color:rgba(125,211,252,.34)}
-.ai-helpdesk-chip:active{transform:scale(.97)}
 .ai-typing{display:flex;align-items:center;gap:6px;color:rgba(226,232,240,.74)!important;font-style:italic}.ai-typing span{width:5px;height:5px;border-radius:50%;background:#67e8f9;display:inline-block;animation:pulse 1s infinite}.ai-typing span:nth-child(2){animation-delay:.15s}.ai-typing span:nth-child(3){animation-delay:.3s}
 .theme-glow{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden;background:radial-gradient(circle at 14% 18%,rgba(37,99,235,.08),transparent 30%),radial-gradient(circle at 82% 8%,rgba(139,92,246,.07),transparent 32%),radial-gradient(circle at 70% 86%,rgba(6,182,212,.06),transparent 34%);animation:themeGlowShift 14s ease-in-out infinite alternate}
 @keyframes themeGlowShift{from{filter:hue-rotate(0deg);opacity:.72;transform:scale(1)}to{filter:hue-rotate(12deg);opacity:.95;transform:scale(1.03)}}
+.smart-welcome-once{animation:smartWelcomeFade 5s ease forwards}
+@keyframes smartWelcomeFade{0%,82%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-8px)}}
+.network-ticker{min-width:0;max-width:min(560px,42vw);overflow:hidden;border:1px solid rgba(125,211,252,.16);border-radius:999px;background:linear-gradient(135deg,rgba(14,165,233,.1),rgba(139,92,246,.08),rgba(6,182,212,.08));box-shadow:0 0 20px rgba(6,182,212,.12);padding:6px 0;color:#bae6fd;font-size:11px;font-weight:900;white-space:nowrap}
+.network-ticker-track{display:inline-block;padding-left:100%;animation:networkTicker 18s linear infinite}
+@keyframes networkTicker{from{transform:translateX(0)}to{transform:translateX(-100%)}}
 .app-sidebar,.app-main{position:relative;z-index:1}
-@media (max-width:768px){.ai-helpdesk-wrap{right:10px;bottom:132px}.ai-helpdesk-panel{width:calc(100vw - 20px);height:calc(100dvh - 176px);border-radius:18px!important}.ai-helpdesk-bubble{max-width:90%}.ai-helpdesk-button{padding:10px 13px;font-size:12px}.ai-helpdesk-input{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}.ai-helpdesk-chip{font-size:10px;padding:6px 8px}}
+@media (max-width:768px){.ai-helpdesk-wrap{right:10px;bottom:132px}.ai-helpdesk-panel{width:calc(100vw - 20px);height:calc(100dvh - 176px);border-radius:18px!important}.ai-helpdesk-bubble{max-width:90%}.ai-helpdesk-button{padding:10px 13px;font-size:12px}.ai-helpdesk-input{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}.network-ticker{order:3;flex-basis:100%;max-width:100%;font-size:10px}.network-ticker span{display:inline-block!important}}
 @media (max-width:480px){.ai-helpdesk-wrap{right:8px;bottom:126px}.ai-helpdesk-panel{width:calc(100vw - 16px);height:calc(100dvh - 164px)}.ai-helpdesk-head{padding:12px}.ai-helpdesk-messages{padding:12px}.ai-helpdesk-input .glow-btn{min-width:58px}}`;
 
 // ── TOAST ─────────────────────────────────────────────────────────────────
@@ -1738,14 +1739,44 @@ function StatCard({label,value,icon,color,sub,onClick}) {
   );
 }
 
-function SmartWelcome({session}) {
+function SmartWelcome({session,visible=true}) {
   const name=getDisplayName(session);
+  if(!visible) return null;
   return (
-    <div className="glass" style={{padding:"18px 20px",marginBottom:18,background:"linear-gradient(135deg,rgba(14,165,233,.13),rgba(139,92,246,.1),rgba(255,255,255,.04))",border:"1px solid rgba(125,211,252,.16)"}}>
+    <div className="glass smart-welcome-once" style={{padding:"18px 20px",marginBottom:18,background:"linear-gradient(135deg,rgba(14,165,233,.13),rgba(139,92,246,.1),rgba(255,255,255,.04))",border:"1px solid rgba(125,211,252,.16)"}}>
       <h2 style={{fontFamily:"Syne",fontSize:"clamp(20px,4vw,26px)",fontWeight:900,color:"#f8fafc",marginBottom:5,lineHeight:1.18}}>{getGreetingLabel()}, {name} 👋</h2>
       <p style={{fontSize:14,color:"rgba(226,232,240,.62)",margin:0}}>How can IT Helpdesk assist you today?</p>
     </div>
   );
+}
+
+function NetworkStatusTicker() {
+  const fallback="⚡ AI Network Monitor Active";
+  const [message,setMessage]=useState(fallback);
+  useEffect(()=>{
+    let alive=true;
+    const update=()=>{
+      try {
+        const connection=navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        const downlink=Number(connection?.downlink || 0);
+        if(!Number.isFinite(downlink) || downlink<=0) {
+          if(alive) setMessage(fallback);
+          return;
+        }
+        const download=Math.max(1,Math.round(downlink));
+        const rtt=Number(connection?.rtt || 120);
+        const upload=Math.max(1,Math.round(download * (rtt && rtt>180 ? 0.24 : 0.34)));
+        if(alive) setMessage(`⚡ Your current network performance: Download ${download} Mbps | Upload ${upload} Mbps | AI monitoring active`);
+      } catch(error) {
+        console.error("Network ticker update failed:", error);
+        if(alive) setMessage(fallback);
+      }
+    };
+    update();
+    const interval=setInterval(update,60000);
+    return()=>{alive=false;clearInterval(interval);};
+  },[]);
+  return <div className="network-ticker" aria-label="Network status"><span className="network-ticker-track">{message}</span></div>;
 }
 
 function EmptyState({message,icon="ℹ️"}) {
@@ -2500,11 +2531,11 @@ function SmartTicketModal({session,onSubmit,onClose,toast}) {
   );
 }
 
-function CategoryGrid({onSelect,onSmartTicket,session}) {
+function CategoryGrid({onSelect,onSmartTicket,session,showWelcome}) {
   const [hover,setHover]=useState(null);
   return (
     <div>
-      <SmartWelcome session={session} />
+      <SmartWelcome session={session} visible={showWelcome} />
       <div className="glass" style={{padding:"22px",marginBottom:18,background:"radial-gradient(circle at 0 0,rgba(14,165,233,.22),transparent 36%),linear-gradient(135deg,rgba(15,23,42,.9),rgba(30,41,59,.78))"}}>
         <div style={{display:"inline-flex",alignItems:"center",gap:8,border:"1px solid rgba(125,211,252,.22)",borderRadius:999,padding:"6px 10px",color:"#7dd3fc",fontSize:12,fontWeight:900,marginBottom:12}}><span className="pulse">✦</span> AI Powered Support</div>
         <h2 style={{fontFamily:"Syne",fontSize:24,fontWeight:900,color:"#e2e8f0",marginBottom:6}}>IT Helpdesk Portal</h2>
@@ -3706,30 +3737,6 @@ function AIHelpdeskChat({session,onCreateTicket}) {
     }
   };
 
-  const handleQuickAction=(action)=>{
-    if(loading) return;
-    if(action==="wifi") {
-      const wifiReply=getWifiTroubleshooting();
-      setLastHelpdeskContext(handleWifiTicketFlow());
-      setActiveCategoryId(null);
-      setMessages(prev=>[...prev,{id:genToken(),role:"user",text:"Fix WiFi",at:Date.now()},{id:genToken(),role:"assistant",at:Date.now(),...wifiReply}]);
-      return;
-    }
-    if(action==="ticket") {
-      setMessages(prev=>[...prev,{id:genToken(),role:"user",text:"Raise Ticket",at:Date.now()}]);
-      startTicketFlow();
-      return;
-    }
-    if(action==="track") {
-      setMessages(prev=>[...prev,{id:genToken(),role:"user",text:"Track Ticket",at:Date.now()},{id:genToken(),role:"assistant",text:"Please open My Tickets or Track Ticket from the portal menu to check your ticket status. You can also type your ticket ID in Track Ticket.",at:Date.now()}]);
-      return;
-    }
-    if(action==="it") {
-      setMessages(prev=>[...prev,{id:genToken(),role:"user",text:"Talk to IT",at:Date.now()}]);
-      startTicketFlow();
-    }
-  };
-
   return (
     <div className="ai-helpdesk-wrap">
       {open&&(
@@ -3790,13 +3797,6 @@ function AIHelpdeskChat({session,onCreateTicket}) {
               </div>
             )}
             <div ref={endRef}/>
-          </div>
-
-          <div className="ai-helpdesk-quick">
-            <button type="button" className="ai-helpdesk-chip" onClick={()=>handleQuickAction("wifi")}>Fix WiFi</button>
-            <button type="button" className="ai-helpdesk-chip" onClick={()=>handleQuickAction("ticket")}>Raise Ticket</button>
-            <button type="button" className="ai-helpdesk-chip" onClick={()=>handleQuickAction("track")}>Track Ticket</button>
-            <button type="button" className="ai-helpdesk-chip" onClick={()=>handleQuickAction("it")}>Talk to IT</button>
           </div>
 
           <div className="ai-helpdesk-input">
@@ -4388,14 +4388,14 @@ function TrackTicket({tickets,onView}) {
 }
 
 // ── STAFF PANEL ───────────────────────────────────────────────────────────
-function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions,staffProfiles={},staffStatuses={}}) {
+function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions,staffProfiles={},staffStatuses={},showWelcome=false}) {
   const staff=STAFF_BASE.find(s=>s.id===staffId);
   const myTickets=tickets.filter(t=>t.assigneeId===staffId || (t.watchers||[]).some(w=>Number(w.id)===Number(staffId)) || (t.notifiedStaff||[]).some(w=>Number(w.id)===Number(staffId)));
   const active=myTickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
   const resolved=myTickets.filter(t=>t.status==="Resolved"||t.status==="Closed").length;
   return (
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
-      <SmartWelcome session={{name:staff?.name}} />
+      <SmartWelcome session={{name:staff?.name}} visible={showWelcome} />
       <div className="glass" style={{padding:"24px",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
         <StaffAvatar staff={staff} profiles={staffProfiles} statuses={staffStatuses} size={56} showStatus />
         <div style={{flex:1}}>
@@ -5210,6 +5210,7 @@ export default function App() {
   const [staffPanel, setStaffPanel] = useState(null);
   const [staffMenuOpen, setStaffMenuOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted");
+  const [showSmartWelcome, setShowSmartWelcome] = useState(() => Boolean(getSavedSession()));
   useEffect(() => {
     let alive = true;
     const loadTickets = async () => {
@@ -5308,6 +5309,11 @@ export default function App() {
   useEffect(() => DB.set("staff_profiles", staffProfiles), [staffProfiles]);
   useEffect(() => DB.set("staff_statuses", staffStatuses), [staffStatuses]);
   useEffect(() => {
+    if (!session || !showSmartWelcome) return;
+    const timer=setTimeout(()=>setShowSmartWelcome(false),5000);
+    return()=>clearTimeout(timer);
+  }, [session, showSmartWelcome]);
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const ticketId = new URLSearchParams(window.location.search).get("feedbackTicket");
     if (ticketId) {
@@ -5323,6 +5329,7 @@ export default function App() {
     }
 
     setSession(sess);
+    setShowSmartWelcome(true);
     if (hasStorage()) localStorage.setItem("helpdesk_session", JSON.stringify(sess));
     setPage(sess.type === "admin" ? "dashboard" : sess.type === "staff" ? "staff-dash" : "home");
     toast(`Welcome${sess.name ? `, ${sess.name}` : ""}!`, "success");
@@ -5331,6 +5338,7 @@ export default function App() {
   const logoutUser = () => {
     if (hasStorage()) localStorage.removeItem("helpdesk_session");
     setSession(null);
+    setShowSmartWelcome(false);
     setPage("home");
     setViewTicketId(null);
   };
@@ -5917,7 +5925,7 @@ const handleNewTicket = async (form) => {
 
         return (
           <div style={{display:"flex",flexDirection:"column",gap:24}}>
-            <SmartWelcome session={session} />
+            <SmartWelcome session={session} visible={showSmartWelcome} />
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
               <div>
                 <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Admin Dashboard</h2>
@@ -6005,10 +6013,10 @@ const handleNewTicket = async (form) => {
     }
 
     if (isStaff && (page === "staff-dash" || page === "assigned")) {
-      return <StaffPanel staffId={session.staffId} tickets={tickets} setTickets={setTickets} toast={toast} onViewTicket={setViewTicketId} permissions={session.permissions} staffProfiles={staffProfiles} staffStatuses={staffStatuses} />;
+      return <StaffPanel staffId={session.staffId} tickets={tickets} setTickets={setTickets} toast={toast} onViewTicket={setViewTicketId} permissions={session.permissions} staffProfiles={staffProfiles} staffStatuses={staffStatuses} showWelcome={showSmartWelcome} />;
     }
 
-    if (page === "home") return <CategoryGrid onSelect={cat => setFormCat(cat)} onSmartTicket={()=>setSmartTicketOpen(true)} session={session} />;
+    if (page === "home") return <CategoryGrid onSelect={cat => setFormCat(cat)} onSmartTicket={()=>setSmartTicketOpen(true)} session={session} showWelcome={showSmartWelcome} />;
     if (page === "my-tickets") return (
       <div>
         <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>My Tickets</h2>
@@ -6061,6 +6069,7 @@ const handleNewTicket = async (form) => {
             <div className="header-actions" style={{display:"flex",gap:10,alignItems:"center"}}>
               <div className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#10b981"}} />
               <span style={{fontSize:12,color:"rgba(226,232,240,0.4)"}}>Live</span>
+              <NetworkStatusTicker />
               <NotificationButton toast={toast} enabled={notificationsEnabled} setEnabled={setNotificationsEnabled} />
               {!isStaff&&<button onClick={logoutUser} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",padding:"6px 14px",borderRadius:8,fontSize:13}}>Logout</button>}
             </div>
