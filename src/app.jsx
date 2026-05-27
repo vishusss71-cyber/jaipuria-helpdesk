@@ -2477,6 +2477,17 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         ))}
       </div>
 
+      <div className="glass" style={{padding:"16px 18px"}}>
+        <div style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:10}}>TICKET METADATA</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,fontSize:13,color:"rgba(226,232,240,.76)"}}>
+          <div><b>Source:</b> {currentTicket.source || "Portal"}</div>
+          <div><b>AI Status:</b> {getTicketStatusExplanation(currentTicket.status)}</div>
+          <div><b>Assigned To:</b> {currentTicket.assigneeName || currentTicket.assignedTo || staffName(currentTicket.assigneeId)}</div>
+          <div><b>Escalation:</b> {getEscalationInfo(currentTicket).overdue ? getEscalationInfo(currentTicket).label : "Not escalated"}</div>
+          <div style={{gridColumn:"1/-1"}}><b>Watchers:</b> {(currentTicket.watchers||currentTicket.notifiedStaff||[]).map(w=>w.name).filter(Boolean).join(", ") || "All IT Staff"}</div>
+        </div>
+      </div>
+
       {/* Description */}
       <div className="glass" style={{padding:"16px 18px"}}>
         <div style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginBottom:8}}>DESCRIPTION</div>
@@ -2729,41 +2740,47 @@ function TicketCard({ticket,onView,showFeedbackPending=false,showFeedbackUnread=
   const feedbackPending=showFeedbackPending && isTicketFeedbackPending(ticket);
   const unreadFeedback=showFeedbackUnread && ticket.feedbackStatus==="Submitted";
   const escalation=getEscalationInfo(ticket);
+  if(!ticket?.id) return null;
+  const assigneeLabel=ticket.assigneeName || ticket.assignedTo || staffName(ticket.assigneeId);
   return (
-    <div className="glass2" style={{padding:"16px 18px",cursor:"pointer",transition:"all .2s",borderColor:escalation.overdue?"rgba(239,68,68,.46)":undefined,boxShadow:escalation.overdue?"0 18px 46px rgba(239,68,68,.16),0 0 30px rgba(249,115,22,.12)":undefined}}
+    <div className="glass2" style={{padding:"12px 13px",cursor:"pointer",transition:"all .2s",borderRadius:11,minHeight:128,borderColor:escalation.overdue?"rgba(239,68,68,.46)":undefined,boxShadow:escalation.overdue?"0 14px 34px rgba(239,68,68,.14),0 0 24px rgba(249,115,22,.1)":undefined}}
       onClick={()=>onView(ticket.id)}
       onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(99,102,241,0.4)";e.currentTarget.style.background="rgba(255,255,255,0.08)";}}
       onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.1)";e.currentTarget.style.background="rgba(255,255,255,0.06)";}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:10}}>
-        <div style={{display:"flex",gap:10,alignItems:"center"}}>
-          <div style={{width:36,height:36,borderRadius:10,background:cat?.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{cat?.icon}</div>
-          <div><div style={{fontSize:13,fontWeight:600,color:"#e2e8f0"}}>{ticket.id}</div><div style={{fontSize:12,color:"rgba(226,232,240,0.5)"}}>{ticket.name}</div></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:8}}>
+        <div style={{display:"flex",gap:9,alignItems:"center",minWidth:0}}>
+          <div style={{width:31,height:31,borderRadius:9,background:cat?.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{cat?.icon}</div>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:900,color:"#f8fafc",lineHeight:1.1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ticket.id}</div>
+            <div style={{fontSize:11,color:"rgba(226,232,240,0.58)",marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ticket.name || "User"}</div>
+          </div>
         </div>
         <StatusBadge status={ticket.status}/>
       </div>
-      <div style={{fontSize:13,color:"rgba(226,232,240,0.7)",marginBottom:8,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{ticket.description}</div>
-      <div style={{fontSize:12,color:"#93c5fd",marginBottom:8}}>AI status: {getTicketStatusExplanation(ticket.status)}</div>
-      {ticket.aiSummary&&<div style={{fontSize:12,color:"#bae6fd",marginBottom:8,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}><b>AI Summary:</b> {ticket.aiSummary}</div>}
-      <div style={{display:"grid",gap:4,marginBottom:10,fontSize:11,color:"rgba(226,232,240,.46)"}}>
-        <div>Assigned to: <span style={{color:"#e2e8f0"}}>{ticket.assigneeName || ticket.assignedTo || staffName(ticket.assigneeId)}</span></div>
-        <div>Watchers: <span style={{color:"#e2e8f0"}}>{(ticket.watchers||ticket.notifiedStaff||[]).map(w=>w.name).filter(Boolean).join(", ") || "All IT Staff"}</span></div>
-        <div>Source: <span style={{color:"#e2e8f0"}}>{ticket.source || "Portal"}</span></div>
-      </div>
-      {(feedbackPending||unreadFeedback)&&(
-        <div style={{display:"inline-flex",alignItems:"center",gap:7,marginBottom:10,border:"1px solid rgba(16,185,129,.28)",background:"rgba(16,185,129,.12)",color:"#bbf7d0",borderRadius:999,padding:"5px 9px",fontSize:11,fontWeight:900}}>
-          <span className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",display:"inline-block"}}/>
-          {feedbackPending ? "Closed - Feedback Pending" : "New feedback"}
+      <div style={{display:"grid",gap:5,marginBottom:8,fontSize:11,color:"rgba(226,232,240,.52)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+          <span>Assigned To</span>
+          <span style={{color:"#e2e8f0",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:150}}>{assigneeLabel}</span>
         </div>
-      )}
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:(ticket.remoteSupportRequested||escalation.overdue)?10:0}}>
-        {ticket.remoteSupportRequested&&<span className="tag" style={{background:"rgba(14,165,233,.14)",color:"#bae6fd",fontSize:11}}>Remote Support Requested</span>}
-        {escalation.overdue&&<span className="tag" style={{background:"rgba(239,68,68,.17)",color:"#fecaca",fontSize:11}}>Overdue · L{escalation.level}</span>}
+        <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+          <span>TAT Time</span>
+          <span style={{color:"#bae6fd",fontWeight:900}}>{isClosedTicket(ticket) && ticket.closedAt ? formatDuration(ticket.closedAt-ticket.createdAt) : timeAgo(ticket.createdAt)}</span>
+        </div>
       </div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:10}}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:8}}>
+        {escalation.overdue&&<span className="tag" style={{background:"rgba(239,68,68,.17)",color:"#fecaca",fontSize:10,padding:"3px 7px"}}>Escalated L{escalation.level}</span>}
+        {ticket.status==="Reopened"&&<span className="tag" style={{background:"rgba(245,158,11,.16)",color:"#fde68a",fontSize:10,padding:"3px 7px"}}>Reopened</span>}
+        {(feedbackPending||unreadFeedback)&&(
+          <span style={{display:"inline-flex",alignItems:"center",gap:6,border:"1px solid rgba(16,185,129,.28)",background:"rgba(16,185,129,.12)",color:"#bbf7d0",borderRadius:999,padding:"3px 7px",fontSize:10,fontWeight:900}}>
+            <span className="pulse" style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",display:"inline-block"}}/>
+            {feedbackPending ? "Feedback Pending" : "New Feedback"}
+          </span>
+        )}
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
         <PriorityBadge p={ticket.priority}/>
-        <span style={{fontSize:11,color:"rgba(226,232,240,0.35)"}}>{timeAgo(ticket.createdAt)}</span>
+        <span style={{fontSize:11,color:"rgba(226,232,240,0.38)",fontWeight:800}}>View details</span>
       </div>
-      <TimerBadge ticket={ticket}/>
     </div>
   );
 }
@@ -4742,7 +4759,7 @@ function TicketsTable({tickets,onView,isAdmin,onDelete,emptyKind=""}) {
         <select value={sort} onChange={e=>setSort(e.target.value)} style={{width:"auto"}}><option value="newest">Newest</option><option value="priority">Priority</option></select>
       </div>
       <div style={{fontSize:13,color:"rgba(226,232,240,0.4)"}}>{filtered.length} ticket{filtered.length!==1?"s":""}</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10}}>
         {filtered.map(t=>(
           <div key={t.id} style={{position:"relative"}}>
             <TicketCard ticket={t} onView={onView} showFeedbackUnread={isAdmin&&isTicketFeedbackUnread(t,true,false)}/>
@@ -4808,7 +4825,7 @@ function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,permissions,s
         </div>
       </div>
       <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>Assigned Tickets</h3>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10}}>
         {[...myTickets].sort((a,b)=>b.createdAt-a.createdAt).map(t=><TicketCard key={t.id} ticket={t} onView={onViewTicket} showFeedbackUnread={isTicketFeedbackUnread(t,false,true)}/>)}
         {myTickets.length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>✅</div><div>No tickets assigned yet</div></div>}
       </div>
@@ -6315,6 +6332,7 @@ const handleNewTicket = async (form) => {
   const userFeedbackPendingCount = !isAdmin && !isStaff ? myTickets.filter(isTicketFeedbackPending).length : 0;
   const quickAssignTicket = tickets.find(t => t.id === quickAssignTicketId);
   const linkedFeedbackTicket = tickets.find(t => t.id === feedbackTicketId);
+  const selectedViewTicket = tickets.find(t => t.id === viewTicketId) || null;
   const pendingFeedbackTicket = null;
 
   const handleStaffMenuAction = (id) => {
@@ -6416,7 +6434,7 @@ const handleNewTicket = async (form) => {
                 </div>
                 <span className="tag" style={{background:"rgba(239,68,68,.16)",color:"#fecaca"}}>{escalatedTickets.length} overdue</span>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10}}>
                 {escalatedTickets.slice(0,6).map(ticket=><TicketCard key={ticket.id} ticket={ticket} onView={setViewTicketId} showFeedbackUnread={isTicketFeedbackUnread(ticket,true,false)} />)}
                 {escalatedTickets.length===0&&<EmptyState message="No escalated tickets right now." icon="✅" />}
               </div>
@@ -6430,7 +6448,7 @@ const handleNewTicket = async (form) => {
             {dashboardFilter.type === "Total" ? (
               <>
                 <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>Recent Tickets</h3>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10}}>
                   {tickets.slice(0,6).map(t => (
                     <div key={t.id} style={{position:"relative"}}>
                       <TicketCard ticket={t} onView={setViewTicketId} showFeedbackUnread={isTicketFeedbackUnread(t,true,false)} />
@@ -6496,7 +6514,7 @@ const handleNewTicket = async (form) => {
       <div>
         <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>My Tickets</h2>
         {userFeedbackPendingCount===0&&<div className="glass2" style={{padding:"12px 14px",marginBottom:14,color:"#bbf7d0",borderColor:"rgba(16,185,129,.22)",background:"rgba(16,185,129,.07)",fontSize:13,fontWeight:800}}>No pending feedback. You're all caught up.</div>}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10}}>
           {myTickets.map(t => <TicketCard key={t.id} ticket={t} onView={setViewTicketId} showFeedbackPending={isTicketFeedbackPending(t)} />)}
           {myTickets.length === 0 && <div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>🎫</div><div>No tickets yet</div><button className="glow-btn" style={{marginTop:16}} onClick={() => setPage("home")}>Raise Ticket</button></div>}
         </div>
@@ -6592,10 +6610,10 @@ const handleNewTicket = async (form) => {
           </div>
         </Modal>
       )}
-      {viewTicketId && (
-        <Modal title={`Ticket - ${viewTicketId}`} onClose={() => setViewTicketId(null)}>
+      {viewTicketId && selectedViewTicket && (
+        <Modal title={`Ticket - ${selectedViewTicket.id}`} onClose={() => setViewTicketId(null)}>
           <TicketDetail
-            ticketId={viewTicketId}
+            ticketId={selectedViewTicket.id}
             tickets={tickets}
             setTickets={setTickets}
             isAdmin={isAdmin}
