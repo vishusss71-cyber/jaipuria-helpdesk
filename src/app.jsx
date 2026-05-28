@@ -5,7 +5,7 @@ import autoTable from "jspdf-autotable";
 import emailjs from '@emailjs/browser';
 import { motion, AnimatePresence } from 'framer-motion';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, query, where, orderBy, addDoc } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, query, where, orderBy, limit, addDoc } from 'firebase/firestore';
 const EMAIL_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || 'service_ctyqqbc';
 const EMAIL_CREATE_TEMPLATE_ID = "template_a30g4md";
 const EMAIL_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || 'N9OlDxPyO0uf_IlxJ';
@@ -24,6 +24,11 @@ const FIRESTORE_DATABASE_PATH = FIRESTORE_DATABASE_ID || "(default)";
 const FIRESTORE_BASE_URL = ONLINE_TICKETS_ENABLED
   ? `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${FIRESTORE_DATABASE_PATH}/documents`
   : "";
+const TICKET_QUERY_LIMIT = Number(import.meta.env.VITE_TICKET_QUERY_LIMIT || 20);
+const AUX_QUERY_LIMIT = Number(import.meta.env.VITE_AUX_QUERY_LIMIT || 20);
+const CACHE_TTL_MS = 2 * 60 * 1000;
+const DB_QUOTA_MESSAGE = "Daily database quota exceeded. Please try again later.";
+const ticketSaveDedupe = new Map();
 
 // Initialize Firebase
 let firebaseApp = null;
@@ -115,17 +120,101 @@ function getFirestoreErrorMessage(body) {
   }
 }
 
-async function fetchTickets() {
+function isFirestoreQuotaError(error) {
+  const text = String(error?.message || error || "").toLowerCase();
+  return text.includes("429") || text.includes("quota") || text.includes("resource_exhausted");
+}
+
+function friendlyDbError(error) {
+  return isFirestoreQuotaError(error) ? DB_QUOTA_MESSAGE : (error?.message || "Firestore error");
+}
+
+function cacheGet(key) {
+  if (!hasStorage()) return null;
+  try {
+    const cached = JSON.parse(localStorage.getItem(key) || "null");
+    if (!cached || Date.now() - Number(cached.at || 0) > CACHE_TTL_MS) return null;
+    return cached.value;
+  } catch {
+    return null;
+  }
+}
+
+function cacheSet(key, value) {
+  if (!hasStorage()) return;
+  try {
+    localStorage.setItem(key, JSON.stringify({ at: Date.now(), value }));
+  } catch {
+    // Quota-safe fallback: ignore cache write failures.
+  }
+}
+
+async function runCollectionQuery(collectionId, structuredQuery) {
+  if (!ONLINE_TICKETS_ENABLED) return [];
+  const res = await fetch(`${FIRESTORE_BASE_URL}:runQuery?key=${encodeURIComponent(FIREBASE_API_KEY)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId }], ...structuredQuery } }),
+  });
+  if (!res.ok) throw new Error(`Firestore ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
+  const data = await res.json();
+  return (data || []).filter(row => row.document).map(row => ({
+    id: row.document.name?.split("/").pop(),
+    ...fromFirestoreFields(row.document.fields || {})
+  }));
+}
+
+async function fetchCollectionPage(collectionId, pageSize = AUX_QUERY_LIMIT, orderField = "createdAt") {
+  if (!ONLINE_TICKETS_ENABLED) return [];
+  const params = new URLSearchParams({
+    key: FIREBASE_API_KEY,
+    pageSize: String(pageSize),
+  });
+  if (orderField) params.set("orderBy", `${orderField} desc`);
+  const res = await fetch(`${FIRESTORE_BASE_URL}/${collectionId}?${params.toString()}`);
+  if (!res.ok) throw new Error(`Firestore ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
+  const data = await res.json();
+  return (data.documents || []).map(doc => ({
+    id: doc.name?.split("/").pop(),
+    ...fromFirestoreFields(doc.fields || {})
+  }));
+}
+
+async function fetchTickets(options = {}) {
   if (!ONLINE_TICKETS_ENABLED) {
     console.warn("Firestore is not configured. Check Vercel env vars and redeploy.");
     return [];
   }
-  const res = await fetch(`${FIRESTORE_BASE_URL}/tickets?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
-  if (!res.ok) throw new Error(`Firestore ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
-  const data = await res.json();
-  return (data.documents || [])
-    .map(doc => normalizeTicket({ id: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
+  const pageSize = Number(options.limit || TICKET_QUERY_LIMIT);
+  const cacheKey = `tickets:${options.userEmail || ""}:${options.staffId || ""}:${options.status || "recent"}:${pageSize}`;
+  if (!options.force) {
+    const cached = cacheGet(cacheKey);
+    if (cached) return cached.map(normalizeTicket);
+  }
+  let rows = [];
+  if (options.userEmail) {
+    rows = await runCollectionQuery("tickets", {
+      where: { fieldFilter: { field: { fieldPath: "email" }, op: "EQUAL", value: toFirestoreValue(options.userEmail) } },
+      limit: pageSize,
+    });
+  } else if (options.staffId) {
+    rows = await runCollectionQuery("tickets", {
+      where: { fieldFilter: { field: { fieldPath: "assigneeId" }, op: "EQUAL", value: toFirestoreValue(Number(options.staffId)) } },
+      limit: pageSize,
+    });
+  } else if (options.status) {
+    rows = await runCollectionQuery("tickets", {
+      where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: toFirestoreValue(options.status) } },
+      limit: pageSize,
+    });
+  } else {
+    rows = await fetchCollectionPage("tickets", pageSize, "createdAt");
+  }
+  const tickets = rows
+    .map(doc => normalizeTicket(doc))
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  cacheSet(cacheKey, tickets);
+  return tickets;
 }
 
 async function saveTicket(ticket) {
@@ -133,27 +222,38 @@ async function saveTicket(ticket) {
     throw new Error("Firestore is not configured. Check Vercel env vars and redeploy.");
   }
   const cleanTicket = normalizeTicket(ticket);
+  if (!cleanTicket.id) throw new Error("Missing ticket ID");
+  const payload = JSON.stringify(toFirestoreFields(cleanTicket));
+  const dedupeKey = cleanTicket.id;
+  const existing = ticketSaveDedupe.get(dedupeKey);
+  if (existing && existing.payload === payload && Date.now() - existing.at < 2500) {
+    return existing.promise;
+  }
   const url = `${FIRESTORE_BASE_URL}/tickets/${encodeURIComponent(cleanTicket.id)}?key=${encodeURIComponent(FIREBASE_API_KEY)}`;
-  console.log("Firestore save URL:", url);
-  const res = await fetch(url, {
+  const promise = fetch(url, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ fields: toFirestoreFields(cleanTicket) }),
-  });
+  }).then(async res => {
   if (!res.ok) {
     const body = await res.text();
     console.error("Firestore save response:", res.status, body);
     throw new Error(`Firestore ${res.status}: ${getFirestoreErrorMessage(body)}`);
   }
+  });
+  ticketSaveDedupe.set(dedupeKey, { payload, at: Date.now(), promise });
+  try {
+    await promise;
+  } finally {
+    setTimeout(() => {
+      const latest = ticketSaveDedupe.get(dedupeKey);
+      if (latest?.promise === promise) ticketSaveDedupe.delete(dedupeKey);
+    }, 2500);
+  }
 }
 
 async function updateTicket(ticket) {
   return saveTicket(ticket);
-}
-
-async function saveTickets(tickets) {
-  if (!ONLINE_TICKETS_ENABLED) return;
-  await Promise.all((tickets || []).map(ticket => saveTicket(ticket)));
 }
 
 async function deleteTicket(ticketId) {
@@ -178,12 +278,14 @@ function normalizeIncident(entry = {}) {
 }
 async function fetchIncidents() {
   if (!ONLINE_TICKETS_ENABLED) return [];
-  const res = await fetch(`${FIRESTORE_BASE_URL}/incidents?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
-  if (!res.ok) throw new Error(`Firestore incidents ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
-  const data = await res.json();
-  return (data.documents || [])
-    .map(doc => normalizeIncident({ id: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
+  const cached = cacheGet("incidents:active");
+  if (cached) return cached.map(normalizeIncident);
+  const rows = await fetchCollectionPage("incidents", 12, "updatedAt");
+  const incidents = rows
+    .map(doc => normalizeIncident(doc))
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  cacheSet("incidents:active", incidents);
+  return incidents;
 }
 async function saveIncident(entry) {
   if (!ONLINE_TICKETS_ENABLED) throw new Error("Firestore is not configured. Check Vercel env vars and redeploy.");
@@ -221,12 +323,14 @@ async function fetchFeedback() {
     console.warn("Firestore feedback storage is not configured. Check Vercel env vars and redeploy.");
     return [];
   }
-  const res = await fetch(`${FIRESTORE_BASE_URL}/feedback?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
-  if (!res.ok) throw new Error(`Firestore feedback ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
-  const data = await res.json();
-  return (data.documents || [])
-    .map(doc => normalizeFeedback({ id: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
+  const cached = cacheGet("feedback:recent");
+  if (cached) return cached.map(normalizeFeedback);
+  const rows = await fetchCollectionPage("feedback", AUX_QUERY_LIMIT, "createdAt");
+  const feedback = rows
+    .map(doc => normalizeFeedback(doc))
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  cacheSet("feedback:recent", feedback);
+  return feedback;
 }
 
 async function saveFeedback(entry) {
@@ -276,12 +380,14 @@ async function fetchPortalFeedback() {
     console.warn("Firestore portal feedback storage is not configured.");
     return [];
   }
-  const res = await fetch(`${FIRESTORE_BASE_URL}/portalFeedback?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
-  if (!res.ok) throw new Error(`Firestore portalFeedback ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
-  const data = await res.json();
-  return (data.documents || [])
-    .map(doc => normalizePortalFeedback({ id: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
+  const cached = cacheGet("portalFeedback:recent");
+  if (cached) return cached.map(normalizePortalFeedback);
+  const rows = await fetchCollectionPage("portalFeedback", AUX_QUERY_LIMIT, "createdAt");
+  const portalFeedback = rows
+    .map(doc => normalizePortalFeedback(doc))
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  cacheSet("portalFeedback:recent", portalFeedback);
+  return portalFeedback;
 }
 
 async function savePortalFeedback(entry) {
@@ -397,12 +503,14 @@ async function fetchTempIssues() {
     console.warn("Firestore temp issue storage is not configured.");
     return [];
   }
-  const res = await fetch(`${FIRESTORE_BASE_URL}/tempIssues?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
-  if (!res.ok) throw new Error(`Firestore tempIssues ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
-  const data = await res.json();
-  return (data.documents || [])
-    .map(doc => normalizeTempIssue({ requestId: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
+  const cached = cacheGet("tempIssues:recent");
+  if (cached) return cached.map(item => normalizeTempIssue(item));
+  const rows = await fetchCollectionPage("tempIssues", AUX_QUERY_LIMIT, "createdAt");
+  const tempIssues = rows
+    .map(doc => normalizeTempIssue({ requestId: doc.requestId || doc.id, ...doc }))
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  cacheSet("tempIssues:recent", tempIssues);
+  return tempIssues;
 }
 
 async function saveTempIssue(issue) {
@@ -443,12 +551,12 @@ function normalizeMessage(msg = {}) {
 
 async function fetchMessages(thread = "") {
   if (!ONLINE_TICKETS_ENABLED || !thread) return [];
-  const res = await fetch(`${FIRESTORE_BASE_URL}/messages?key=${encodeURIComponent(FIREBASE_API_KEY)}`);
-  if (!res.ok) throw new Error(`Firestore messages ${res.status}: ${getFirestoreErrorMessage(await res.text())}`);
-  const data = await res.json();
-  return (data.documents || [])
-    .map(doc => normalizeMessage({ id: doc.name?.split("/").pop(), ...fromFirestoreFields(doc.fields || {}) }))
-    .filter(msg => msg.thread === thread)
+  const rows = await runCollectionQuery("messages", {
+    where: { fieldFilter: { field: { fieldPath: "thread" }, op: "EQUAL", value: toFirestoreValue(thread) } },
+    limit: 50,
+  });
+  return rows
+    .map(doc => normalizeMessage(doc))
     .sort((a, b) => (a.at || 0) - (b.at || 0));
 }
 
@@ -2176,6 +2284,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
   const [editAssignee,setEditAssignee]=useState(ticket?.assigneeId || STAFF_BASE[0]?.id || 1);
   const [showClose,setShowClose]=useState(false);
   const [showRemoteSupport,setShowRemoteSupport]=useState(false);
+  const [savingTicket,setSavingTicket]=useState(false);
   const currentTicket=ticket;
 
   useEffect(()=>{
@@ -2185,6 +2294,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
   },[currentTicket?.id,currentTicket?.status,currentTicket?.assigneeId]);
 
   const applyTicketChanges = async (changes, auditAction, remark = "") => {
+    if(savingTicket) return null;
     if(!currentTicket){
       toast("Ticket not found. Please reopen the ticket.", "error");
       return null;
@@ -2197,6 +2307,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
     let closedByStatusChange = false;
     let closedTicket = null;
     let updatedTicket = null;
+    setSavingTicket(true);
 
     setTickets(ts=>ts.map(t=>{
       if(t.id!==currentTicket.id) return t;
@@ -2237,26 +2348,45 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
       return updated;
     }));
 
-    toast(closedByStatusChange ? "Ticket closed" : auditAction,"success");
-    if(closedTicket) {
-      notifyTicketClosed(closedTicket, isAdmin?"Admin":staffName||"IT Support", remark);
-      showBrowserNotification("Ticket closed", `${closedTicket.id} has been closed/resolved.`);
-    }
-    if(updatedTicket && isClosedTicket(currentTicket) && changes.status && !isClosedTicket(updatedTicket)) {
-      showBrowserNotification("Ticket reopened", `${updatedTicket.id} has been reopened.`);
+    try {
+      if(updatedTicket && ONLINE_TICKETS_ENABLED) await saveTicket(updatedTicket);
+      toast(closedByStatusChange ? "Ticket closed" : auditAction,"success");
+      if(closedTicket) {
+        notifyTicketClosed(closedTicket, isAdmin?"Admin":staffName||"IT Support", remark);
+        showBrowserNotification("Ticket closed", `${closedTicket.id} has been closed/resolved.`);
+      }
+      if(updatedTicket && isClosedTicket(currentTicket) && changes.status && !isClosedTicket(updatedTicket)) {
+        showBrowserNotification("Ticket reopened", `${updatedTicket.id} has been reopened.`);
+      }
+    } catch(error) {
+      console.error("Ticket update save failed:", error);
+      toast(`Ticket update failed: ${friendlyDbError(error)}`, "error");
+    } finally {
+      setSavingTicket(false);
     }
     return updatedTicket;
   };
-  const addComment=()=>{
-    if(!comment.trim()) return;
+  const addComment=async()=>{
+    if(savingTicket || !comment.trim()) return;
+    let updatedTicket = null;
+    setSavingTicket(true);
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
       const comments=[...(t.comments||[]),{text:comment,at:Date.now(),by:isAdmin?"Admin":staffName||"User"}];
       const tl=[...(t.timeline||[]),{action:"Commented",remark:comment.slice(0,60),at:Date.now(),by:isAdmin?"Admin":staffName||"User"}];
-      return {...t,comments,timeline:tl,updatedAt:Date.now()};
+      updatedTicket = {...t,comments,timeline:tl,updatedAt:Date.now()};
+      return updatedTicket;
     }));
-    setComment("");
-    toast("Comment added","success");
+    try {
+      if(updatedTicket && ONLINE_TICKETS_ENABLED) await saveTicket(updatedTicket);
+      setComment("");
+      toast("Comment added","success");
+    } catch(error) {
+      console.error("Comment save failed:", error);
+      toast(`Comment save failed: ${friendlyDbError(error)}`, "error");
+    } finally {
+      setSavingTicket(false);
+    }
   };
 
   useEffect(()=>{
@@ -2307,15 +2437,17 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
       toast("Feedback submitted. Thank you.","success");
     } catch(error) {
       console.error("Ticket feedback submit failed:", error);
-      toast("Feedback could not be submitted right now. Please try again.","error");
+      toast(isFirestoreQuotaError(error) ? DB_QUOTA_MESSAGE : "Feedback could not be submitted right now. Please try again.","error");
       throw error;
     }
   };
 
   const handleCloseTicket=async(remarks)=>{
+    if(savingTicket) return;
     const closedAt=Date.now();
     const closedBy = staffName || (isAdmin ? "Admin" : "User");
     let closedTicket = null;
+    setSavingTicket(true);
     setTickets(ts=>ts.map(t=>{
       if(t.id!==ticketId) return t;
       if(t.status==="Closed") return t;
@@ -2325,11 +2457,19 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
       return updated;
     }));
 
-    setShowClose(false);
-    if(closedTicket){
-      toast("Ticket closed", "success");
-      notifyTicketClosed(closedTicket, closedBy, remarks);
-      showBrowserNotification("Ticket closed", `${closedTicket.id} has been closed/resolved.`);
+    try {
+      if(closedTicket && ONLINE_TICKETS_ENABLED) await saveTicket(closedTicket);
+      setShowClose(false);
+      if(closedTicket){
+        toast("Ticket closed", "success");
+        notifyTicketClosed(closedTicket, closedBy, remarks);
+        showBrowserNotification("Ticket closed", `${closedTicket.id} has been closed/resolved.`);
+      }
+    } catch(error) {
+      console.error("Ticket close save failed:", error);
+      toast(`Ticket close failed: ${friendlyDbError(error)}`, "error");
+    } finally {
+      setSavingTicket(false);
     }
   };
 
@@ -2357,7 +2497,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
       showBrowserNotification("Remote support requested", `${updated.id} needs remote support.`);
     } catch(error) {
       console.error("Remote support request save failed:", error);
-      toast("Remote support request could not be saved.","error");
+      toast(isFirestoreQuotaError(error) ? DB_QUOTA_MESSAGE : "Remote support request could not be saved.","error");
       throw error;
     }
   };
@@ -2397,8 +2537,8 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
           <StatusBadge status={currentTicket.status}/>
           <PriorityBadge p={currentTicket.priority}/>
           {currentTicket.remoteSupportRequested&&<span className="tag" style={{background:"rgba(14,165,233,.14)",color:"#bae6fd"}}>Remote Support Requested</span>}
-          {!isAdmin&&!isStaff&&!isClosedTicket(currentTicket)&&<button className="glow-btn" type="button" onClick={()=>setShowRemoteSupport(true)} style={{padding:"7px 14px",fontSize:13}}>Request Remote Support</button>}
-          {canClose&&<button className="success-btn" onClick={()=>setShowClose(true)} style={{padding:"7px 16px",fontSize:13}}>✅ Close Ticket</button>}
+          {!isAdmin&&!isStaff&&!isClosedTicket(currentTicket)&&<button className="glow-btn" type="button" disabled={savingTicket} onClick={()=>setShowRemoteSupport(true)} style={{padding:"7px 14px",fontSize:13}}>Request Remote Support</button>}
+          {canClose&&<button className="success-btn" disabled={savingTicket} onClick={()=>setShowClose(true)} style={{padding:"7px 16px",fontSize:13}}>✅ Close Ticket</button>}
         </div>
       </div>
 
@@ -2576,6 +2716,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
 
     <button
       className="glow-btn"
+      disabled={savingTicket}
 
       style={{
         marginTop:12,
@@ -2625,7 +2766,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
 
       }}
     >
-      💾 Save Changes
+      {savingTicket ? "Saving..." : "💾 Save Changes"}
     </button>
 
   </div>
@@ -2647,8 +2788,8 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
           </div>
         ))}
         <div style={{display:"flex",gap:10,marginTop:12}}>
-          <input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Add a comment..." onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&addComment()}/>
-          <button className="glow-btn" style={{padding:"10px 18px",fontSize:13,whiteSpace:"nowrap"}} onClick={addComment}>Send</button>
+          <input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Add a comment..." onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&addComment()} disabled={savingTicket}/>
+          <button className="glow-btn" style={{padding:"10px 18px",fontSize:13,whiteSpace:"nowrap"}} onClick={addComment} disabled={savingTicket || !comment.trim()}>{savingTicket ? "Saving..." : "Send"}</button>
         </div>
       </div>
     </div>
@@ -2668,12 +2809,16 @@ function TicketForm({userEmail,initialCategory,onSubmit,onCancel,toast}) {
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
   const submit=async()=>{
+    if(loading) return;
     if(!form.name||!form.email||!form.dept||!form.category||!form.description){toast("Fill all required fields","error");return;}
     if(!/\S+@\S+\.\S+/.test(form.email)){toast("Invalid email format","error");return;}
     setLoading(true);
     await new Promise(r=>setTimeout(r,700));
     try {
       await Promise.resolve(onSubmit({...form}));
+    } catch (error) {
+      console.error("Ticket form submit failed:", error);
+      toast(friendlyDbError(error), "error");
     } finally {
       setLoading(false);
     }
@@ -4826,7 +4971,7 @@ function Landing({onLogin,tickets=[]}) {
   );
 }
 // ── TICKETS TABLE ─────────────────────────────────────────────────────────
-function TicketsTable({tickets,onView,isAdmin,onDelete,emptyKind=""}) {
+function TicketsTable({tickets,onView,isAdmin,onDelete,emptyKind="",onLoadMore,hasMore=false}) {
   const [search,setSearch]=useState("");
   const [filterStatus,setFilterStatus]=useState("All");
   const [filterPriority,setFilterPriority]=useState("All");
@@ -4859,6 +5004,7 @@ function TicketsTable({tickets,onView,isAdmin,onDelete,emptyKind=""}) {
           />
         )}
       </div>
+      {hasMore&&<button className="glow-btn" type="button" onClick={onLoadMore} style={{alignSelf:"center",marginTop:6}}>Load More Tickets</button>}
     </div>
   );
 }
@@ -5577,7 +5723,7 @@ function StaffChatModal({staff,profiles,statuses}) {
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [text, setText] = useState('');
   const [messages, setMessages] = useState([]);
-  const [unreadCounts, setUnreadCounts] = useState({});
+  const [sending, setSending] = useState(false);
   const messagesEndRef = useRef(null);
 
   const peer = STAFF_BASE.find(s => s.id === selected);
@@ -5592,7 +5738,9 @@ function StaffChatModal({staff,profiles,statuses}) {
 
     const q = query(
       collection(firestoreDb, 'messages'),
-      where('thread', '==', thread)
+      where('thread', '==', thread),
+      orderBy('at', 'desc'),
+      limit(50)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -5610,25 +5758,9 @@ function StaffChatModal({staff,profiles,statuses}) {
     messagesEndRef.current?.scrollIntoView({behavior:'smooth',block:'end'});
   }, [messages.length, thread]);
 
-  useEffect(() => {
-    if (!firestoreDb || !staff?.id) return undefined;
-    const unsubscribes = STAFF_BASE
-      .filter(s => s.id !== staff.id)
-      .map(peerStaff => {
-        const threadKey = [staff.id,peerStaff.id].sort((a,b)=>a-b).join('-');
-        const q = query(collection(firestoreDb, 'messages'), where('thread', '==', threadKey), where('to', '==', staff.id), where('read', '==', false));
-        return onSnapshot(
-          q,
-          (snapshot) => setUnreadCounts(prev => ({ ...prev, [threadKey]: snapshot.size })),
-          (error) => console.error('Unread chat listener failed:', error)
-        );
-      });
-    return () => unsubscribes.forEach(unsub => unsub());
-  }, [staff?.id]);
-
   const send=async()=>{
     const cleanText=text.trim();
-    if(!cleanText || !firestoreDb || !peer) return;
+    if(sending || !cleanText || !firestoreDb || !peer) return;
     const createdAt=Date.now();
     const msg = {
       thread,
@@ -5642,33 +5774,15 @@ function StaffChatModal({staff,profiles,statuses}) {
       read:false,
     };
     setText('');
+    setSending(true);
    try {
 await addDoc(collection(firestoreDb, 'messages'), msg);
-
-// AI RESPONSE
-const aiResponse = await fetch("/api/chat", {
-method: "POST",
-headers: {
-"Content-Type": "application/json",
-},
-body: JSON.stringify({
-message: cleanText,
-}),
-});
-
-const aiData = await aiResponse.json();
-
-const aiMsg = {
-text: aiData.reply,
-sender: "JIMJ AI Helpdesk",
-createdAt: new Date(),
-};
-
-await addDoc(collection(firestoreDb, 'messages'), aiMsg);
 
 } catch (error) {
 console.error("Chat message send failed:", error);
 setText(cleanText);
+} finally {
+setSending(false);
 }
 };
 
@@ -5678,11 +5792,9 @@ setText(cleanText);
     <div className="glass staff-chat-list" style={{padding:10,overflowY:'auto'}}>
       {STAFF_BASE.filter(s=>s.id!==staff.id).map(s=>{
         const threadKey = [staff.id,s.id].sort((a,b)=>a-b).join('-');
-        const unread = unreadCounts[threadKey] || 0;
         return <button key={s.id} onClick={()=>{setSelected(s.id);setMobileChatOpen(true);}} style={{width:'100%',display:'flex',alignItems:'center',gap:10,background:selected===s.id?'rgba(99,102,241,0.18)':'transparent',border:'none',borderRadius:10,padding:10,color:'#e2e8f0',textAlign:'left',marginBottom:6}}>
           <StaffAvatar staff={s} profiles={profiles} statuses={statuses} size={34} showStatus/>
           <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</div><StatusDot status={getStaffStatus(s.id,statuses)}/></div>
-          {unread>0&&<span style={{background:'#ef4444',color:'#fff',borderRadius:999,padding:'2px 7px',fontSize:11,flexShrink:0}}>{unread}</span>}
         </button>
       })}
     </div>
@@ -5707,7 +5819,7 @@ setText(cleanText);
       </div>
       <div className="staff-chat-input" style={{padding:12,borderTop:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10}}>
         <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}} placeholder="Type a message..."/>
-        <button className="glow-btn" style={{padding:'10px 18px'}} onClick={send}>Send</button>
+        <button className="glow-btn" style={{padding:'10px 18px'}} onClick={send} disabled={sending || !text.trim()}>{sending ? "Sending..." : "Send"}</button>
       </div>
     </div>
   </div>;
@@ -5795,26 +5907,37 @@ export default function App() {
   const [staffStatuses, setStaffStatuses] = useState(() => DB.get("staff_statuses", {}));
   const [staffPanel, setStaffPanel] = useState(null);
   const [staffMenuOpen, setStaffMenuOpen] = useState(false);
+  const [ticketSaveInFlight, setTicketSaveInFlight] = useState(false);
+  const [ticketLimit, setTicketLimit] = useState(TICKET_QUERY_LIMIT);
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted");
   const [showSmartWelcome, setShowSmartWelcome] = useState(() => Boolean(getSavedSession()));
+  const isMobileLite = typeof window !== "undefined" && window.innerWidth <= 768;
   useEffect(() => {
+    const shouldLoadFeedback = session?.type === "admin" && (page === "feedback" || page === "dashboard");
+    if (!shouldLoadFeedback) return undefined;
     let alive = true;
     const loadTickets = async () => {
       try {
-        const onlineTickets = await fetchTickets();
+        const shouldLoadClosed = adminActionTab === "close" || dashboardFilter.type === "Closed";
+        const onlineTickets = await fetchTickets({
+          userEmail: session?.type === "user" ? session.email : "",
+          staffId: session?.type === "staff" ? session.staffId : "",
+          status: shouldLoadClosed ? "Closed" : "",
+          limit: isMobileLite ? Math.min(ticketLimit, 10) : ticketLimit,
+        });
         if (alive) {
           setTickets(onlineTickets);
           setTicketsLoaded(true);
         }
       } catch (error) {
         console.error("Online ticket load failed:", error);
+        if (alive && isFirestoreQuotaError(error)) toast(DB_QUOTA_MESSAGE, "error");
         if (alive) setTicketsLoaded(true);
       }
     };
     loadTickets();
-    const interval = setInterval(loadTickets, 15000);
-    return () => { alive = false; clearInterval(interval); };
-  }, []);
+    return () => { alive = false; };
+  }, [session?.type, session?.email, session?.staffId, adminActionTab, dashboardFilter.type, ticketLimit]);
   useEffect(() => {
     let alive = true;
     const loadFeedback = async () => {
@@ -5830,11 +5953,12 @@ export default function App() {
       }
     };
     loadFeedback();
-    const interval = setInterval(loadFeedback, 15000);
-    return () => { alive = false; clearInterval(interval); };
-  }, []);
+    return () => { alive = false; };
+  }, [session?.type, page]);
 
   useEffect(() => {
+    const shouldLoadPortalFeedback = session?.type === "admin" && page === "portal-feedback";
+    if (!shouldLoadPortalFeedback) return undefined;
     let alive = true;
     const loadPortalFeedback = async () => {
       try {
@@ -5849,10 +5973,10 @@ export default function App() {
       }
     };
     loadPortalFeedback();
-    const interval = setInterval(loadPortalFeedback, 15000);
-    return () => { alive = false; clearInterval(interval); };
-  }, []);
+    return () => { alive = false; };
+  }, [session?.type, page]);
   useEffect(() => {
+    if (!session) return undefined;
     let alive = true;
     const loadIncidents = async () => {
       try {
@@ -5867,10 +5991,10 @@ export default function App() {
       }
     };
     loadIncidents();
-    const interval = setInterval(loadIncidents, 30000);
-    return () => { alive = false; clearInterval(interval); };
-  }, []);
+    return () => { alive = false; };
+  }, [session?.type]);
   useEffect(() => {
+    if (page !== "temp-issue") return undefined;
     let alive = true;
     const loadTempIssues = async () => {
       try {
@@ -5885,9 +6009,8 @@ export default function App() {
       }
     };
     loadTempIssues();
-    const interval = setInterval(loadTempIssues, 15000);
-    return () => { alive = false; clearInterval(interval); };
-  }, []);
+    return () => { alive = false; };
+  }, [page]);
 
   useEffect(() => {
     let alive = true;
@@ -5901,15 +6024,11 @@ export default function App() {
         console.error("Online staff profiles load failed:", error);
       }
     };
-    if (ONLINE_TICKETS_ENABLED) {
+    if (ONLINE_TICKETS_ENABLED && (session?.type === "admin" || session?.type === "staff")) {
       loadStaffProfiles();
     }
-  }, []);
+  }, [session?.type]);
 
-  useEffect(() => {
-    if (!ticketsLoaded || !ONLINE_TICKETS_ENABLED) return;
-    saveTickets(tickets).catch(error => console.error("Online ticket sync failed:", error));
-  }, [tickets, ticketsLoaded]);
   useEffect(() => {
     if (!ticketsLoaded) return;
     const now=Date.now();
@@ -5969,15 +6088,22 @@ export default function App() {
 
   const reloadTickets = useCallback(async () => {
     try {
-      const onlineTickets = await fetchTickets();
+      const onlineTickets = await fetchTickets({
+        userEmail: session?.type === "user" ? session.email : "",
+        staffId: session?.type === "staff" ? session.staffId : "",
+        status: adminActionTab === "close" || dashboardFilter.type === "Closed" ? "Closed" : "",
+        limit: ticketLimit,
+        force: true,
+      });
       setTickets(onlineTickets);
       setTicketsLoaded(true);
       return onlineTickets;
     } catch (error) {
       console.error("Online ticket refresh failed:", error);
+      if (isFirestoreQuotaError(error)) toast(DB_QUOTA_MESSAGE, "error");
       return tickets;
     }
-  }, [tickets]);
+  }, [tickets, session?.type, session?.email, session?.staffId, adminActionTab, dashboardFilter.type, ticketLimit]);
 
   const reloadFeedback = useCallback(async () => {
     try {
@@ -6018,12 +6144,11 @@ export default function App() {
     try {
       await savePortalFeedback(portalEntry);
       setPortalFeedback(fs => [portalEntry, ...fs.filter(f => f.id !== portalEntry.id)]);
-      reloadPortalFeedback().catch(error => console.error("Post-submit portal feedback refresh failed:", error));
       toast("Portal feedback submitted. Thank you!", "success");
       return portalEntry;
     } catch (error) {
       console.error("Portal feedback save failed:", error);
-      toast(`Portal feedback save failed: ${error?.message || "Firestore error"}`, "error");
+      toast(`Portal feedback save failed: ${friendlyDbError(error)}`, "error");
       throw error;
     }
   };
@@ -6043,15 +6168,19 @@ export default function App() {
     try {
       await deleteTicket(id);
       setTickets(ts => ts.filter(t => t.id !== id));
-      await reloadTickets();
       toast("Ticket deleted", "info");
     } catch (error) {
       console.error("Online ticket delete failed:", error);
-      toast("Ticket delete failed", "error");
+      toast(isFirestoreQuotaError(error) ? DB_QUOTA_MESSAGE : "Ticket delete failed", "error");
     }
   };
 
 const handleNewTicket = async (form) => {
+  if (ticketSaveInFlight) {
+    toast("Ticket is already being saved. Please wait.","info");
+    return null;
+  }
+  setTicketSaveInFlight(true);
 
   const assignee =
     getActiveStaffForAssignment() ||
@@ -6060,7 +6189,13 @@ const handleNewTicket = async (form) => {
 
   const now = Date.now();
   const allStaffWatchers = STAFF_BASE.map(staff => ({ id: staff.id, name: staff.name, email: staff.email, role: staff.role }));
-  const aiTicketSummary = await generateTicketAiSummary(form);
+  const aiTicketSummary = await generateTicketAiSummary(form).catch(error => {
+    console.error("AI ticket summary failed:", error);
+    return {
+      aiSummary: (form.description || form.issueSummary || "IT support request").slice(0, 140),
+      suggestedAction: "Review the issue details and proceed with standard troubleshooting.",
+    };
+  });
 
   const newTicket = {
       id: genId(),
@@ -6124,7 +6259,6 @@ const handleNewTicket = async (form) => {
       setTickets(prev => [newTicket, ...prev.filter(t => t.id !== newTicket.id)]);
       setFormCat(null);
       if (session?.type === "user") setPage("my-tickets");
-      reloadTickets().catch(error => console.error("Post-create ticket refresh failed:", error));
 
       await sendTicketEmail(newTicket, { name: newTicket.name, email: newTicket.email });
       emailTicketCreated(newTicket, assignee);
@@ -6135,8 +6269,10 @@ const handleNewTicket = async (form) => {
       return newTicket;
     } catch (error) {
       console.error("Ticket create/save failed:", error);
-      toast(`Ticket save failed: ${error?.message || "Firestore error"}`, "error");
+      toast(`Ticket save failed: ${friendlyDbError(error)}`, "error");
       return null;
+    } finally {
+      setTicketSaveInFlight(false);
     }
   };
 
@@ -6194,12 +6330,11 @@ const handleNewTicket = async (form) => {
       setTempIssues(prev => [request, ...prev.filter(it => it.requestId !== request.requestId)]);
       simulateEmail(targetStaff.email, "New Temp Issue Request", `${request.userName} requested ${request.item}. Permission approved by: ${request.permissionApprovedBy}.`);
       simulateEmail("admin@jaipuria.ac.in", "New Temp Issue Request", `${request.userName} requested ${request.item} from ${targetStaff.name}.`);
-      await reloadTempIssues();
       toast("Temp Issue request submitted", "success");
       return request;
     } catch (error) {
       console.error("Temp issue save failed:", error);
-      toast(`Temp Issue save failed: ${error?.message || "Firestore error"}`, "error");
+      toast(`Temp Issue save failed: ${friendlyDbError(error)}`, "error");
       throw error;
     }
   };
@@ -6308,11 +6443,10 @@ const handleNewTicket = async (form) => {
     try {
       await saveTempIssue(updated);
       setTempIssues(prev => prev.map(t => t.requestId === requestId ? updated : t));
-      await reloadTempIssues();
       toast(`Temp Issue ${updated.status.toLowerCase()}`, "success");
     } catch (error) {
       console.error("Temp issue status update failed:", error);
-      toast(`Temp Issue update failed: ${error?.message || "Firestore error"}`, "error");
+      toast(`Temp Issue update failed: ${friendlyDbError(error)}`, "error");
       throw error;
     }
   };
@@ -6358,15 +6492,16 @@ const handleNewTicket = async (form) => {
         `New IT feedback submitted by ${feedbackEntry.name}\n\nFeedback ID: ${feedbackEntry.id}\nEmail: ${feedbackEntry.email}\nDepartment: ${feedbackEntry.dept}\nService: ${feedbackEntry.category}\nRating: ${feedbackEntry.rating}/5\nSatisfaction: ${feedbackEntry.satisfaction}\nRecommendation: ${feedbackEntry.recommend}\nSubmitted: ${fmtDate(feedbackEntry.createdAt)}\n\nFeedback:\n${feedbackEntry.message}\n\nSuggestions:\n${feedbackEntry.suggestions || "—"}`
       );
 
-      reloadFeedback().catch(error => console.error("Post-submit feedback refresh failed:", error));
       toast("Thank you for your feedback", "success");
     } catch (error) {
       console.error("Feedback save failed:", error);
-      toast(`Feedback save failed: ${error?.message || "Firestore error"}`, "error");
+      toast(`Feedback save failed: ${friendlyDbError(error)}`, "error");
       throw error;
     }
   };
-  const handleQuickAssign = (ticketId, assigneeId, remark="") => {
+  const handleQuickAssign = async (ticketId, assigneeId, remark="") => {
+    if (ticketSaveInFlight) return;
+    setTicketSaveInFlight(true);
     let assignedTicket = null;
     let newAssignee = null;
     let previousAssignee = null;
@@ -6402,9 +6537,16 @@ const handleNewTicket = async (form) => {
     }));
 
     if (assignedTicket) {
-      emailTicketAssigned(assignedTicket, newAssignee, previousAssignee, session?.type === "staff" ? session.name || "IT Staff" : "Admin", remark.trim());
-      toast(`Ticket assigned to ${newAssignee?.name || "staff"}`,"success");
+      try {
+        if (ONLINE_TICKETS_ENABLED) await saveTicket(assignedTicket);
+        emailTicketAssigned(assignedTicket, newAssignee, previousAssignee, session?.type === "staff" ? session.name || "IT Staff" : "Admin", remark.trim());
+        toast(`Ticket assigned to ${newAssignee?.name || "staff"}`,"success");
+      } catch (error) {
+        console.error("Quick assign save failed:", error);
+        toast(`Ticket assignment failed: ${friendlyDbError(error)}`, "error");
+      }
     }
+    setTicketSaveInFlight(false);
     setQuickAssignTicketId(null);
   };
 
@@ -6661,12 +6803,12 @@ const handleNewTicket = async (form) => {
                 </div>
               </>
             ) : (
-              <TicketsTable tickets={filteredDashboardTickets} onView={setViewTicketId} isAdmin onDelete={handleDeleteTicket} emptyKind={dashboardFilter.type} />
+              <TicketsTable tickets={filteredDashboardTickets} onView={setViewTicketId} isAdmin onDelete={handleDeleteTicket} emptyKind={dashboardFilter.type} hasMore={tickets.length >= ticketLimit} onLoadMore={()=>setTicketLimit(limit=>limit+20)} />
             )}
           </div>
         );
       }
-      if (page === "tickets") return <TicketsTable tickets={tickets} onView={setViewTicketId} isAdmin onDelete={handleDeleteTicket} />;
+      if (page === "tickets") return <TicketsTable tickets={tickets} onView={setViewTicketId} isAdmin onDelete={handleDeleteTicket} hasMore={tickets.length >= ticketLimit} onLoadMore={()=>setTicketLimit(limit=>limit+20)} />;
       if (page === "analytics") return <Analytics tickets={tickets} />;
       if (page === "feedback") return <AdminFeedbackPage feedback={feedback} setFeedback={setFeedback} toast={toast} />;
       if (page === "portal-feedback") return <AdminPortalFeedbackPage portalFeedback={portalFeedback} setPortalFeedback={setPortalFeedback} toast={toast} />;
@@ -6715,6 +6857,7 @@ const handleNewTicket = async (form) => {
           {myTickets.map(t => <TicketCard key={t.id} ticket={t} onView={setViewTicketId} showFeedbackPending={isTicketFeedbackPending(t)} />)}
           {myTickets.length === 0 && <div style={{gridColumn:"1/-1",textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}><div style={{fontSize:48,marginBottom:12}}>🎫</div><div>No tickets yet</div><button className="glow-btn" style={{marginTop:16}} onClick={() => setPage("home")}>Raise Ticket</button></div>}
         </div>
+        {myTickets.length >= ticketLimit&&<button className="glow-btn" type="button" onClick={()=>setTicketLimit(limit=>limit+20)} style={{margin:"16px auto 0",display:"block"}}>Load More Tickets</button>}
       </div>
     );
     if (page === "know-staff") return <KnowYourITStaff staffProfiles={staffProfiles} />;
