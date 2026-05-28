@@ -622,7 +622,7 @@ const sendTicketEmail = async (ticket, user) => {
     console.log("Email error:", error);
   }
 };
-import { useState, useEffect, useRef, useCallback } from "react";
+import { Component, useState, useEffect, useRef, useCallback } from "react";
 
 // ── CRYPTO HELPERS (client-side hashing simulation) ───────────────────────
 async function hashPassword(pwd) {
@@ -1956,6 +1956,36 @@ function TimerBadge({ticket}) {
       </div>
     </div>
   );
+}
+
+class AIHelpdeskErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error, info) {
+    console.error("AI Helpdesk crashed safely:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="ai-helpdesk-wrap">
+          <button
+            type="button"
+            className="ai-helpdesk-button"
+            onClick={() => this.setState({ hasError: false })}
+            aria-label="Reset AI helpdesk chat"
+          >
+            <span>✦</span> AI Help
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 // ── STAT CARD ─────────────────────────────────────────────────────────────
@@ -4135,6 +4165,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
   const [open,setOpen]=useState(false);
   const [input,setInput]=useState("");
   const [loading,setLoading]=useState(false);
+  const [creatingTicket,setCreatingTicket]=useState(false);
   const [ticketFlow,setTicketFlow]=useState(null);
   const [activeCategoryId,setActiveCategoryId]=useState(null);
   const [lastHelpdeskContext,setLastHelpdeskContext]=useState(null);
@@ -4144,10 +4175,21 @@ function AIHelpdeskChat({session,onCreateTicket}) {
   ]);
   const endRef=useRef(null);
   const recognitionRef=useRef(null);
+  const safeMessages = Array.isArray(messages) ? messages : [];
+  const appendMessage=useCallback((message)=>{
+    const safeMessage={
+      id: message?.id || genToken(),
+      role: message?.role || "assistant",
+      text: typeof message?.text === "string" ? message.text : "",
+      at: message?.at || Date.now(),
+      ...message
+    };
+    setMessages(prev=>[...(Array.isArray(prev) ? prev : []), safeMessage]);
+  },[]);
 
   useEffect(()=>{
     if(open) endRef.current?.scrollIntoView({behavior:"smooth",block:"end"});
-  },[messages.length,loading,open]);
+  },[safeMessages.length,loading,creatingTicket,open]);
 
   const buildPrompt=(question)=>`You are Jaipuria Helpdesk AI, a friendly IT support assistant for Jaipuria Institute of Management. Answer only campus IT/helpdesk questions such as login issues, WiFi, Moodle/LMS, Echo360 lecture capture, printers, MS Office, email, laptop/software troubleshooting, and general IT support. Give concise, practical steps. If the question cannot be answered confidently, reply exactly: I have forwarded this issue to IT Support Team.\n\nUser: ${question}`;
 
@@ -4169,6 +4211,17 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       setListening(false);
     }
   },[]);
+
+  const closeChatbot=useCallback(()=>{
+    try {
+      stopVoiceInput();
+      setOpen(false);
+    } catch(error) {
+      console.error("Chatbot close failed:", error);
+      setOpen(false);
+      setListening(false);
+    }
+  },[stopVoiceInput]);
 
   useEffect(()=>{
     if(!open) stopVoiceInput();
@@ -4193,7 +4246,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       stopVoiceInput();
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if(!SpeechRecognition) {
-        setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Voice input is not supported on this browser.",at:Date.now(),error:true}]);
+        appendMessage({role:"assistant",text:"Voice input is not supported on this browser.",at:Date.now(),error:true});
         return;
       }
       const recognition = new SpeechRecognition();
@@ -4207,7 +4260,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
         const message=error?.error==="not-allowed" || error?.error==="permission-denied"
           ? "Microphone permission was denied. Please allow mic access to use voice input."
           : "Voice input could not capture audio. Please try again.";
-        setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:message,at:Date.now(),error:true}]);
+        appendMessage({role:"assistant",text:message,at:Date.now(),error:true});
         stopVoiceInput();
       };
       recognition.onresult = event => {
@@ -4222,40 +4275,47 @@ function AIHelpdeskChat({session,onCreateTicket}) {
     } catch(error) {
       console.error("Chatbot voice input failed:", error);
       setListening(false);
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Voice input is not supported on this browser.",at:Date.now(),error:true}]);
+      appendMessage({role:"assistant",text:"Voice input is not supported on this browser.",at:Date.now(),error:true});
     }
   };
 
   const startTicketFlow=(context=lastHelpdeskContext)=>{
-    const categoryId=context?.categoryId || "resources";
-    const categoryLabel=context?.categoryLabel || getHelpdeskCategoryLabel(categoryId);
-    const ticketCategory=getTicketCategoryFromHelpdesk(categoryId);
-    const draft={
-      name:"",
-      email:"",
-      mobile:"",
-      dept:"Not provided",
-      location:"Not provided",
-      category:ticketCategory,
-      categoryLabel,
-      subCategory:context?.subCategory || categoryLabel,
-      description:context?.description || `${categoryLabel} issue reported from AI Chatbot.\n\n${context?.notes || "Troubleshooting context was not available."}`,
-      priority:"Medium",
-      source:"AI Chatbot",
-      notes:context?.notes || ""
-    };
-    const firstStep="name";
-    setTicketFlow({step:firstStep,draft});
-    setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:getTicketFlowPrompt(firstStep,draft),at:Date.now(),type:"ticket-flow"}]);
+    try {
+      const safeContext=context && typeof context==="object" ? context : {};
+      const categoryId=safeContext.categoryId || "resources";
+      const categoryLabel=safeContext.categoryLabel || getHelpdeskCategoryLabel(categoryId) || "IT Support";
+      const ticketCategory=getTicketCategoryFromHelpdesk(categoryId) || "other";
+      const draft={
+        name:"",
+        email:"",
+        mobile:"",
+        dept:"Not provided",
+        location:"Not provided",
+        category:ticketCategory,
+        categoryLabel,
+        subCategory:safeContext.subCategory || categoryLabel,
+        description:safeContext.description || `${categoryLabel} issue reported from AI Chatbot.\n\n${safeContext.notes || "Troubleshooting context was not available."}`,
+        priority:"Medium",
+        source:"AI Chatbot",
+        notes:safeContext.notes || ""
+      };
+      const firstStep="name";
+      setTicketFlow({step:firstStep,draft});
+      appendMessage({role:"assistant",text:getTicketFlowPrompt(firstStep,draft),at:Date.now(),type:"ticket-flow"});
+    } catch(error) {
+      console.error("Chatbot ticket flow start failed:", error);
+      appendMessage({role:"assistant",text:"Ticket could not be created right now. Please try again later.",at:Date.now(),error:true});
+    }
   };
 
   const handleTicketFlowInput=async(clean)=>{
-    if(!ticketFlow) return false;
-    const step=ticketFlow.step;
-    const value=clean.trim();
-    const draft={...ticketFlow.draft};
+    try {
+    if(!ticketFlow || typeof ticketFlow!=="object") return false;
+    const step=ticketFlow.step || "name";
+    const value=String(clean || "").trim();
+    const draft={...(ticketFlow.draft || {})};
     if(step==="email" && !/\S+@\S+\.\S+/.test(value)) {
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Please enter a valid email address.",at:Date.now(),error:true}]);
+      appendMessage({role:"assistant",text:"Please enter a valid email address.",at:Date.now(),error:true});
       return true;
     }
     draft[step]=value;
@@ -4263,11 +4323,11 @@ function AIHelpdeskChat({session,onCreateTicket}) {
     const nextStep=steps[steps.indexOf(step)+1];
     if(nextStep) {
       setTicketFlow({step:nextStep,draft});
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:getTicketFlowPrompt(nextStep,draft),at:Date.now(),type:"ticket-flow"}]);
+      appendMessage({role:"assistant",text:getTicketFlowPrompt(nextStep,draft),at:Date.now(),type:"ticket-flow"});
       return true;
     }
     setCreatingTicket(true);
-    setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Creating your ticket...",at:Date.now(),type:"ticket-creating"}]);
+    appendMessage({role:"assistant",text:"Creating your ticket...",at:Date.now(),type:"ticket-creating"});
     try {
       const finalDraft={
         ...draft,
@@ -4292,39 +4352,46 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       }));
       if(!ticket?.id) throw new Error("Ticket could not be created.");
       setTicketFlow(null);
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`Your ticket has been generated successfully. Ticket ID: ${ticket.id}`,at:Date.now(),type:"ticket-success"}]);
+      appendMessage({role:"assistant",text:`Your ticket has been generated successfully. Ticket ID: ${ticket.id}`,at:Date.now(),type:"ticket-success"});
     } catch (error) {
       console.error("Chatbot mobile ticket creation failed:",error,{step,draft});
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Ticket could not be created. Please try again.",at:Date.now(),error:true}]);
+      appendMessage({role:"assistant",text:"Ticket could not be created right now. Please try again later.",at:Date.now(),error:true});
     } finally {
       setCreatingTicket(false);
     }
     return true;
+    } catch(error) {
+      console.error("Chatbot ticket flow failed:", error);
+      setCreatingTicket(false);
+      appendMessage({role:"assistant",text:"Ticket could not be created right now. Please try again later.",at:Date.now(),error:true});
+      return true;
+    }
   };
 
   const sendMessage=async(value)=>{
-    const clean=(value ?? input).trim();
+    try {
+    const clean=String(value ?? input ?? "").trim();
     if(!clean || loading || creatingTicket) return;
     const userMessage={id:genToken(),role:"user",text:clean,at:Date.now()};
-    setMessages(prev=>[...prev,userMessage]);
+    appendMessage(userMessage);
     setInput("");
     if(ticketFlow && await handleTicketFlowInput(clean)) return;
     const normalized=clean.toLowerCase().trim();
     if(normalized==="yes") {
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Great! Happy to help.",at:Date.now()}]);
+      appendMessage({role:"assistant",text:"Great! Happy to help.",at:Date.now()});
       return;
     }
     if(normalized==="menu") {
       setActiveCategoryId(null);
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",at:Date.now(),type:"menu",text:"Please choose an IT helpdesk option:",menu:getHelpdeskMenu()}]);
+      appendMessage({role:"assistant",at:Date.now(),type:"menu",text:"Please choose an IT helpdesk option:",menu:getHelpdeskMenu()});
       return;
     }
     if(normalized==="back") {
       if(activeCategoryId) {
         setActiveCategoryId(null);
-        setMessages(prev=>[...prev,{id:genToken(),role:"assistant",at:Date.now(),type:"menu",text:"Please choose an IT helpdesk option:",menu:getHelpdeskMenu()}]);
+        appendMessage({role:"assistant",at:Date.now(),type:"menu",text:"Please choose an IT helpdesk option:",menu:getHelpdeskMenu()});
       } else {
-        setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"You are already at the main menu. Type menu to view categories.",at:Date.now()}]);
+        appendMessage({role:"assistant",text:"You are already at the main menu. Type menu to view categories.",at:Date.now()});
       }
       return;
     }
@@ -4336,7 +4403,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       const wifiReply=getWifiTroubleshooting();
       setLastHelpdeskContext(handleWifiTicketFlow());
       setActiveCategoryId(null);
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",at:Date.now(),...wifiReply}]);
+      appendMessage({role:"assistant",at:Date.now(),...wifiReply});
       return;
     }
     const localReply=handleMenuSelection(clean, activeCategoryId);
@@ -4348,7 +4415,7 @@ function AIHelpdeskChat({session,onCreateTicket}) {
         setActiveCategoryId(null);
         setLastHelpdeskContext(getTicketContextFromTroubleshooting(localReply));
       }
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",at:Date.now(),...localReply}]);
+      appendMessage({role:"assistant",at:Date.now(),...localReply});
       return;
     }
     const aiMessage=localReply?.aiPrompt || clean;
@@ -4365,13 +4432,18 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       console.log("AI chat API response", { status:response.status, ok:response.ok, data });
       if(!response.ok) throw new Error(data?.detail || data?.error || `AI endpoint failed: ${response.status}`);
       const reply=(data?.reply || "").trim() || "I have forwarded this issue to IT Support Team.";
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:reply,at:Date.now()}]);
+      appendMessage({role:"assistant",text:reply,at:Date.now()});
     } catch (error) {
       console.error("AI chatbot error:",error);
-      const errorText = import.meta.env.DEV ? `AI API error: ${error.message}` : "Sorry, I am unable to respond right now. Please contact IT Support.";
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:errorText,at:Date.now(),error:true}]);
+      appendMessage({role:"assistant",text:"AI service is temporarily unavailable. Please try again.",at:Date.now(),error:true});
     } finally {
       setLoading(false);
+    }
+    } catch(error) {
+      console.error("AI chatbot send failed:", error);
+      setLoading(false);
+      setCreatingTicket(false);
+      appendMessage({role:"assistant",text:"AI service is temporarily unavailable. Please try again.",at:Date.now(),error:true});
     }
   };
 
@@ -4385,18 +4457,18 @@ function AIHelpdeskChat({session,onCreateTicket}) {
               <div style={{fontSize:15,fontWeight:900,color:'#fff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>Jaipuria Helpdesk AI</div>
               <div style={{fontSize:11,color:'rgba(226,232,240,.58)',display:'flex',alignItems:'center',gap:6}}><span style={{width:7,height:7,borderRadius:'50%',background:'#10b981',display:'inline-block'}}/>Online support assistant</div>
             </div>
-            <button type="button" onClick={()=>setOpen(false)} className="ai-helpdesk-close" aria-label="Close AI helpdesk chat">×</button>
+            <button type="button" onClick={closeChatbot} className="ai-helpdesk-close" aria-label="Close AI helpdesk chat">×</button>
           </div>
 
           <div className="ai-helpdesk-messages">
-            {messages.map(m=>(
+            {safeMessages.map(m=>(
               <div key={m.id} className={`ai-helpdesk-row ${m.role==='user'?'user':'bot'}`}>
                 <div className={`ai-helpdesk-bubble ${m.role==='user'?'user':'bot'}`}>
                   {m.type==="menu"&&(
                     <div className="ai-helpdesk-menu-card">
                       <div className="ai-helpdesk-card-title">{m.text}</div>
                       <div className="ai-helpdesk-menu-list">
-                        {m.menu.map(item=>(
+                        {(Array.isArray(m.menu) ? m.menu : []).map(item=>(
                           <div key={item.id} className="ai-helpdesk-menu-item">
                             <span>{item.number}</span>
                             <strong>{item.label}</strong>
@@ -4410,13 +4482,13 @@ function AIHelpdeskChat({session,onCreateTicket}) {
                     <div className="ai-helpdesk-steps-card">
                       <div className="ai-helpdesk-card-title">{m.title}</div>
                       <ol>
-                        {m.steps.map((step,index)=><li key={`${m.id}-${index}`}>{step}</li>)}
+                        {(Array.isArray(m.steps) ? m.steps : []).map((step,index)=><li key={`${m.id}-${index}`}>{step}</li>)}
                       </ol>
                       {m.commonCauses&&(
                         <div className="ai-helpdesk-causes">
                           <div>Common Causes:</div>
                           <ul>
-                            {m.commonCauses.map((cause,index)=><li key={`${m.id}-cause-${index}`}>{cause}</li>)}
+                            {(Array.isArray(m.commonCauses) ? m.commonCauses : []).map((cause,index)=><li key={`${m.id}-cause-${index}`}>{cause}</li>)}
                           </ul>
                         </div>
                       )}
@@ -4442,14 +4514,14 @@ function AIHelpdeskChat({session,onCreateTicket}) {
             <div ref={endRef}/>
           </div>
 
-          <form className="ai-helpdesk-input" onSubmit={e=>{e.preventDefault();sendMessage();}}>
+          <form className="ai-helpdesk-input" onSubmit={e=>{try{e.preventDefault();sendMessage();}catch(error){console.error("Chatbot submit failed:",error);appendMessage({role:"assistant",text:"AI service is temporarily unavailable. Please try again.",at:Date.now(),error:true});}}}>
             <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}} disabled={creatingTicket} inputMode="text" enterKeyHint="send" placeholder={creatingTicket ? "Creating your ticket..." : listening ? "Listening..." : "Type hi, menu, WiFi, AI, or ESCALATE..."} />
-            <button type="button" className={`mic-btn ${listening ? "listening" : ""}`} onClick={startVoiceInput} title={listening ? "Listening..." : "Use voice input"} aria-label="Use voice input"><span>🎙️</span>{listening&&<span className="mic-btn-text">Listening...</span>}</button>
+            <button type="button" className={`mic-btn ${listening ? "listening" : ""}`} onClick={()=>{try{startVoiceInput();}catch(error){console.error("Chatbot mic click failed:",error);appendMessage({role:"assistant",text:"Voice input is not supported on this browser.",at:Date.now(),error:true});}}} title={listening ? "Listening..." : "Use voice input"} aria-label="Use voice input"><span>🎙️</span>{listening&&<span className="mic-btn-text">Listening...</span>}</button>
             <button className="glow-btn" type="submit" onPointerUp={e=>{if(e.pointerType==="touch"){e.preventDefault();sendMessage();}}} disabled={loading||creatingTicket||!input.trim()}>{creatingTicket?"Creating...":"Send"}</button>
           </form>
         </div>
       )}
-      <button type="button" className="ai-helpdesk-button" onClick={()=>setOpen(o=>!o)} aria-label="Open AI helpdesk chat">
+      <button type="button" className="ai-helpdesk-button" onClick={()=>{try{setOpen(o=>{if(o) stopVoiceInput(); return !o;});}catch(error){console.error("Chatbot toggle failed:",error);setOpen(false);setListening(false);}}} aria-label="Open AI helpdesk chat">
         <span>✦</span> {open?"Minimize":"AI Help"}
       </button>
     </div>
@@ -6989,7 +7061,11 @@ const handleNewTicket = async (form) => {
 
       <PortalFeedbackChrome onOpen={() => setShowPortalFeedback(true)} />
       <PWAInstallPrompt />
-      {!isAdmin && !isStaff && <AIHelpdeskChat session={session} onCreateTicket={handleNewTicket} />}
+      {!isAdmin && !isStaff && (
+        <AIHelpdeskErrorBoundary>
+          <AIHelpdeskChat session={session} onCreateTicket={handleNewTicket} />
+        </AIHelpdeskErrorBoundary>
+      )}
       {showPortalFeedback && (
         <Modal title="Portal Feedback" onClose={() => setShowPortalFeedback(false)}>
           <PortalFeedbackForm session={session} onSubmit={handlePortalFeedbackSubmit} toast={toast} onClose={() => setShowPortalFeedback(false)} />
