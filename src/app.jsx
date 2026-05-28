@@ -1250,23 +1250,27 @@ function downloadFeedbackPDF(feedbackRows, filename, options = {}) {
 }
 // ── GLOBAL CSS ─────────────────────────────────────────────────────────────
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@500;600;700;800&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#070913;--panel:rgba(13,18,35,.74);--panel2:rgba(20,28,52,.72);--stroke:rgba(148,163,184,.16);--stroke2:rgba(125,211,252,.22);--text:#e6edf7;--muted:rgba(226,232,240,.58);--purple:#8b5cf6;--blue:#3b82f6;--cyan:#06b6d4;--green:#10b981;--amber:#f59e0b;--red:#ef4444}
 html{background:var(--bg)}
-body{font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;background:radial-gradient(circle at 16% 8%,rgba(139,92,246,.18),transparent 31%),radial-gradient(circle at 86% 14%,rgba(6,182,212,.14),transparent 30%),radial-gradient(circle at 70% 92%,rgba(16,185,129,.11),transparent 36%),linear-gradient(145deg,#050712 0%,#090d1b 44%,#07111d 100%);overflow-x:hidden}
+body{font-family:'Inter',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text);min-height:100vh;background:radial-gradient(circle at 16% 8%,rgba(139,92,246,.18),transparent 31%),radial-gradient(circle at 86% 14%,rgba(6,182,212,.14),transparent 30%),radial-gradient(circle at 70% 92%,rgba(16,185,129,.11),transparent 36%),linear-gradient(145deg,#050712 0%,#090d1b 44%,#07111d 100%);overflow-x:hidden;text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;line-height:1.5}
+h1,h2,h3,h4,h5,h6,[style*="font-family: Poppins"],[style*="fontFamily: Poppins"]{font-family:'Poppins','Inter',system-ui,sans-serif!important;line-height:1.28!important;letter-spacing:0!important;text-wrap:balance;overflow-wrap:break-word;word-break:normal;max-width:100%}
+h1,h2,h3{color:#f8fbff;text-shadow:0 0 22px rgba(125,211,252,.12)}
+p,span,div,label,button,input,select,textarea{letter-spacing:0}
+.app-content h1,.app-content h2,.app-content h3,.modal-header h2{background:linear-gradient(135deg,#ffffff 0%,#dbeafe 48%,#c4b5fd 100%);-webkit-background-clip:text;background-clip:text;color:transparent!important}
 body::before{content:"";position:fixed;inset:-25%;pointer-events:none;z-index:0;background:radial-gradient(circle at 22% 28%,rgba(99,102,241,.16),transparent 18%),radial-gradient(circle at 75% 22%,rgba(14,165,233,.12),transparent 19%),radial-gradient(circle at 58% 74%,rgba(16,185,129,.1),transparent 18%);filter:blur(34px);opacity:.9;animation:bgDrift 18s ease-in-out infinite alternate}
 body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;background:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:44px 44px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.42),transparent 72%)}
 #root{position:relative;z-index:1;min-height:100vh}
 ::-webkit-scrollbar{width:8px;height:8px}
 ::-webkit-scrollbar-track{background:rgba(255,255,255,.035)}
 ::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(139,92,246,.65),rgba(6,182,212,.55));border-radius:999px;border:2px solid rgba(7,9,19,.72)}
-input,select,textarea{background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.045));border:1px solid rgba(148,163,184,.18);color:var(--text);border-radius:12px;padding:11px 14px;font-family:'DM Sans',sans-serif;font-size:14px;width:100%;outline:none;transition:border-color .2s,background .2s,box-shadow .2s,transform .2s;box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 8px 24px rgba(0,0,0,.12)}
+input,select,textarea{background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.045));border:1px solid rgba(148,163,184,.18);color:var(--text);border-radius:12px;padding:11px 14px;font-family:'Inter',system-ui,sans-serif;font-size:14px;line-height:1.45;width:100%;outline:none;transition:border-color .2s,background .2s,box-shadow .2s,transform .2s;box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 8px 24px rgba(0,0,0,.12)}
 input:hover,select:hover,textarea:hover{border-color:rgba(125,211,252,.28);background:rgba(255,255,255,.075)}
 input:focus,select:focus,textarea:focus{border-color:rgba(34,211,238,.72);background:rgba(8,145,178,.12);box-shadow:0 0 0 3px rgba(6,182,212,.14),0 14px 36px rgba(6,182,212,.08),inset 0 1px 0 rgba(255,255,255,.07)}
 input::placeholder,textarea::placeholder{color:rgba(226,232,240,.34)}
 select option{background:#0f172a;color:#e2e8f0}
-button{cursor:pointer;font-family:'DM Sans',sans-serif;transition:transform .2s,box-shadow .2s,border-color .2s,background .2s,opacity .2s}
+button{cursor:pointer;font-family:'Inter',system-ui,sans-serif;line-height:1.25;transition:transform .2s,box-shadow .2s,border-color .2s,background .2s,opacity .2s}
 button:hover{filter:saturate(1.08)}
 .glass{position:relative;background:linear-gradient(145deg,rgba(15,23,42,.76),rgba(17,24,39,.52));backdrop-filter:blur(22px) saturate(1.22);border:1px solid var(--stroke);border-radius:16px;box-shadow:0 18px 55px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.06);overflow:hidden}
 .glass::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(135deg,rgba(139,92,246,.16),transparent 30%,rgba(6,182,212,.1) 58%,rgba(16,185,129,.08));opacity:.72}
@@ -1353,8 +1357,8 @@ input:focus,select:focus,textarea:focus{border-color:rgba(34,211,238,1)!importan
   .header-actions span{font-size:11px!important}
   .header-actions button{padding:6px 10px!important;max-width:96px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
   .app-content{padding:16px 12px!important;width:100%!important;max-width:100vw!important;overflow-x:hidden!important}
-  .app-content h1,.app-content h2{font-size:20px!important;line-height:1.25!important}
-  .app-content h3{font-size:16px!important}
+  .app-content h1,.app-content h2{font-size:20px!important;line-height:1.34!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
+  .app-content h3{font-size:16px!important;line-height:1.35!important;white-space:normal!important;overflow:visible!important}
   .app-content [style*="grid-template-columns"]{grid-template-columns:1fr!important}
   .app-content [style*="minmax(280px"],.app-content [style*="minmax(290px"],.app-content [style*="minmax(300px"],.app-content [style*="minmax(320px"]{grid-template-columns:1fr!important}
   .app-content [style*="display: flex"]{max-width:100%!important}
@@ -1364,7 +1368,7 @@ input:focus,select:focus,textarea:focus{border-color:rgba(34,211,238,1)!importan
   .modal-overlay{padding:8px!important;align-items:stretch!important;justify-content:center!important}
   .modal-panel{max-width:100%!important;width:100%!important;max-height:calc(100dvh - 16px)!important;border-radius:14px!important}
   .modal-header{padding:14px 14px 12px!important;gap:10px!important}
-  .modal-header h2{font-size:16px!important;line-height:1.25!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+  .modal-header h2{font-size:16px!important;line-height:1.35!important;overflow:visible!important;text-overflow:clip!important;white-space:normal!important}
   .modal-body{padding:14px!important;overflow-y:auto!important}
   .staff-profile-menu{position:fixed!important;left:12px!important;right:12px!important;top:58px!important;width:auto!important;min-width:0!important;max-width:none!important;z-index:95!important}
 }
@@ -1799,7 +1803,7 @@ function Modal({ title, children, onClose, wide=false }) {
       onClick={e=>e.target===e.currentTarget&&onClose&&onClose()}>
       <div className="glass fade-up modal-panel" style={{width:"100%",maxWidth:wide?860:720,maxHeight:"92vh",overflow:"hidden",display:"flex",flexDirection:"column"}}>
         <div className="modal-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 24px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",flexShrink:0}}>
-          <h2 style={{fontFamily:"Syne",fontSize:18,fontWeight:700,color:"#e2e8f0"}}>{title}</h2>
+          <h2 style={{fontFamily:"Poppins",fontSize:18,fontWeight:700,color:"#e2e8f0"}}>{title}</h2>
           {onClose&&<button onClick={onClose} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",color:"#e2e8f0",width:32,height:32,borderRadius:8,fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>}
         </div>
         <div className="modal-body" style={{padding:"20px 24px",overflowY:"auto",flex:1}}>{children}</div>
@@ -1854,7 +1858,7 @@ function StatCard({label,value,icon,color,sub,onClick}) {
         <span style={{fontSize:13,color:"rgba(226,232,240,0.5)",fontWeight:500}}>{label}</span>
         <div style={{fontSize:24}}>{icon}</div>
       </div>
-      <div style={{fontSize:32,fontWeight:700,fontFamily:"Syne",color,letterSpacing:"-1px"}}>{value}</div>
+      <div style={{fontSize:32,fontWeight:800,fontFamily:"Poppins",color,letterSpacing:0,lineHeight:1.18}}>{value}</div>
       {sub&&<div style={{fontSize:12,color:"rgba(226,232,240,0.4)"}}>{sub}</div>}
     </div>
   );
@@ -1864,9 +1868,9 @@ function SmartWelcome({session,visible=true}) {
   const name=getDisplayName(session);
   if(!visible) return null;
   return (
-    <div className="glass smart-welcome-once" style={{padding:"18px 20px",marginBottom:18,background:"linear-gradient(135deg,rgba(14,165,233,.13),rgba(139,92,246,.1),rgba(255,255,255,.04))",border:"1px solid rgba(125,211,252,.16)"}}>
-      <h2 style={{fontFamily:"Syne",fontSize:"clamp(20px,4vw,26px)",fontWeight:900,color:"#f8fafc",marginBottom:5,lineHeight:1.18}}>{getGreetingLabel()}, {name} 👋</h2>
-      <p style={{fontSize:14,color:"rgba(226,232,240,.62)",margin:0}}>How can IT Helpdesk assist you today?</p>
+    <div className="glass smart-welcome-once" style={{padding:"clamp(16px,3vw,22px) clamp(18px,4vw,24px)",marginBottom:18,background:"linear-gradient(135deg,rgba(14,165,233,.12),rgba(99,102,241,.1),rgba(255,255,255,.045))",border:"1px solid rgba(125,211,252,.16)",display:"flex",flexDirection:"column",justifyContent:"center",minHeight:92}}>
+      <h2 style={{fontFamily:"Poppins",fontSize:"clamp(18px,3.5vw,25px)",fontWeight:800,color:"#f8fafc",marginBottom:6,lineHeight:1.32,letterSpacing:0,overflowWrap:"break-word"}}>{getGreetingLabel()}, {name} 👋</h2>
+      <p style={{fontSize:"clamp(13px,2.2vw,14px)",color:"rgba(226,232,240,.66)",margin:0,lineHeight:1.45}}>How can IT Helpdesk assist you today?</p>
     </div>
   );
 }
@@ -1923,7 +1927,7 @@ function IncidentManager({incidents,onSave,toast}) {
   return (
     <div className="glass" style={{padding:"18px",display:"grid",gap:14}}>
       <div>
-        <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:900,color:"#e2e8f0"}}>Campus Incident Banner</h3>
+        <h3 style={{fontFamily:"Poppins",fontSize:16,fontWeight:900,color:"#e2e8f0"}}>Campus Incident Banner</h3>
         <p style={{fontSize:12,color:"rgba(226,232,240,.52)",marginTop:4}}>Create a small portal-wide alert for maintenance or campus IT incidents.</p>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -2385,7 +2389,7 @@ function TicketDetail({ticketId,tickets,setTickets,onClose,isAdmin,isStaff,staff
         <div style={{display:"flex",gap:12,alignItems:"center"}}>
           <div style={{width:44,height:44,borderRadius:12,background:cat?.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{cat?.icon}</div>
           <div>
-            <div style={{fontSize:18,fontWeight:700,fontFamily:"Syne",color:"#e2e8f0"}}>{currentTicket.id}</div>
+            <div style={{fontSize:18,fontWeight:700,fontFamily:"Poppins",color:"#e2e8f0"}}>{currentTicket.id}</div>
             <div style={{fontSize:13,color:"rgba(226,232,240,0.5)"}}>{cat?.label} · {fmtDate(currentTicket.createdAt)}</div>
           </div>
         </div>
@@ -2941,11 +2945,11 @@ function CategoryGrid({onSelect,onSmartTicket,session,showWelcome}) {
       <SmartWelcome session={session} visible={showWelcome} />
       <div className="glass" style={{padding:"22px",marginBottom:18,background:"radial-gradient(circle at 0 0,rgba(14,165,233,.22),transparent 36%),linear-gradient(135deg,rgba(15,23,42,.9),rgba(30,41,59,.78))"}}>
         <div style={{display:"inline-flex",alignItems:"center",gap:8,border:"1px solid rgba(125,211,252,.22)",borderRadius:999,padding:"6px 10px",color:"#7dd3fc",fontSize:12,fontWeight:900,marginBottom:12}}><span className="pulse">✦</span> AI Powered Support</div>
-        <h2 style={{fontFamily:"Syne",fontSize:24,fontWeight:900,color:"#e2e8f0",marginBottom:6}}>IT Helpdesk Portal</h2>
+        <h2 style={{fontFamily:"Poppins",fontSize:24,fontWeight:900,color:"#e2e8f0",marginBottom:6}}>IT Helpdesk Portal</h2>
         <p style={{fontSize:14,color:"rgba(226,232,240,0.62)",margin:0}}>Minimum effort support: describe your issue, try a smart fix, and let AI prepare the ticket.</p>
       </div>
       <AIHelpCards onSmartTicket={onSmartTicket} />
-      <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:6}}>Raise IT Support Ticket</h2>
+      <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:6}}>Raise IT Support Ticket</h2>
       <p style={{fontSize:14,color:"rgba(226,232,240,0.5)",marginBottom:24}}>Select the issue category or let AI create a smart ticket</p>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(145px,1fr))",gap:14}}>
         {CATEGORIES.map(cat=>(
@@ -3041,7 +3045,7 @@ function ExportPanel({tickets,toast}) {
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
-      <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Export Reports</h2>
+      <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Export Reports</h2>
       {/* Filters */}
       <div className="glass" style={{padding:"18px 20px"}}>
         <div style={{fontSize:13,fontWeight:600,color:"rgba(226,232,240,0.6)",marginBottom:14,letterSpacing:".5px"}}>FILTERS & FORMAT</div>
@@ -3084,7 +3088,7 @@ function EmailLog() {
   const log=DB.get("emaillog",[]);
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Email Notifications Log</h2>
+      <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Email Notifications Log</h2>
       <p style={{fontSize:13,color:"rgba(226,232,240,0.5)"}}>Simulated email notifications (no real SMTP — shows what would be sent)</p>
       {log.length===0&&<div style={{textAlign:"center",padding:"60px 0",color:"rgba(226,232,240,0.3)"}}>📧 No emails sent yet</div>}
       {log.map(e=>(
@@ -3113,7 +3117,7 @@ function Analytics({tickets}) {
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:24}}>
-      <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Analytics Dashboard</h2>
+      <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Analytics Dashboard</h2>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:14}}>
         <StatCard label="Total Tickets" value={total} icon="🎫" color="#818cf8"/>
         <StatCard label="Open" value={byStatus.Open} icon="🔵" color="#60a5fa"/>
@@ -3138,7 +3142,7 @@ function Analytics({tickets}) {
           <div style={{fontSize:13,fontWeight:600,color:"rgba(226,232,240,0.6)",marginBottom:16,letterSpacing:".5px"}}>PRIORITY SPLIT</div>
           {PRIORITIES.map(p=>{const c={Low:"#94a3b8",Medium:"#fbbf24",High:"#f97316",Critical:"#ef4444"}[p];return(
             <div key={p} style={{textAlign:"center",background:`${c}15`,border:`1px solid ${c}30`,borderRadius:10,padding:"12px 8px",marginBottom:10}}>
-              <div style={{fontSize:22,fontFamily:"Syne",fontWeight:800,color:c}}>{byPriority[p]}</div>
+              <div style={{fontSize:22,fontFamily:"Poppins",fontWeight:800,color:c}}>{byPriority[p]}</div>
               <div style={{fontSize:12,color:"rgba(226,232,240,0.5)",marginTop:2}}>{p}</div>
             </div>
           );})}
@@ -3258,7 +3262,7 @@ function FeedbackForm({userEmail,onSubmit,toast,ticket=null}) {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:16,flexWrap:"wrap"}}>
           <div>
             <div style={{fontSize:13,color:"#38bdf8",fontWeight:700,letterSpacing:".5px",textTransform:"uppercase"}}>IT Feedback</div>
-            <h2 style={{fontFamily:"Syne",fontSize:26,fontWeight:800,color:"#e2e8f0",marginTop:4}}>Help us improve IT support</h2>
+            <h2 style={{fontFamily:"Poppins",fontSize:26,fontWeight:800,color:"#e2e8f0",marginTop:4}}>Help us improve IT support</h2>
             <p style={{fontSize:14,color:"rgba(226,232,240,0.58)",marginTop:8,maxWidth:620,lineHeight:1.6}}>Share how your IT service experience felt. Your feedback helps the team improve ticket resolution, support quality, and campus technology services.</p>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,minWidth:220}}>
@@ -3456,7 +3460,7 @@ function AdminFeedbackPage({feedback,setFeedback,toast}) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:22}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
-        <div><h2 style={{fontFamily:"Syne",fontSize:24,fontWeight:800,color:"#e2e8f0"}}>IT Feedback Dashboard</h2><p style={{fontSize:14,color:"rgba(226,232,240,0.5)",marginTop:4}}>Review user feedback, service quality, ratings, and improvement suggestions.</p></div>
+        <div><h2 style={{fontFamily:"Poppins",fontSize:24,fontWeight:800,color:"#e2e8f0"}}>IT Feedback Dashboard</h2><p style={{fontSize:14,color:"rgba(226,232,240,0.5)",marginTop:4}}>Review user feedback, service quality, ratings, and improvement suggestions.</p></div>
         {unread>0&&<span className="tag" style={{background:"rgba(239,68,68,0.16)",color:"#f87171",border:"1px solid rgba(239,68,68,0.32)"}}>{unread} new</span>}
       </div>
 
@@ -3557,7 +3561,7 @@ function PortalFeedbackForm({session,onSubmit,toast,onClose}) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
       <div className="glass2" style={{padding:"16px 18px",background:"linear-gradient(135deg,rgba(99,102,241,0.14),rgba(6,182,212,0.08))",borderColor:"rgba(125,211,252,0.24)"}}>
-        <div style={{fontFamily:"Syne",fontSize:18,fontWeight:800,color:"#fff",marginBottom:4}}>Help us improve the portal</div>
+        <div style={{fontFamily:"Poppins",fontSize:18,fontWeight:800,color:"#fff",marginBottom:4}}>Help us improve the portal</div>
         <div style={{fontSize:13,color:"rgba(226,232,240,0.58)",lineHeight:1.5}}>Share bugs, ideas, design feedback, or performance issues. This goes directly to the admin portal.</div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:14}}>
@@ -3611,7 +3615,7 @@ function AdminPortalFeedbackPage({portalFeedback,setPortalFeedback,toast}) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:22}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
-        <div><h2 style={{fontFamily:"Syne",fontSize:24,fontWeight:800,color:"#e2e8f0"}}>Portal Feedback</h2><p style={{fontSize:14,color:"rgba(226,232,240,0.5)",marginTop:4}}>Review portal bugs, feature ideas, UI feedback, and performance reports.</p></div>
+        <div><h2 style={{fontFamily:"Poppins",fontSize:24,fontWeight:800,color:"#e2e8f0"}}>Portal Feedback</h2><p style={{fontSize:14,color:"rgba(226,232,240,0.5)",marginTop:4}}>Review portal bugs, feature ideas, UI feedback, and performance reports.</p></div>
         <button className="glow-btn" onClick={()=>downloadExcel(exportRows,`portal_feedback_${new Date().toISOString().slice(0,10)}.xlsx`)}>Export Excel</button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:14}}>
@@ -4480,7 +4484,7 @@ function SetPasswordScreen({staff,onComplete,toast}) {
       <div style={{width:"100%",maxWidth:420}} className="fade-up">
         <div style={{textAlign:"center",marginBottom:"clamp(20px, 6vw, 32px)"}}>
           <div style={{width:64,height:64,borderRadius:18,background:`${staff.color}33`,border:`2px solid ${staff.color}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:800,color:staff.color,margin:"0 auto 16px"}}>{staff.avatar}</div>
-          <h1 style={{fontFamily:"Syne",fontSize:"clamp(20px, 5.5vw, 28px)",fontWeight:800,color:"#e2e8f0",marginBottom:6,lineHeight:1.2}}>Welcome, {staff.name.split(" ")[0]}!</h1>
+          <h1 style={{fontFamily:"Poppins",fontSize:"clamp(20px, 5.5vw, 28px)",fontWeight:800,color:"#e2e8f0",marginBottom:6,lineHeight:1.2}}>Welcome, {staff.name.split(" ")[0]}!</h1>
           <p style={{fontSize:"clamp(12px, 3.5vw, 14px)",color:"rgba(226,232,240,0.5)",lineHeight:1.4}}>First login detected. Please create your secure password.</p>
         </div>
         <div className="glass" style={{padding:"clamp(16px, 5vw, 28px)",display:"flex",flexDirection:"column",gap:"clamp(12px, 3vw, 18px)",flexShrink:0}}>
@@ -4575,7 +4579,7 @@ function ForgotPassword({onBack,toast}) {
     <div style={{width:"100%",maxWidth:420}} className="fade-up">
       <div style={{textAlign:"center",marginBottom:28}}>
         <div style={{fontSize:48,marginBottom:12}}>🔑</div>
-        <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:6}}>Reset Password</h2>
+        <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:6}}>Reset Password</h2>
         <p style={{fontSize:13,color:"rgba(226,232,240,0.5)"}}>
           {step===1?"Enter your registered email to receive OTP":step===2?"Enter the OTP sent to your email":"Create your new secure password"}
         </p>
@@ -4737,7 +4741,7 @@ function Landing({onLogin,tickets=[]}) {
           </div>
 
           <div style={{marginBottom:24}}>
-            <div style={{fontFamily:"Syne",fontWeight:800,fontSize:"clamp(22px,3vw,34px)",lineHeight:1.15,color:"#f8fafc",letterSpacing:0,whiteSpace:"normal",textWrap:"balance",maxWidth:"100%",overflowWrap:"break-word",wordBreak:"normal"}}>Login With Jaipuria Email ID</div>
+            <div style={{fontFamily:"Poppins",fontWeight:800,fontSize:"clamp(22px,3vw,34px)",lineHeight:1.15,color:"#f8fafc",letterSpacing:0,whiteSpace:"normal",textWrap:"balance",maxWidth:"100%",overflowWrap:"break-word",wordBreak:"normal"}}>Login With Jaipuria Email ID</div>
             <div style={{fontSize:14,color:"rgba(226,232,240,0.62)",marginTop:10}}>Secure access for users, IT staff, and administrators.</div>
           </div>
 
@@ -4781,7 +4785,7 @@ function Landing({onLogin,tickets=[]}) {
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
                 <div>
                   <div style={{fontSize:12,color:"rgba(226,232,240,0.48)",fontWeight:700}}>LIVE QUEUE</div>
-                  <div style={{fontFamily:"Syne",fontSize:26,fontWeight:800,color:"#fff",marginTop:4}}>Helpdesk Tickets</div>
+                  <div style={{fontFamily:"Poppins",fontSize:26,fontWeight:800,color:"#fff",marginTop:4}}>Helpdesk Tickets</div>
                 </div>
                 <div style={{width:50,height:50,borderRadius:16,background:"linear-gradient(135deg,#10b981,#0ea5e9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>✓</div>
               </div>
@@ -4808,7 +4812,7 @@ function Landing({onLogin,tickets=[]}) {
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:18}}>
                 {[[tickets.length,"Total"],[activeTickets.length,"Active"],[criticalTickets.length,"Critical"]].map(([v,l])=>(
                   <div key={l} style={{textAlign:"center",background:"rgba(15,23,42,0.5)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 8px"}}>
-                    <div style={{fontFamily:"Syne",fontSize:20,fontWeight:800,color:l==="Critical"?"#f87171":l==="Active"?"#38bdf8":"#818cf8"}}>{v}</div>
+                    <div style={{fontFamily:"Poppins",fontSize:20,fontWeight:800,color:l==="Critical"?"#f87171":l==="Active"?"#38bdf8":"#818cf8"}}>{v}</div>
                     <div style={{fontSize:11,color:"rgba(226,232,240,0.42)",marginTop:2}}>{l}</div>
                   </div>
                 ))}
@@ -4833,7 +4837,7 @@ function TicketsTable({tickets,onView,isAdmin,onDelete,emptyKind=""}) {
   filtered=[...filtered].sort((a,b)=>sort==="newest"?b.createdAt-a.createdAt:PRIORITIES.indexOf(b.priority)-PRIORITIES.indexOf(a.priority));
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>All Tickets</h2>
+      <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>All Tickets</h2>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input placeholder="🔍 Search by ID, name, description..." value={search} onChange={e=>setSearch(e.target.value)} style={{flex:1,minWidth:180}}/>
         <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={{width:"auto"}}><option value="All">All Status</option>{STATUSES.map(s=><option key={s}>{s}</option>)}</select>
@@ -4865,14 +4869,14 @@ function TrackTicket({tickets,onView}) {
   const search=()=>{setSearched(true);setResult(tickets.find(t=>t.id.toLowerCase()===id.trim().toLowerCase())||null);};
   return (
     <div style={{maxWidth:520}}>
-      <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>Track Ticket</h2>
+      <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>Track Ticket</h2>
       <div style={{display:"flex",gap:10,marginBottom:20}}>
         <input placeholder="Enter Ticket ID (e.g. TKT-ABC123)" value={id} onChange={e=>setId(e.target.value)} onKeyDown={e=>e.key==="Enter"&&search()}/>
         <button className="glow-btn" onClick={search} style={{whiteSpace:"nowrap"}}>Search</button>
       </div>
       {searched&&!result&&<div className="glass" style={{padding:"24px",textAlign:"center",color:"rgba(226,232,240,0.4)"}}><div style={{fontSize:36,marginBottom:8}}>🔍</div><div>No ticket found: {id}</div></div>}
       {result&&<div className="glass2" style={{padding:"20px",cursor:"pointer"}} onClick={()=>onView(result.id)}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><div style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>{result.id}</div><StatusBadge status={result.status}/></div>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><div style={{fontFamily:"Poppins",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>{result.id}</div><StatusBadge status={result.status}/></div>
         <div style={{marginBottom:10,border:"1px solid rgba(125,211,252,.22)",background:"rgba(14,165,233,.1)",borderRadius:12,padding:"10px 12px",fontSize:13,color:"#bfdbfe"}}>AI says: {getTicketStatusExplanation(result.status)}</div>
         <div style={{fontSize:14,color:"rgba(226,232,240,0.7)",marginBottom:8}}>{result.description.slice(0,100)}...</div>
         <PriorityBadge p={result.priority}/><div style={{marginTop:10}}><TimerBadge ticket={result}/></div>
@@ -4922,7 +4926,7 @@ function ManageUsersPanel() {
   return (
     <div className="glass" style={{padding:"18px",display:"grid",gap:14}}>
       <div>
-        <h3 style={{fontFamily:"Syne",fontSize:17,fontWeight:900,color:"#fff"}}>Manage Users</h3>
+        <h3 style={{fontFamily:"Poppins",fontSize:17,fontWeight:900,color:"#fff"}}>Manage Users</h3>
         <p style={{fontSize:12,color:"rgba(226,232,240,.55)",marginTop:4}}>User management module is ready for integration.</p>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10}}>
@@ -4970,19 +4974,19 @@ function StaffPanel({staffId,tickets,setTickets,toast,onViewTicket,onQuickAssign
       <div className="glass" style={{padding:"24px",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
         <StaffAvatar staff={staff} profiles={staffProfiles} statuses={staffStatuses} size={56} showStatus />
         <div style={{flex:1}}>
-          <div style={{fontFamily:"Syne",fontSize:20,fontWeight:700,color:"#e2e8f0"}}>{staff.name}</div>
+          <div style={{fontFamily:"Poppins",fontSize:20,fontWeight:700,color:"#e2e8f0"}}>{staff.name}</div>
           <div style={{fontSize:13,color:"rgba(226,232,240,0.5)"}}>{staff.role} · {staff.email}</div>
           <div style={{marginTop:8}}><ActionTabs permissions={permissions} active={activeAction} onSelect={selectAction} /></div>
         </div>
         <div style={{display:"flex",gap:14,textAlign:"center",flexWrap:"wrap"}}>
           {[["Total",myTickets.length,"#818cf8"],["Active",active,"#fbbf24"],["Resolved",resolved,"#34d399"]].map(([l,v,c])=>(
-            <div key={l}><div style={{fontSize:24,fontFamily:"Syne",fontWeight:800,color:c}}>{v}</div><div style={{fontSize:11,color:"rgba(226,232,240,0.4)"}}>{l}</div></div>
+            <div key={l}><div style={{fontSize:24,fontFamily:"Poppins",fontWeight:800,color:c}}>{v}</div><div style={{fontSize:11,color:"rgba(226,232,240,0.4)"}}>{l}</div></div>
           ))}
         </div>
       </div>
       {activeAction==="manage_users" ? <ManageUsersPanel /> : (
         <>
-          <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>{ACTION_TAB_LABELS[activeAction] || "Assigned Tickets"}</h3>
+          <h3 style={{fontFamily:"Poppins",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>{ACTION_TAB_LABELS[activeAction] || "Assigned Tickets"}</h3>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10}}>
             {[...myTickets].sort((a,b)=>b.createdAt-a.createdAt).map(t=>(
               <div key={t.id} style={{position:"relative"}}>
@@ -5038,7 +5042,7 @@ function StaffProfileModal({staff,profiles,statuses,onSave,toast}) {
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
       <div style={{display:"flex",gap:16,alignItems:"center"}}>
         <StaffAvatar staff={{...staff}} profiles={{[staff.id]:{photo}}} statuses={statuses} size={82} showStatus />
-        <div><h3 style={{fontFamily:"Syne",fontSize:20,color:"#fff"}}>{staff.name}</h3><div style={{fontSize:13,color:"rgba(226,232,240,0.5)"}}>{staff.role}</div><StatusDot status={getStaffStatus(staff.id,statuses)}/></div>
+        <div><h3 style={{fontFamily:"Poppins",fontSize:20,color:"#fff"}}>{staff.name}</h3><div style={{fontSize:13,color:"rgba(226,232,240,0.5)"}}>{staff.role}</div><StatusDot status={getStaffStatus(staff.id,statuses)}/></div>
       </div>
       <div className="glass" style={{padding:16,display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         {[['Name',staff.name],['Email',staff.email],['Role',staff.role],['Permissions',staff.permissions.join(', ')]].map(([l,v])=><div key={l}><div style={{fontSize:11,color:"rgba(226,232,240,0.4)"}}>{l}</div><div style={{fontSize:13,color:"#e2e8f0",fontWeight:600,marginTop:3}}>{v}</div></div>)}
@@ -5086,10 +5090,10 @@ function StaffPerformanceModal({staff,tickets}) {
   const cats=CATEGORIES.map(c=>({label:c.label,color:c.color,count:mine.filter(t=>t.category===c.id).length})).filter(c=>c.count);
   return <div style={{display:'flex',flexDirection:'column',gap:20}}>
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:12}}>
-      {[["Assigned",mine.length,'#818cf8'],["Open",mine.filter(t=>t.status==='Open'||t.status==='Assigned').length,'#38bdf8'],["In Progress",mine.filter(t=>t.status==='In Progress').length,'#fbbf24'],["Closed",closed.length,'#34d399'],["Avg Time",avg?formatDuration(avg):'—','#f97316'],["SLA Breach",breached,'#f87171'],["Rate",`${rate}%`,'#10b981']].map(([l,v,c])=><div key={l} className="glass" style={{padding:16}}><div style={{fontSize:12,color:'rgba(226,232,240,0.45)'}}>{l}</div><div style={{fontFamily:'Syne',fontSize:24,fontWeight:800,color:c,marginTop:6}}>{v}</div></div>)}
+      {[["Assigned",mine.length,'#818cf8'],["Open",mine.filter(t=>t.status==='Open'||t.status==='Assigned').length,'#38bdf8'],["In Progress",mine.filter(t=>t.status==='In Progress').length,'#fbbf24'],["Closed",closed.length,'#34d399'],["Avg Time",avg?formatDuration(avg):'—','#f97316'],["SLA Breach",breached,'#f87171'],["Rate",`${rate}%`,'#10b981']].map(([l,v,c])=><div key={l} className="glass" style={{padding:16}}><div style={{fontSize:12,color:'rgba(226,232,240,0.45)'}}>{l}</div><div style={{fontFamily:'Poppins',fontSize:24,fontWeight:800,color:c,marginTop:6}}>{v}</div></div>)}
     </div>
-    <div className="glass" style={{padding:18}}><h3 style={{fontFamily:'Syne',fontSize:16,color:'#fff',marginBottom:14}}>Monthly Closed Tickets</h3>{months.map(m=><div key={m.key} style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}><div style={{width:42,fontSize:12,color:'rgba(226,232,240,0.55)'}}>{m.label}</div><div style={{flex:1,height:8,background:'rgba(255,255,255,0.07)',borderRadius:6}}><div style={{width:`${Math.min(100,m.count*20)}%`,height:'100%',background:'#6366f1',borderRadius:6}}/></div><div style={{width:24,color:'#e2e8f0',fontSize:12,fontWeight:700}}>{m.count}</div></div>)}</div>
-    <div className="glass" style={{padding:18}}><h3 style={{fontFamily:'Syne',fontSize:16,color:'#fff',marginBottom:14}}>Category-wise Tickets</h3>{cats.length?cats.map(c=><div key={c.label} style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}><div style={{width:150,fontSize:12,color:'rgba(226,232,240,0.68)'}}>{c.label}</div><div style={{flex:1,height:8,background:'rgba(255,255,255,0.07)',borderRadius:6}}><div style={{width:`${Math.min(100,c.count*18)}%`,height:'100%',background:c.color,borderRadius:6}}/></div><div style={{width:24,color:c.color,fontSize:12,fontWeight:800}}>{c.count}</div></div>):<div style={{color:'rgba(226,232,240,0.4)'}}>No category data yet</div>}</div>
+    <div className="glass" style={{padding:18}}><h3 style={{fontFamily:'Poppins',fontSize:16,color:'#fff',marginBottom:14}}>Monthly Closed Tickets</h3>{months.map(m=><div key={m.key} style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}><div style={{width:42,fontSize:12,color:'rgba(226,232,240,0.55)'}}>{m.label}</div><div style={{flex:1,height:8,background:'rgba(255,255,255,0.07)',borderRadius:6}}><div style={{width:`${Math.min(100,m.count*20)}%`,height:'100%',background:'#6366f1',borderRadius:6}}/></div><div style={{width:24,color:'#e2e8f0',fontSize:12,fontWeight:700}}>{m.count}</div></div>)}</div>
+    <div className="glass" style={{padding:18}}><h3 style={{fontFamily:'Poppins',fontSize:16,color:'#fff',marginBottom:14}}>Category-wise Tickets</h3>{cats.length?cats.map(c=><div key={c.label} style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}><div style={{width:150,fontSize:12,color:'rgba(226,232,240,0.68)'}}>{c.label}</div><div style={{flex:1,height:8,background:'rgba(255,255,255,0.07)',borderRadius:6}}><div style={{width:`${Math.min(100,c.count*18)}%`,height:'100%',background:c.color,borderRadius:6}}/></div><div style={{width:24,color:c.color,fontSize:12,fontWeight:800}}>{c.count}</div></div>):<div style={{color:'rgba(226,232,240,0.4)'}}>No category data yet</div>}</div>
   </div>;
 }
 
@@ -5123,7 +5127,7 @@ function KnowYourITStaff({staffProfiles}) {
 
   return (
     <div>
-      <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>Connect with IT Staff</h2>
+      <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>Connect with IT Staff</h2>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:20}}>
         {staffData.map(staff => {
           const profile = staffProfiles[staff.id] || {};
@@ -5147,7 +5151,7 @@ function KnowYourITStaff({staffProfiles}) {
               }} />
               <div style={{display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",position:"relative",zIndex:1}}>
                 <StaffAvatar staff={{...staff, avatar: staff.name.split(' ').map(n=>n[0]).join(''), color: ["#6366f1", "#0ea5e9", "#10b981"][staff.id-1]}} profiles={{[staff.id]: profile}} statuses={{}} size={80} showStatus={false} />
-                <h3 style={{fontFamily:"Syne",fontSize:20,fontWeight:800,color:"#e2e8f0",margin:"16px 0 4px"}}>{staff.name}</h3>
+                <h3 style={{fontFamily:"Poppins",fontSize:20,fontWeight:800,color:"#e2e8f0",margin:"16px 0 4px"}}>{staff.name}</h3>
                 <div style={{fontSize:14,color:"rgba(6,182,212,0.9)",fontWeight:600,marginBottom:20}}>{staff.post}</div>
                 <div style={{display:"flex",flexDirection:"column",gap:12,width:"100%"}}>
                   <div style={{display:"flex",gap:10}}>
@@ -5459,7 +5463,7 @@ function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilt
     <div style={{display:"flex",flexDirection:"column",gap:22}}>
       <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:14,alignItems:"flex-end"}}>
         <div>
-          <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:4}}>Temp Issue Request</h2>
+          <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:4}}>Temp Issue Request</h2>
           <div style={{fontSize:14,color:"rgba(226,232,240,0.5)"}}>{isNormalUser ? "Request temporary IT items and track approval, issue, and return status." : "Manage approval, issue, return, and reporting for temporary IT items."}</div>
         </div>
         {(canAdmin || session?.type === "staff") && <div style={{display:"flex",gap:10,flexWrap:"wrap"}}><button className="glow-btn" onClick={downloadExcelReport}>Export Excel</button><button className="glow-btn" onClick={downloadPdfReport}>Export PDF</button></div>}
@@ -5509,7 +5513,7 @@ function TempIssuePanel({session, tempIssues, tempIssuesLoaded, filters, setFilt
 
       <div className="glass" style={{padding:24}}>
         <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:18,alignItems:"center",justifyContent:"space-between"}}>
-          <h3 style={{fontFamily:"Syne",fontSize:18,fontWeight:700,color:"#e2e8f0",margin:0}}>{requestTitle}</h3>
+          <h3 style={{fontFamily:"Poppins",fontSize:18,fontWeight:700,color:"#e2e8f0",margin:0}}>{requestTitle}</h3>
           <div style={{display:"flex",flexWrap:"wrap",gap:10,alignItems:"center"}}>
             <select value={filters.status || "All"} onChange={e=>setFilters({...filters,status:e.target.value})} style={{minWidth:160}}>{statusOptions.map(status => <option key={status} value={status}>{status}</option>)}</select>
             <select value={filters.staff || "All"} onChange={e=>setFilters({...filters,staff:e.target.value})} style={{minWidth:160}}><option value="All">All Staff</option>{staffOptions.map(name => <option key={name} value={name}>{name}</option>)}</select>
@@ -6521,7 +6525,7 @@ const handleNewTicket = async (form) => {
 
   const renderStaffManagement = () => (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
-      <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Staff Management</h2>
+      <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Staff Management</h2>
       {STAFF_BASE.map(staff => (
         <div key={staff.id} className="glass" style={{padding:"18px 20px"}}>
           <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:12}}>
@@ -6592,7 +6596,7 @@ const handleNewTicket = async (form) => {
             <SmartWelcome session={session} visible={showSmartWelcome} />
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
               <div>
-                <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Admin Dashboard</h2>
+                <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0"}}>Admin Dashboard</h2>
                 <p style={{fontSize:14,color:"rgba(226,232,240,0.5)"}}>{new Date().toLocaleDateString("en-IN",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p>
               </div>
               <button className="glow-btn" onClick={() => setFormCat("")}>+ New Ticket</button>
@@ -6622,7 +6626,7 @@ const handleNewTicket = async (form) => {
             <div className="glass" style={{padding:"18px",display:"grid",gap:14}}>
               <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap"}}>
                 <div>
-                  <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:900,color:"#e2e8f0"}}>Escalated Tickets</h3>
+                  <h3 style={{fontFamily:"Poppins",fontSize:16,fontWeight:900,color:"#e2e8f0"}}>Escalated Tickets</h3>
                   <p style={{fontSize:12,color:"rgba(226,232,240,.52)",marginTop:4}}>Overdue tickets are highlighted for staff/admin follow-up.</p>
                 </div>
                 <span className="tag" style={{background:"rgba(239,68,68,.16)",color:"#fecaca"}}>{escalatedTickets.length} overdue</span>
@@ -6634,13 +6638,13 @@ const handleNewTicket = async (form) => {
             </div>
             {dashboardFilter.type !== "Total" && (
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:14,flexWrap:'wrap'}}>
-                <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0",margin:0}}>{`Showing ${dashboardFilter.label} Tickets (${filteredDashboardTickets.length})`}</h3>
+                <h3 style={{fontFamily:"Poppins",fontSize:16,fontWeight:700,color:"#e2e8f0",margin:0}}>{`Showing ${dashboardFilter.label} Tickets (${filteredDashboardTickets.length})`}</h3>
                 <button className="glow-btn" onClick={() => setDashboardFilter({ type: "Total", label: "Total" })}>Show All</button>
               </div>
             )}
             {dashboardFilter.type === "Total" && adminActionTab!=="manage_users" ? (
               <>
-                <h3 style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>Recent Tickets</h3>
+                <h3 style={{fontFamily:"Poppins",fontSize:16,fontWeight:700,color:"#e2e8f0"}}>Recent Tickets</h3>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10}}>
                   {tickets.slice(0,6).map(t => (
                     <div key={t.id} style={{position:"relative"}}>
@@ -6671,7 +6675,7 @@ const handleNewTicket = async (form) => {
       if (page === "emaillog") return <EmailLog />;
       if (page === "staff") return (
         <div>
-          <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>IT Staff Management</h2>
+          <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>IT Staff Management</h2>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
             {STAFF_BASE.map(s => {
               const asgn = tickets.filter(t => t.assigneeId === s.id).length;
@@ -6685,7 +6689,7 @@ const handleNewTicket = async (form) => {
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
                     {[["Assigned",asgn,"#818cf8"],["Active",active,"#fbbf24"],["Resolved",res,"#34d399"]].map(([l,v,c]) => (
-                      <div key={l} style={{textAlign:"center",background:`${c}15`,borderRadius:8,padding:"10px 4px"}}><div style={{fontSize:20,fontWeight:800,fontFamily:"Syne",color:c}}>{v}</div><div style={{fontSize:11,color:"rgba(226,232,240,0.5)",marginTop:2}}>{l}</div></div>
+                      <div key={l} style={{textAlign:"center",background:`${c}15`,borderRadius:8,padding:"10px 4px"}}><div style={{fontSize:20,fontWeight:800,fontFamily:"Poppins",color:c}}>{v}</div><div style={{fontSize:11,color:"rgba(226,232,240,0.5)",marginTop:2}}>{l}</div></div>
                     ))}
                   </div>
                   <div style={{fontSize:12,color:"rgba(226,232,240,0.4)",marginBottom:6}}>Permissions</div>
@@ -6705,7 +6709,7 @@ const handleNewTicket = async (form) => {
     if (page === "home") return <CategoryGrid onSelect={cat => setFormCat(cat)} onSmartTicket={()=>setSmartTicketOpen(true)} session={session} showWelcome={showSmartWelcome} />;
     if (page === "my-tickets") return (
       <div>
-        <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>My Tickets</h2>
+        <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>My Tickets</h2>
         {userFeedbackPendingCount===0&&<div className="glass2" style={{padding:"12px 14px",marginBottom:14,color:"#bbf7d0",borderColor:"rgba(16,185,129,.22)",background:"rgba(16,185,129,.07)",fontSize:13,fontWeight:800}}>No pending feedback. You're all caught up.</div>}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:10}}>
           {myTickets.map(t => <TicketCard key={t.id} ticket={t} onView={setViewTicketId} showFeedbackPending={isTicketFeedbackPending(t)} />)}
@@ -6718,7 +6722,7 @@ const handleNewTicket = async (form) => {
     if (page === "track") return <TrackTicket tickets={tickets} onView={setViewTicketId} />;
     if (page === "new-ticket") return (
       <div>
-        <h2 style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>New Ticket</h2>
+        <h2 style={{fontFamily:"Poppins",fontSize:22,fontWeight:700,color:"#e2e8f0",marginBottom:20}}>New Ticket</h2>
         <div className="glass" style={{padding:"24px"}}>
           <TicketForm userEmail={session.email} initialCategory="" onSubmit={async t => { await handleNewTicket(t); setPage("my-tickets"); }} onCancel={() => setPage("home")} toast={toast} />
         </div>
@@ -6792,7 +6796,7 @@ const handleNewTicket = async (form) => {
         <Modal title="Share IT Support Feedback" onClose={() => setDismissedFeedbackTickets(ids => Array.from(new Set([...ids, pendingFeedbackTicket.id])))}>
           <div style={{display:"flex",flexDirection:"column",gap:18}}>
             <div className="glass" style={{padding:"18px 20px",background:"rgba(99,102,241,0.1)",borderColor:"rgba(99,102,241,0.3)"}}>
-              <div style={{fontSize:18,fontWeight:800,fontFamily:"Syne",color:"#e2e8f0",marginBottom:8}}>Your ticket {pendingFeedbackTicket.id} has been closed.</div>
+              <div style={{fontSize:18,fontWeight:800,fontFamily:"Poppins",color:"#e2e8f0",marginBottom:8}}>Your ticket {pendingFeedbackTicket.id} has been closed.</div>
               <div style={{fontSize:14,lineHeight:1.6,color:"rgba(226,232,240,0.68)"}}>Please share your feedback so the IT team can improve support quality.</div>
             </div>
             <div style={{display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
@@ -6852,6 +6856,7 @@ const handleNewTicket = async (form) => {
     </>
   );
 }
+
 
 
 
