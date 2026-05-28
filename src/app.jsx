@@ -2724,12 +2724,26 @@ function TicketCard({ticket,onView,showFeedbackPending=false,showFeedbackUnread=
       </div>
       <div style={{display:"grid",gap:5,marginBottom:8,fontSize:11,color:"rgba(226,232,240,.52)"}}>
         <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+          <span>Category</span>
+          <span style={{color:"#e2e8f0",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:150}}>{categoryLabel(ticket.category)}</span>
+        </div>
+        {ticket.subCategory&&(
+          <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+            <span>Sub-category</span>
+            <span style={{color:"#c4b5fd",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:150}}>{ticket.subCategory}</span>
+          </div>
+        )}
+        <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
           <span>Assigned To</span>
           <span style={{color:"#e2e8f0",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:150}}>{assigneeLabel}</span>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
           <span>TAT Time</span>
           <span style={{color:"#bae6fd",fontWeight:900}}>{isClosedTicket(ticket) && ticket.closedAt ? formatDuration(ticket.closedAt-ticket.createdAt) : timeAgo(ticket.createdAt)}</span>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+          <span>Created</span>
+          <span style={{color:"rgba(226,232,240,.76)",fontWeight:800}}>{fmtDate(ticket.createdAt)}</span>
         </div>
       </div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:8}}>
@@ -2771,6 +2785,7 @@ function SmartTicketModal({session,onSubmit,onClose,toast}) {
   const [resolution,setResolution]=useState(null);
   const [ready,setReady]=useState(false);
   const [loading,setLoading]=useState(false);
+  const [creatingTicket,setCreatingTicket]=useState(false);
   const [listening,setListening]=useState(false);
   const recognitionRef=useRef(null);
 
@@ -4102,14 +4117,22 @@ function AIHelpdeskChat({session,onCreateTicket}) {
       setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:getTicketFlowPrompt(nextStep,draft),at:Date.now(),type:"ticket-flow"}]);
       return true;
     }
-    setTicketFlow(null);
-    setLoading(true);
+    setCreatingTicket(true);
+    setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Creating your ticket...",at:Date.now(),type:"ticket-creating"}]);
     try {
+      const finalDraft={
+        ...draft,
+        name:(draft.name || session?.name || "Portal User").trim(),
+        email:(draft.email || session?.email || "").trim(),
+        mobile:(draft.mobile || "").trim(),
+        source:"AI Chatbot"
+      };
+      if(!finalDraft.name || !finalDraft.email || !finalDraft.mobile) throw new Error("Missing required chatbot ticket fields");
       const ticket=await Promise.resolve(onCreateTicket?.({
-        name:draft.name,
-        email:draft.email,
+        name:finalDraft.name,
+        email:finalDraft.email,
         dept:"Not provided",
-        mobile:draft.mobile,
+        mobile:finalDraft.mobile,
         location:"Not provided",
         category:draft.category,
         subCategory:draft.subCategory,
@@ -4119,19 +4142,20 @@ function AIHelpdeskChat({session,onCreateTicket}) {
         notes:draft.notes
       }));
       if(!ticket?.id) throw new Error("Ticket could not be created.");
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`Your ticket has been generated successfully. Ticket ID: ${ticket.id}. Our IT Support Team will contact you soon.`,at:Date.now(),type:"ticket-success"}]);
+      setTicketFlow(null);
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:`Your ticket has been generated successfully. Ticket ID: ${ticket.id}`,at:Date.now(),type:"ticket-success"}]);
     } catch (error) {
-      console.error("Chatbot ticket creation failed:",error);
-      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Ticket could not be created right now. Please try again or contact IT Support.",at:Date.now(),error:true}]);
+      console.error("Chatbot mobile ticket creation failed:",error,{step,draft});
+      setMessages(prev=>[...prev,{id:genToken(),role:"assistant",text:"Ticket could not be created. Please try again.",at:Date.now(),error:true}]);
     } finally {
-      setLoading(false);
+      setCreatingTicket(false);
     }
     return true;
   };
 
   const sendMessage=async(value)=>{
     const clean=(value ?? input).trim();
-    if(!clean || loading) return;
+    if(!clean || loading || creatingTicket) return;
     const userMessage={id:genToken(),role:"user",text:clean,at:Date.now()};
     setMessages(prev=>[...prev,userMessage]);
     setInput("");
@@ -4261,14 +4285,19 @@ function AIHelpdeskChat({session,onCreateTicket}) {
                 <div className="ai-helpdesk-bubble bot ai-typing">AI is analyzing your issue... <span></span><span></span><span></span></div>
               </div>
             )}
+            {creatingTicket&&(
+              <div className="ai-helpdesk-row bot">
+                <div className="ai-helpdesk-bubble bot ai-typing">Creating your ticket... <span></span><span></span><span></span></div>
+              </div>
+            )}
             <div ref={endRef}/>
           </div>
 
-          <div className="ai-helpdesk-input">
-            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}} placeholder={listening ? "Listening..." : "Type hi, menu, WiFi, AI, or ESCALATE..."} />
+          <form className="ai-helpdesk-input" onSubmit={e=>{e.preventDefault();sendMessage();}}>
+            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}} disabled={creatingTicket} inputMode="text" enterKeyHint="send" placeholder={creatingTicket ? "Creating your ticket..." : listening ? "Listening..." : "Type hi, menu, WiFi, AI, or ESCALATE..."} />
             <button type="button" className={`mic-btn ${listening ? "listening" : ""}`} onClick={startVoiceInput} title={listening ? "Listening..." : "Use voice input"} aria-label="Use voice input"><span>🎙️</span>{listening&&<span className="mic-btn-text">Listening...</span>}</button>
-            <button className="glow-btn" type="button" onClick={()=>sendMessage()} disabled={loading||!input.trim()}>Send</button>
-          </div>
+            <button className="glow-btn" type="submit" onPointerUp={e=>{if(e.pointerType==="touch"){e.preventDefault();sendMessage();}}} disabled={loading||creatingTicket||!input.trim()}>{creatingTicket?"Creating...":"Send"}</button>
+          </form>
         </div>
       )}
       <button type="button" className="ai-helpdesk-button" onClick={()=>setOpen(o=>!o)} aria-label="Open AI helpdesk chat">
